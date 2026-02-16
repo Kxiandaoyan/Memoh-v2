@@ -222,13 +222,51 @@ OpenViking is a context database that manages memories, resources, and skills vi
 
 > **Note**: OpenViking is only available when enabled in your bot's Persona settings.
 
+### Configuration
+
+When OpenViking is enabled, a default `ov.conf` file is created at `/data/ov.conf`.
+You **must** edit this file (via the web UI's **Files** tab) to fill in your embedding and VLM API credentials before using OpenViking.
+
+The config format (JSON with a `_README` help block):
+
+```json
+{
+  "_README": ["... help text, safe to keep or delete ..."],
+  "embedding": {
+    "dense": {
+      "api_base": "https://api.openai.com/v1",
+      "api_key": "sk-your-api-key-here",
+      "provider": "openai",
+      "dimension": 1536,
+      "model": "text-embedding-3-small"
+    }
+  },
+  "vlm": {
+    "api_base": "https://api.openai.com/v1",
+    "api_key": "sk-your-api-key-here",
+    "provider": "openai",
+    "max_retries": 2,
+    "model": "gpt-4o"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `api_base` | LLM provider API endpoint |
+| `api_key` | Your API key |
+| `provider` | `openai` or `volcengine` |
+| `dimension` | Embedding dimensions: `1536` (OpenAI), `1024` (doubao) |
+| `model` | Model name, e.g. `text-embedding-3-small`, `gpt-4o` |
+| `input` | (optional) Set to `multimodal` for doubao-embedding-vision |
+
 ### Python API (via `exec`)
 
 ```bash
-# Initialize a data directory for this bot
+# Initialize a data directory for this bot (uses /data/ov.conf for model config)
 python3 -c "
 import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data')
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
 client.initialize()
 print('OpenViking initialized')
 client.close()
@@ -241,7 +279,7 @@ client.close()
 # Add a resource (URL, file, or directory)
 python3 -c "
 import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data')
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
 client.initialize()
 result = client.add_resource(path='https://example.com/doc.md')
 print(result)
@@ -251,7 +289,7 @@ client.close()
 # List directory structure
 python3 -c "
 import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data')
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
 client.initialize()
 print(client.ls('viking://resources/'))
 client.close()
@@ -260,7 +298,7 @@ client.close()
 # Semantic search
 python3 -c "
 import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data')
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
 client.initialize()
 client.wait_processed()
 results = client.find('your search query', target_uri='viking://resources/')
@@ -272,7 +310,7 @@ client.close()
 # Read content by URI
 python3 -c "
 import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data')
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
 client.initialize()
 content = client.read('viking://resources/...')
 print(content)
@@ -282,7 +320,7 @@ client.close()
 # Get tiered summaries
 python3 -c "
 import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data')
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
 client.initialize()
 print('Abstract:', client.abstract('viking://resources/...'))
 print('Overview:', client.overview('viking://resources/...'))

@@ -19,6 +19,7 @@ var allowedExtensions = map[string]bool{
 	".yaml": true,
 	".yml":  true,
 	".toml": true,
+	".conf": true,
 }
 
 // BotFileEntry represents a single file in the bot data directory.
@@ -233,7 +234,7 @@ func validateFilename(name string) error {
 	}
 	ext := strings.ToLower(filepath.Ext(name))
 	if !allowedExtensions[ext] {
-		return echo.NewHTTPError(http.StatusBadRequest, "unsupported file type; allowed: .md, .txt, .json, .yaml, .yml, .toml")
+		return echo.NewHTTPError(http.StatusBadRequest, "unsupported file type; allowed: .md, .txt, .json, .yaml, .yml, .toml, .conf")
 	}
 	return nil
 }
