@@ -37,7 +37,10 @@ RUN apk add --no-cache python3 py3-pip && \
     ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
 
 # OpenViking context database (optional, enabled per-bot)
-RUN pip install --break-system-packages openviking
+# Needs Go compiler temporarily for AGFS server build
+RUN apk add --no-cache --virtual .ov-build-deps go && \
+    pip install --break-system-packages openviking && \
+    apk del .ov-build-deps
 
 WORKDIR /app
 COPY --from=build /out/mcp /opt/mcp
