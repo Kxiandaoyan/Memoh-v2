@@ -9,9 +9,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memoh123}
     volumes:
       - postgres_data:/var/lib/postgresql
-      # Migrations run ONLY on first database initialization.
+      # Raw migration files (both .up.sql and .down.sql) — NOT directly in initdb.d.
+      - ./db/migrations:/migrations:ro
+      # Init script runs ONLY .up.sql files on first database initialization.
       # For upgrades, use: scripts/upgrade.sh or run migrations manually.
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - ./docker/initdb.sh:/docker-entrypoint-initdb.d/01-migrations.sh:ro
     expose:
       - "5432"
     healthcheck:

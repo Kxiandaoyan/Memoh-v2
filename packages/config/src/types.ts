@@ -18,6 +18,7 @@ export interface LogConfig {
 
 export interface ServerConfig {
   addr: string;
+  public_addr?: string;
 }
 
 export interface AdminConfig {

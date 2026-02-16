@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,24 +14,30 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/accounts"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/config"
+	dbsqlc "github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/models"
 )
 
 // PromptsHandler manages bot persona/prompt configuration via REST API.
 type PromptsHandler struct {
 	botService     *bots.Service
 	accountService *accounts.Service
+	modelsService  *models.Service
+	queries        *dbsqlc.Queries
 	mcpCfg         config.MCPConfig
 	logger         *slog.Logger
 }
 
 // NewPromptsHandler creates a PromptsHandler.
-func NewPromptsHandler(log *slog.Logger, botService *bots.Service, accountService *accounts.Service, cfg config.Config) *PromptsHandler {
+func NewPromptsHandler(log *slog.Logger, botService *bots.Service, accountService *accounts.Service, modelsService *models.Service, queries *dbsqlc.Queries, cfg config.Config) *PromptsHandler {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &PromptsHandler{
 		botService:     botService,
 		accountService: accountService,
+		modelsService:  modelsService,
+		queries:        queries,
 		mcpCfg:         cfg.MCP,
 		logger:         log.With(slog.String("handler", "prompts")),
 	}
@@ -108,18 +115,57 @@ func (h *PromptsHandler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update bot prompts")
 	}
 
-	// Auto-create ov.conf template when OpenViking is enabled.
+	// Auto-create ov.conf when OpenViking is enabled, populated from system models.
 	if prompts.EnableOpenviking {
-		h.ensureOVConf(botID)
+		h.ensureOVConf(c.Request().Context(), botID)
 	}
 
 	return c.JSON(http.StatusOK, prompts)
 }
 
-// ensureOVConf creates a default ov.conf in the bot's data directory if it
-// does not exist yet. This gives the user a template they can fill in via the
-// Files UI without having to craft the JSON structure from scratch.
-func (h *PromptsHandler) ensureOVConf(botID string) {
+// ovConfJSON is the structure for ov.conf.
+type ovConfJSON struct {
+	README    []string       `json:"_README"`
+	Embedding ovConfEmbed    `json:"embedding"`
+	VLM       ovConfVLM      `json:"vlm"`
+}
+
+type ovConfEmbed struct {
+	Dense ovConfDense `json:"dense"`
+}
+
+type ovConfDense struct {
+	APIBase   string `json:"api_base"`
+	APIKey    string `json:"api_key"`
+	Provider  string `json:"provider"`
+	Dimension int    `json:"dimension"`
+	Model     string `json:"model"`
+}
+
+type ovConfVLM struct {
+	APIBase    string `json:"api_base"`
+	APIKey     string `json:"api_key"`
+	Provider   string `json:"provider"`
+	MaxRetries int    `json:"max_retries"`
+	Model      string `json:"model"`
+}
+
+// mapClientTypeToOVProvider maps Memoh's client_type to OpenViking's provider string.
+func mapClientTypeToOVProvider(clientType string) string {
+	switch strings.ToLower(clientType) {
+	case "openai", "azure", "ollama":
+		return "openai"
+	case "volcengine", "dashscope":
+		return "volcengine"
+	default:
+		return "openai"
+	}
+}
+
+// ensureOVConf creates ov.conf in the bot's data directory, auto-populated from
+// system-configured embedding and chat models. If the file already exists, it is
+// not overwritten (user may have customized it).
+func (h *PromptsHandler) ensureOVConf(ctx context.Context, botID string) {
 	dataRoot := strings.TrimSpace(h.mcpCfg.DataRoot)
 	if dataRoot == "" {
 		dataRoot = config.DefaultDataRoot
@@ -139,49 +185,101 @@ func (h *PromptsHandler) ensureOVConf(botID string) {
 		return // already exists, don't overwrite
 	}
 
-	const defaultOVConf = `{
-  "_README": [
-    "=== OpenViking Configuration ===",
-    "Edit this file via web UI: Bot Detail → Files → ov.conf",
-    "",
-    "embedding.dense — Vector embedding model (for semantic search)",
-    "  api_base   : LLM provider API endpoint (e.g. https://api.openai.com/v1)",
-    "  api_key    : Your API key (e.g. sk-xxxx)",
-    "  provider   : 'openai' or 'volcengine'",
-    "  dimension  : Vector dimensions — 1536 for text-embedding-3-small, 1024 for doubao-embedding",
-    "  model      : Model name — e.g. text-embedding-3-small, doubao-embedding-vision-250615",
-    "  input      : (optional) Set to 'multimodal' when using doubao-embedding-vision",
-    "",
-    "vlm — Vision Language Model (for content understanding)",
-    "  api_base   : Same or different API endpoint",
-    "  api_key    : Same or different API key",
-    "  provider   : 'openai' or 'volcengine'",
-    "  model      : VLM model — e.g. gpt-4o, doubao-seed-1-8-251228",
-    "  max_retries: Retry count on failure (default 2)"
-  ],
-  "embedding": {
-    "dense": {
-      "api_base": "https://api.openai.com/v1",
-      "api_key": "sk-your-api-key-here",
-      "provider": "openai",
-      "dimension": 1536,
-      "model": "text-embedding-3-small"
-    }
-  },
-  "vlm": {
-    "api_base": "https://api.openai.com/v1",
-    "api_key": "sk-your-api-key-here",
-    "provider": "openai",
-    "max_retries": 2,
-    "model": "gpt-4o"
-  }
-}
-`
-	if err := os.WriteFile(confPath, []byte(defaultOVConf), 0o644); err != nil {
-		h.logger.Warn("ov.conf: failed to create template", slog.Any("error", err))
+	conf := h.buildOVConf(ctx)
+
+	data, err := json.MarshalIndent(conf, "", "  ")
+	if err != nil {
+		h.logger.Warn("ov.conf: marshal failed", slog.Any("error", err))
 		return
 	}
-	h.logger.Info("ov.conf template created", slog.String("bot_id", botID), slog.String("path", confPath))
+	data = append(data, '\n')
+
+	if err := os.WriteFile(confPath, data, 0o644); err != nil {
+		h.logger.Warn("ov.conf: failed to create", slog.Any("error", err))
+		return
+	}
+	h.logger.Info("ov.conf created from system models", slog.String("bot_id", botID), slog.String("path", confPath))
+}
+
+// buildOVConf constructs ov.conf content from system-configured models/providers.
+func (h *PromptsHandler) buildOVConf(ctx context.Context) ovConfJSON {
+	conf := ovConfJSON{
+		README: []string{
+			"=== OpenViking Configuration ===",
+			"Auto-generated from system Models & Providers settings.",
+			"Edit via web UI: Bot Detail → Files → ov.conf",
+			"",
+			"embedding.dense — Vector embedding model (semantic search)",
+			"vlm — Vision/Language model (content understanding)",
+			"provider: 'openai' (also for compatible APIs) or 'volcengine'",
+		},
+		Embedding: ovConfEmbed{
+			Dense: ovConfDense{
+				APIBase:   "https://api.openai.com/v1",
+				APIKey:    "sk-your-api-key-here",
+				Provider:  "openai",
+				Dimension: 1536,
+				Model:     "text-embedding-3-small",
+			},
+		},
+		VLM: ovConfVLM{
+			APIBase:    "https://api.openai.com/v1",
+			APIKey:     "sk-your-api-key-here",
+			Provider:   "openai",
+			MaxRetries: 2,
+			Model:      "gpt-4o",
+		},
+	}
+
+	if h.modelsService == nil || h.queries == nil {
+		return conf
+	}
+
+	// Try to populate embedding from system's first embedding model.
+	embModels, err := h.modelsService.ListByType(ctx, models.ModelTypeEmbedding)
+	if err == nil && len(embModels) > 0 {
+		emb := embModels[0]
+		provider, provErr := models.FetchProviderByID(ctx, h.queries, emb.LlmProviderID)
+		if provErr == nil {
+			conf.Embedding.Dense.APIBase = provider.BaseUrl
+			conf.Embedding.Dense.APIKey = provider.ApiKey
+			conf.Embedding.Dense.Provider = mapClientTypeToOVProvider(provider.ClientType)
+			conf.Embedding.Dense.Model = emb.ModelID
+			if emb.Dimensions > 0 {
+				conf.Embedding.Dense.Dimension = emb.Dimensions
+			}
+			h.logger.Info("ov.conf: embedding from system",
+				slog.String("model", emb.ModelID),
+				slog.String("provider", provider.Name))
+		}
+	}
+
+	// Try to populate VLM from system's first multimodal chat model (prefer multimodal).
+	chatModels, err := h.modelsService.ListByType(ctx, models.ModelTypeChat)
+	if err == nil && len(chatModels) > 0 {
+		var selected *models.GetResponse
+		for i := range chatModels {
+			if chatModels[i].IsMultimodal {
+				selected = &chatModels[i]
+				break
+			}
+		}
+		if selected == nil {
+			selected = &chatModels[0]
+		}
+		provider, provErr := models.FetchProviderByID(ctx, h.queries, selected.LlmProviderID)
+		if provErr == nil {
+			conf.VLM.APIBase = provider.BaseUrl
+			conf.VLM.APIKey = provider.ApiKey
+			conf.VLM.Provider = mapClientTypeToOVProvider(provider.ClientType)
+			conf.VLM.Model = selected.ModelID
+			h.logger.Info("ov.conf: VLM from system",
+				slog.String("model", selected.ModelID),
+				slog.String("provider", provider.Name))
+		}
+	}
+
+	return conf
 }
 
 func (h *PromptsHandler) requireChannelIdentityID(c echo.Context) (string, error) {

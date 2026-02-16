@@ -4,7 +4,9 @@ level = "info"
 format = "text"
 
 [server]
-addr = "server:8080"
+addr = "0.0.0.0:8080"
+# Docker service name for inter-container communication
+public_addr = "memoh-server:8080"
 
 ## Admin
 [admin]
@@ -46,9 +48,8 @@ timeout_seconds = 10
 
 ## Agent Gateway
 [agent_gateway]
-host = "agent"
+host = "0.0.0.0"
 port = 8081
-server_addr = "server:8080"
 
 ## Web
 [web]

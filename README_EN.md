@@ -106,6 +106,85 @@ Visit http://localhost:8082. Default login: `admin` / `admin123`
 
 **Summary: Memoh-v2 wins 26 · OpenClaw wins 8 · Tied 8**
 
+## Installation & Upgrade
+
+### One-Click Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Kxiandaoyan/Memoh-v2/main/scripts/install.sh | sh
+```
+
+The install script will: detect Docker → detect previous installation (optional cleanup) → clone repo → generate config.toml → build and start all services.
+
+Supports interactive configuration for workspace, data directory, admin password, etc. Add `-y` for silent mode.
+
+### Upgrade (No Data Loss)
+
+```bash
+cd /path/to/Memoh-v2
+./scripts/upgrade.sh
+```
+
+Upgrade flow: auto-backup database → `git pull` latest code → rebuild Docker images → run database migrations → health check.
+
+All data (PostgreSQL, Qdrant, bot files) is stored in Docker named volumes and host directories. **Upgrades never lose data.**
+
+| Flag | Description |
+|------|-------------|
+| `--no-backup` | Skip pre-upgrade database backup |
+| `--no-pull` | Skip git pull (if code was updated manually) |
+| `-y` | Silent mode, skip all confirmation prompts |
+
+### Uninstall
+
+```bash
+./scripts/uninstall.sh
+```
+
+By default, uninstall removes containers, images, and data volumes. Add flags to preserve data:
+
+| Flag | Description |
+|------|-------------|
+| `--keep-data` | Keep Docker volumes (database, vector DB, bot data preserved) |
+| `--keep-images` | Keep built Docker images |
+| `-y` | Silent mode |
+
+A final database backup is automatically created in `backups/` before uninstalling.
+
+### Database Management
+
+```bash
+./scripts/db-up.sh      # Run database migrations (incremental, skips already applied)
+./scripts/db-drop.sh     # Rollback all tables (⚠️ destructive, requires confirmation)
+```
+
+### Migrate to a New Server
+
+1. Backup on the old server:
+```bash
+docker compose exec -T postgres pg_dump -U memoh memoh | gzip > memoh-backup.sql.gz
+```
+
+2. Copy to the new server and install Memoh-v2
+
+3. After starting services, import:
+```bash
+gunzip -c memoh-backup.sql.gz | docker compose exec -T postgres psql -U memoh memoh
+```
+
+Bot files (TOOLS.md, ov.conf, etc.) are in the host `data/bots/` directory — simply copy them over.
+
+### Script Reference
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/install.sh` | One-click install (fresh deployment) |
+| `scripts/upgrade.sh` | One-click upgrade (data preserved) |
+| `scripts/uninstall.sh` | Uninstall (optional data retention) |
+| `scripts/db-up.sh` | Database migration |
+| `scripts/db-drop.sh` | Database rollback |
+| `scripts/compile-mcp.sh` | Compile MCP binary and hot-reload into container |
+
 ## Tech Stack
 
 | Service | Stack | Port |

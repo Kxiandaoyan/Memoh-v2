@@ -8,7 +8,8 @@ export const loadConfig = (path: string = './config.toml'): Config => {
 }
 
 export const getBaseUrl = (config: Config) => {
-  const rawAddr = typeof config.server.addr === 'string' ? config.server.addr.trim() : ''
+  const publicAddr = typeof config.server.public_addr === 'string' ? config.server.public_addr.trim() : ''
+  const rawAddr = (publicAddr || (typeof config.server.addr === 'string' ? config.server.addr.trim() : ''))
 
   if (!rawAddr) {
     return 'http://127.0.0.1'
@@ -22,7 +23,10 @@ export const getBaseUrl = (config: Config) => {
     return `http://127.0.0.1${rawAddr}`
   }
 
-  return `http://${rawAddr}`
+  // Filter out 0.0.0.0 — it's a listen address, not routable
+  const normalized = rawAddr.replace(/^0\.0\.0\.0/, '127.0.0.1')
+
+  return `http://${normalized}`
 }
 
 export * from './types.ts'

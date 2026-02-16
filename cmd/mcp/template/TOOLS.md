@@ -224,8 +224,9 @@ OpenViking is a context database that manages memories, resources, and skills vi
 
 ### Configuration
 
-When OpenViking is enabled, a default `ov.conf` file is created at `/data/ov.conf`.
-You **must** edit this file (via the web UI's **Files** tab) to fill in your embedding and VLM API credentials before using OpenViking.
+When OpenViking is enabled, an `ov.conf` file is **auto-generated** at `/data/ov.conf`,
+pre-populated from your system's configured Models & Providers (embedding model → `embedding.dense`, multimodal chat model → `vlm`).
+In most cases, no manual editing is needed. If you want to override, edit via the web UI's **Files** tab.
 
 The config format (JSON with a `_README` help block):
 
