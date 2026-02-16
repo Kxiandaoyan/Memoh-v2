@@ -37,8 +37,9 @@ RUN apk add --no-cache python3 py3-pip && \
     ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
 
 # OpenViking context database (optional, enabled per-bot)
-# Needs Go + make temporarily to compile the AGFS server binary
-RUN apk add --no-cache --virtual .ov-build-deps go make && \
+# Needs build toolchain: Go+make for AGFS server, gcc/g++/cmake for pybind11 C++ extensions
+RUN apk add --no-cache --virtual .ov-build-deps \
+        go make gcc g++ musl-dev python3-dev cmake git && \
     pip install --break-system-packages openviking && \
     apk del .ov-build-deps
 
