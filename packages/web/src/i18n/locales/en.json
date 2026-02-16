@@ -110,7 +110,13 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "langZh": "中文",
-    "langEn": "English"
+    "langEn": "English",
+    "diagnostics": "System Diagnostics",
+    "runDiagnostics": "Run Diagnostics",
+    "diagHealthy": "All Systems Healthy",
+    "diagDegraded": "Partially Degraded",
+    "diagUnhealthy": "System Unhealthy",
+    "diagFailed": "Diagnostics failed"
   },
   "chat": {
     "greeting": "Hi! How can I help you today?",
@@ -151,7 +157,10 @@
     "displayNamePlaceholder": "Custom display name",
     "dimensions": "Dimensions",
     "dimensionsPlaceholder": "e.g. 1536",
-    "multimodal": "Multimodal"
+    "multimodal": "Multimodal",
+    "fallbackModel": "Fallback Model",
+    "fallbackModelPlaceholder": "Select fallback model (auto-switch on failure)",
+    "noFallback": "No fallback"
   },
   "provider": {
     "add": "Add Provider",

@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS models (
   is_multimodal BOOLEAN NOT NULL DEFAULT false,
   type TEXT NOT NULL DEFAULT 'chat',
   context_window INTEGER NOT NULL DEFAULT 128000,
+  fallback_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT models_model_id_unique UNIQUE (model_id),

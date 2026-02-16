@@ -140,6 +140,7 @@ func main() {
 			provideServerHandler(handlers.NewHeartbeatHandler),
 			provideServerHandler(handlers.NewSubagentHandler),
 			provideServerHandler(handlers.NewTokenUsageHandler),
+			provideServerHandler(handlers.NewDiagnosticsHandler),
 			provideServerHandler(handlers.NewChannelHandler),
 			provideServerHandler(provideUsersHandler),
 			provideServerHandler(handlers.NewMCPHandler),

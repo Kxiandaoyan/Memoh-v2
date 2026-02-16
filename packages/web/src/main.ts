@@ -48,6 +48,7 @@ import {
   faClock,
   faTerminal,
   faChartLine,
+  faStethoscope,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   faRectangleList,
@@ -89,6 +90,7 @@ library.add(
   faClock,
   faTerminal,
   faChartLine,
+  faStethoscope,
   faRectangleList,
   faTrashCan,
   faComments,

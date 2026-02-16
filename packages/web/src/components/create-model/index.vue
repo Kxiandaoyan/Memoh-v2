@@ -126,6 +126,43 @@
               </FormItem>
             </FormField>
 
+            <!-- Fallback Model (chat only) -->
+            <FormField
+              v-if="selectedType === 'chat'"
+              name="fallback_model_id"
+            >
+              <FormItem>
+                <Label class="mb-2">
+                  {{ $t('models.fallbackModel') }}
+                  <span class="text-muted-foreground text-xs ml-1">({{ $t('common.optional') }})</span>
+                </Label>
+                <FormControl>
+                  <Select
+                    :model-value="form.values.fallback_model_id || ''"
+                    @update:model-value="(v: string) => form.setFieldValue('fallback_model_id', v === '__none__' ? '' : v)"
+                  >
+                    <SelectTrigger class="w-full">
+                      <SelectValue :placeholder="$t('models.fallbackModelPlaceholder')" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="__none__">
+                          {{ $t('models.noFallback') }}
+                        </SelectItem>
+                        <SelectItem
+                          v-for="m in availableFallbackModels"
+                          :key="m.model_id"
+                          :value="m.model_id"
+                        >
+                          {{ m.name || m.model_id }}
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
             <!-- Multimodal (chat only) -->
             <FormField
               v-if="selectedType === 'chat'"
@@ -194,7 +231,7 @@ import { inject, computed, watch, nextTick, type Ref, ref } from 'vue'
 import { toTypedSchema } from '@vee-validate/zod'
 import z from 'zod'
 import { useMutation, useQueryCache } from '@pinia/colada'
-import { postModels, putModelsModelByModelId } from '@memoh/sdk'
+import { postModels, putModelsModelByModelId, getModels } from '@memoh/sdk'
 import type { ModelsGetResponse } from '@memoh/sdk'
 
 const formSchema = toTypedSchema(z.object({
@@ -204,6 +241,7 @@ const formSchema = toTypedSchema(z.object({
   dimensions: z.coerce.number().min(1).optional(),
   is_multimodal: z.coerce.boolean().optional(),
   context_window: z.coerce.number().min(1).optional(),
+  fallback_model_id: z.string().optional(),
 }))
 
 const form = useForm({
@@ -232,10 +270,19 @@ const emptyValues = {
   dimensions: undefined as number | undefined,
   is_multimodal: undefined as boolean | undefined,
   context_window: 128000 as number | undefined,
+  fallback_model_id: '' as string | undefined,
 }
 
 // Display Name 自动跟随 Model ID，除非用户主动修改过
 const userEditedName = ref(false)
+
+// Available chat models for fallback selection
+const allChatModels = ref<Array<{ model_id: string; name: string }>>([])
+
+const availableFallbackModels = computed(() => {
+  const currentModelId = form.values.model_id || editInfo?.value?.model_id
+  return allChatModels.value.filter(m => m.model_id !== currentModelId)
+})
 
 watch(
   () => form.values.model_id,
@@ -309,6 +356,10 @@ async function addModel(e: Event) {
     if (type === 'chat') {
       payload.is_multimodal = is_multimodal ?? false
       payload.context_window = context_window || 128000
+      const fallback_model_id = form.values.fallback_model_id ?? (isEdit ? (fallback as any)?.fallback_model_id : '')
+      if (fallback_model_id) {
+        payload.fallback_model_id = fallback_model_id
+      }
     }
 
     if (isEdit) {
@@ -332,10 +383,16 @@ watch(open, async () => {
   // 等待 Dialog 内容和 FormField 组件挂载完成
   await nextTick()
 
+  // Load available chat models for fallback selection
+  getModels({ query: { type: 'chat' }, throwOnError: false }).then((res) => {
+    allChatModels.value = (res.data as any[]) || []
+  }).catch(() => {})
+
   if (editInfo?.value) {
     const { type, model_id, name, dimensions, is_multimodal } = editInfo.value
     const context_window = (editInfo.value as any).context_window || 128000
-    form.resetForm({ values: { type, model_id, name, dimensions, is_multimodal, context_window } })
+    const fallback_model_id = (editInfo.value as any).fallback_model_id || ''
+    form.resetForm({ values: { type, model_id, name, dimensions, is_multimodal, context_window, fallback_model_id } })
     // 编辑时，如果已有 name 且与 model_id 不同，视为用户自定义
     userEditedName.value = !!(name && name !== model_id)
   } else {

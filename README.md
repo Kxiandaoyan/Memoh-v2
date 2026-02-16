@@ -51,6 +51,8 @@ docker compose up -d
 | **Daily Notes** | 日志模板 + 心跳蒸馏为长期记忆 |
 | **跨 Bot 共享工作区** | `/shared` 目录挂载到所有容器，文件即协调 |
 | **Token 用量统计** | 每次回复显示消耗，Dashboard 曲线图对比各 Bot |
+| **模型故障切换** | 配置备用模型，主模型失败自动 Failover |
+| **系统诊断** | 一键检测 PostgreSQL、Qdrant、Gateway、Containerd 健康状态 |
 | **完整管理 UI** | Files、Skills、Subagents、Heartbeat、History 全部可视化 |
 
 ## 与 OpenClaw 全面对比（42 项）
@@ -99,10 +101,10 @@ docker compose up -d
 | 38 | 可视化画布 | 无 | Canvas + A2UI 交互式画布 | **O** |
 | 39 | Companion Apps | 无 | macOS + iOS + Android 原生应用 | **O** |
 | 40 | Webhook / 邮件集成 | 无 | Webhook + Gmail Pub/Sub | **O** |
-| 41 | 模型故障切换 | 无 | Model Failover 自动切换 | **O** |
-| 42 | 诊断工具 | 无 | openclaw doctor 安全审计 + 诊断 | **O** |
+| 41 | 模型故障切换 | 备用模型自动 Failover（sync + stream） | Model Failover 自动切换 | **=** |
+| 42 | 诊断工具 | 系统诊断面板（PG/Qdrant/Gateway/Containerd/磁盘） | openclaw doctor 安全审计 + 诊断 | **=** |
 
-**汇总：Memoh-v2 胜 26 项 · OpenClaw 胜 10 项 · 持平 6 项**
+**汇总：Memoh-v2 胜 26 项 · OpenClaw 胜 8 项 · 持平 8 项**
 
 ## 技术栈
 

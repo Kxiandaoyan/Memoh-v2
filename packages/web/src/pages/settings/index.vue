@@ -298,6 +298,66 @@
         </div>
       </section>
 
+      <!-- System Diagnostics -->
+      <section>
+        <h6 class="mb-2 flex items-center">
+          <FontAwesomeIcon
+            :icon="['fas', 'stethoscope']"
+            class="mr-2"
+          />
+          {{ $t('settings.diagnostics') }}
+        </h6>
+        <Separator />
+        <div class="mt-4 space-y-4">
+          <div class="flex items-center gap-3">
+            <Button
+              :disabled="runningDiagnostics"
+              @click="onRunDiagnostics"
+            >
+              <Spinner v-if="runningDiagnostics" />
+              {{ $t('settings.runDiagnostics') }}
+            </Button>
+            <span
+              v-if="diagnosticsResult"
+              class="text-sm font-medium"
+              :class="{
+                'text-green-600': diagnosticsResult.overall === 'healthy',
+                'text-yellow-600': diagnosticsResult.overall === 'degraded',
+                'text-red-600': diagnosticsResult.overall === 'unhealthy',
+              }"
+            >
+              {{ diagnosticsResult.overall === 'healthy' ? $t('settings.diagHealthy') : diagnosticsResult.overall === 'degraded' ? $t('settings.diagDegraded') : $t('settings.diagUnhealthy') }}
+            </span>
+          </div>
+          <div
+            v-if="diagnosticsResult"
+            class="space-y-2"
+          >
+            <div
+              v-for="check in diagnosticsResult.checks"
+              :key="check.name"
+              class="flex items-center justify-between border rounded-md p-3"
+            >
+              <div class="flex items-center gap-2">
+                <div
+                  class="size-2.5 rounded-full shrink-0"
+                  :class="{
+                    'bg-green-500': check.status === 'ok',
+                    'bg-yellow-500': check.status === 'warn',
+                    'bg-red-500': check.status === 'error',
+                  }"
+                />
+                <span class="font-medium text-sm">{{ check.name }}</span>
+              </div>
+              <div class="flex items-center gap-3 text-sm text-muted-foreground">
+                <span class="truncate max-w-xs">{{ check.message }}</span>
+                <span class="text-xs whitespace-nowrap">{{ check.latency_ms }}ms</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Logout -->
       <section>
         <Separator class="mb-4" />
@@ -405,6 +465,35 @@ const bindForm = reactive({
   platform: '',
   ttlSeconds: 3600,
 })
+
+// Diagnostics
+interface DiagnosticCheck {
+  name: string
+  status: 'ok' | 'warn' | 'error'
+  message: string
+  latency_ms: number
+}
+
+interface DiagnosticsResult {
+  checks: DiagnosticCheck[]
+  overall: 'healthy' | 'degraded' | 'unhealthy'
+  timestamp: string
+}
+
+const runningDiagnostics = ref(false)
+const diagnosticsResult = ref<DiagnosticsResult | null>(null)
+
+async function onRunDiagnostics() {
+  runningDiagnostics.value = true
+  try {
+    const { data } = await client.get({ url: '/diagnostics', throwOnError: true }) as { data: DiagnosticsResult }
+    diagnosticsResult.value = data
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, t('settings.diagFailed')))
+  } finally {
+    runningDiagnostics.value = false
+  }
+}
 
 const displayUserID = computed(() => account.value?.id || userInfo.id || '')
 const displayUsername = computed(() => account.value?.username || userInfo.username || '')

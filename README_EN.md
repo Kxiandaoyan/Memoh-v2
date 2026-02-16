@@ -51,6 +51,8 @@ Visit http://localhost:8082. Default login: `admin` / `admin123`
 | **Daily Notes** | Log template + heartbeat distillation into long-term memory |
 | **Cross-Bot Shared Workspace** | `/shared` directory mounted in all containers — files as coordination |
 | **Token Usage Tracking** | Per-response token display + Dashboard with comparison charts |
+| **Model Failover** | Configure fallback model, auto-switch on primary model failure |
+| **System Diagnostics** | One-click health check for PostgreSQL, Qdrant, Gateway, Containerd |
 | **Full Management UI** | Files, Skills, Subagents, Heartbeat, History — all visualized |
 
 ## Comprehensive Comparison with OpenClaw (42 Items)
@@ -99,10 +101,10 @@ Visit http://localhost:8082. Default login: `admin` / `admin123`
 | 38 | Visual Canvas | None | Canvas + A2UI interactive workspace | **O** |
 | 39 | Companion Apps | None | macOS + iOS + Android native apps | **O** |
 | 40 | Webhook / Email Integration | None | Webhook + Gmail Pub/Sub | **O** |
-| 41 | Model Failover | None | Automatic model failover switching | **O** |
-| 42 | Diagnostics | None | openclaw doctor security audit + diagnostics | **O** |
+| 41 | Model Failover | Fallback model auto-failover (sync + stream) | Automatic model failover switching | **=** |
+| 42 | Diagnostics | System diagnostics panel (PG/Qdrant/Gateway/Containerd/Disk) | openclaw doctor security audit + diagnostics | **=** |
 
-**Summary: Memoh-v2 wins 26 · OpenClaw wins 10 · Tied 6**
+**Summary: Memoh-v2 wins 26 · OpenClaw wins 8 · Tied 8**
 
 ## Tech Stack
 

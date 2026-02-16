@@ -345,7 +345,20 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 	}
 	resp, err := r.postChat(ctx, rc.payload, req.Token)
 	if err != nil {
-		return conversation.ChatResponse{}, err
+		// Attempt failover if primary model fails
+		if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
+			r.logger.Warn("primary model failed, using fallback",
+				slog.String("primary", rc.model.ModelID),
+				slog.String("fallback", fbCtx.model.ModelID),
+				slog.Any("primary_error", err))
+			resp, err = r.postChat(ctx, fbCtx.payload, req.Token)
+			if err == nil {
+				rc = fbCtx
+			}
+		}
+		if err != nil {
+			return conversation.ChatResponse{}, err
+		}
 	}
 	if err := r.storeRound(ctx, req, resp.Messages); err != nil {
 		return conversation.ChatResponse{}, err
@@ -492,12 +505,28 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			streamReq.UserMessagePersisted = true
 		}
 		if err := r.streamChat(ctx, rc.payload, streamReq, chunkCh, rc.model.ModelID); err != nil {
-			r.logger.Error("gateway stream request failed",
-				slog.String("bot_id", streamReq.BotID),
-				slog.String("chat_id", streamReq.ChatID),
-				slog.Any("error", err),
-			)
-			errCh <- err
+			// Attempt failover if primary model stream fails
+			if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
+				r.logger.Warn("primary model stream failed, using fallback",
+					slog.String("primary", rc.model.ModelID),
+					slog.String("fallback", fbCtx.model.ModelID),
+					slog.Any("primary_error", err))
+				if retryErr := r.streamChat(ctx, fbCtx.payload, streamReq, chunkCh, fbCtx.model.ModelID); retryErr != nil {
+					r.logger.Error("gateway stream fallback also failed",
+						slog.String("bot_id", streamReq.BotID),
+						slog.String("chat_id", streamReq.ChatID),
+						slog.Any("error", retryErr),
+					)
+					errCh <- retryErr
+				}
+			} else {
+				r.logger.Error("gateway stream request failed",
+					slog.String("bot_id", streamReq.BotID),
+					slog.String("chat_id", streamReq.ChatID),
+					slog.Any("error", err),
+				)
+				errCh <- err
+			}
 		}
 	}()
 	return chunkCh, errCh
@@ -1095,6 +1124,36 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 			slog.Any("error", err),
 		)
 	}
+}
+
+// --- model failover ---
+
+// tryFallback attempts to build a resolvedContext using the fallback model.
+func (r *Resolver) tryFallback(ctx context.Context, primary resolvedContext) (resolvedContext, error) {
+	if primary.model.FallbackModelID == "" {
+		return resolvedContext{}, fmt.Errorf("no fallback model configured")
+	}
+	fbModel, err := r.modelsService.GetByID(ctx, primary.model.FallbackModelID)
+	if err != nil {
+		return resolvedContext{}, fmt.Errorf("failed to load fallback model: %w", err)
+	}
+	fbProvider, err := models.FetchProviderByID(ctx, r.queries, fbModel.LlmProviderID)
+	if err != nil {
+		return resolvedContext{}, fmt.Errorf("failed to load fallback provider: %w", err)
+	}
+	clientType, err := normalizeClientType(fbProvider.ClientType)
+	if err != nil {
+		return resolvedContext{}, err
+	}
+	fbPayload := primary.payload
+	fbPayload.Model = gatewayModelConfig{
+		ModelID:    fbModel.ModelID,
+		ClientType: clientType,
+		Input:      fbModel.Input,
+		APIKey:     fbProvider.ApiKey,
+		BaseURL:    fbProvider.BaseUrl,
+	}
+	return resolvedContext{payload: fbPayload, model: fbModel, provider: fbProvider}, nil
 }
 
 // --- model selection ---

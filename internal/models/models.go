@@ -62,6 +62,14 @@ func (s *Service) Create(ctx context.Context, req AddRequest) (AddResponse, erro
 		params.Dimensions = pgtype.Int4{Int32: int32(model.Dimensions), Valid: true}
 	}
 
+	if model.FallbackModelID != "" {
+		fbUUID, err := db.ParseUUID(model.FallbackModelID)
+		if err != nil {
+			return AddResponse{}, fmt.Errorf("invalid fallback model ID: %w", err)
+		}
+		params.FallbackModelID = pgtype.UUID{Bytes: fbUUID.Bytes, Valid: true}
+	}
+
 	created, err := s.queries.CreateModel(ctx, params)
 	if err != nil {
 		return AddResponse{}, fmt.Errorf("failed to create model: %w", err)
@@ -226,6 +234,14 @@ func (s *Service) UpdateByID(ctx context.Context, id string, req UpdateRequest) 
 		params.Dimensions = pgtype.Int4{Int32: int32(model.Dimensions), Valid: true}
 	}
 
+	if model.FallbackModelID != "" {
+		fbUUID, err := db.ParseUUID(model.FallbackModelID)
+		if err != nil {
+			return GetResponse{}, fmt.Errorf("invalid fallback model ID: %w", err)
+		}
+		params.FallbackModelID = pgtype.UUID{Bytes: fbUUID.Bytes, Valid: true}
+	}
+
 	updated, err := s.queries.UpdateModel(ctx, params)
 	if err != nil {
 		return GetResponse{}, fmt.Errorf("failed to update model: %w", err)
@@ -270,6 +286,14 @@ func (s *Service) UpdateByModelID(ctx context.Context, modelID string, req Updat
 
 	if model.Type == ModelTypeEmbedding && model.Dimensions > 0 {
 		params.Dimensions = pgtype.Int4{Int32: int32(model.Dimensions), Valid: true}
+	}
+
+	if model.FallbackModelID != "" {
+		fbUUID, err := db.ParseUUID(model.FallbackModelID)
+		if err != nil {
+			return GetResponse{}, fmt.Errorf("invalid fallback model ID: %w", err)
+		}
+		params.FallbackModelID = pgtype.UUID{Bytes: fbUUID.Bytes, Valid: true}
 	}
 
 	updated, err := s.queries.UpdateModelByModelID(ctx, params)
@@ -353,6 +377,10 @@ func convertToGetResponse(dbModel sqlc.Model) GetResponse {
 
 	if dbModel.Dimensions.Valid {
 		resp.Model.Dimensions = int(dbModel.Dimensions.Int32)
+	}
+
+	if dbModel.FallbackModelID.Valid {
+		resp.Model.FallbackModelID = dbModel.FallbackModelID.String()
 	}
 
 	return resp
