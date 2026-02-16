@@ -22,14 +22,6 @@ const routes = [
         },
       },
       {
-        name: 'home',
-        path: '/home',
-        component: () => import('@/pages/home/index.vue'),
-        meta: {
-          breadcrumb: i18nRef('home.title'),
-        },
-      },
-      {
         path: '/bots',
         component: { render: () => h(RouterView) },
         meta: {
@@ -89,14 +81,6 @@ const routes = [
         component: () => import('@/pages/settings/index.vue'),
         meta: {
           breadcrumb: i18nRef('sidebar.settings'),
-        },
-      },
-      {
-        name: 'platform',
-        path: '/platform',
-        component: () => import('@/pages/platform/index.vue'),
-        meta: {
-          breadcrumb: i18nRef('sidebar.platform'),
         },
       },
     ],

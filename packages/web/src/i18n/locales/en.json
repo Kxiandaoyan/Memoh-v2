@@ -55,9 +55,7 @@
     "models": "Models",
     "searchProvider": "Search Providers",
     "settings": "Settings",
-    "home": "Home",
     "mcp": "MCP",
-    "platform": "Platform",
     "schedules": "Schedules",
     "tokenUsage": "Token Usage"
   },
@@ -223,9 +221,6 @@
     "importSuccess": "MCP servers imported",
     "importFailed": "Failed to import MCP servers",
     "exportFailed": "Failed to export MCP servers"
-  },
-  "home": {
-    "title": "Home"
   },
   "bots": {
     "title": "Bots",

@@ -117,11 +117,6 @@ const curSelectSlide = (cur: string) => computed(() => {
 
 const sidebarInfo = computed(() => [
   {
-    title: t('sidebar.home'),
-    name: 'home',
-    icon: ['fas', 'building'],
-  },
-  {
     title: t('sidebar.chat'),
     name: 'chat',
     icon: ['fas', 'comment-dots'],
@@ -130,11 +125,6 @@ const sidebarInfo = computed(() => [
     title: t('sidebar.bots'),
     name: 'bots',
     icon: ['fas', 'robot'],
-  },
-  {
-    title: t('sidebar.platform'),
-    name: 'platform',
-    icon: ['fas', 'plug'],
   },
   {
     title: t('sidebar.schedules'),

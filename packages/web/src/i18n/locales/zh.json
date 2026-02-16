@@ -55,9 +55,7 @@
     "models": "模型管理",
     "searchProvider": "搜索提供方",
     "settings": "设置",
-    "home": "首页",
     "mcp": "MCP",
-    "platform": "接入平台",
     "schedules": "定时任务",
     "tokenUsage": "Token 用量"
   },
@@ -219,9 +217,6 @@
     "importSuccess": "MCP 服务器已导入",
     "importFailed": "导入 MCP 服务器失败",
     "exportFailed": "导出 MCP 服务器失败"
-  },
-  "home": {
-    "title": "首页"
   },
   "bots": {
     "title": "Bots",
