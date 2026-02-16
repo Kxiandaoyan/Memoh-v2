@@ -66,12 +66,16 @@ MEMOH_DATA_DIR="$MEMOH_DATA_DIR_DEFAULT"
 detect_previous_install() {
   PREV_INSTALL=""
   # Check default location
-  if [ -d "$WORKSPACE_DEFAULT/$DIR/docker-compose.yml" ] || [ -d "$WORKSPACE_DEFAULT/$DIR/.git" ]; then
+  if [ -f "$WORKSPACE_DEFAULT/$DIR/docker-compose.yml" ] || [ -d "$WORKSPACE_DEFAULT/$DIR/.git" ]; then
     PREV_INSTALL="$WORKSPACE_DEFAULT/$DIR"
   fi
-  # Check current directory
+  # Check current directory (only if not inside the default workspace)
   if [ -z "$PREV_INSTALL" ] && [ -f "./docker-compose.yml" ] && [ -d "./.git" ]; then
     PREV_INSTALL="$(pwd)"
+  fi
+  # Also check ~/Memoh-v2 directly (common clone location)
+  if [ -z "$PREV_INSTALL" ] && [ -f "${HOME:-/tmp}/$DIR/docker-compose.yml" ]; then
+    PREV_INSTALL="${HOME:-/tmp}/$DIR"
   fi
 }
 

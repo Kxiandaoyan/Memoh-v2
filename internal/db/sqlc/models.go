@@ -194,16 +194,17 @@ type McpConnection struct {
 }
 
 type Model struct {
-	ID            pgtype.UUID        `json:"id"`
-	ModelID       string             `json:"model_id"`
-	Name          pgtype.Text        `json:"name"`
-	LlmProviderID pgtype.UUID        `json:"llm_provider_id"`
-	Dimensions    pgtype.Int4        `json:"dimensions"`
-	IsMultimodal  bool               `json:"is_multimodal"`
-	Type          string             `json:"type"`
-	ContextWindow int32              `json:"context_window"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	ModelID         string             `json:"model_id"`
+	Name            pgtype.Text        `json:"name"`
+	LlmProviderID   pgtype.UUID        `json:"llm_provider_id"`
+	Dimensions      pgtype.Int4        `json:"dimensions"`
+	IsMultimodal    bool               `json:"is_multimodal"`
+	Type            string             `json:"type"`
+	ContextWindow   int32              `json:"context_window"`
+	FallbackModelID pgtype.UUID        `json:"fallback_model_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ModelVariant struct {
