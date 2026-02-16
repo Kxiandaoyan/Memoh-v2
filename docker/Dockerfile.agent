@@ -1,0 +1,38 @@
+FROM oven/bun:1 AS builder
+
+WORKDIR /build
+
+# Set up workspace structure so bun can resolve @memoh/config
+COPY agent/package.json agent/bun.lock* ./agent/
+COPY packages/config/package.json ./packages/config/package.json
+
+# Create root package.json with workspace config
+RUN echo '{"name":"@memoh/monorepo","private":true,"workspaces":["agent","packages/*"]}' > package.json
+
+RUN cd agent && bun install
+
+# Copy source files
+COPY packages/config/ ./packages/config/
+COPY agent/ ./agent/
+
+RUN cd agent && bun run build --external jsdom
+
+FROM oven/bun:1-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates wget
+
+COPY --from=builder /build/agent/dist /app/dist
+COPY --from=builder /build/agent/node_modules /app/node_modules
+COPY --from=builder /build/agent/package.json /app/package.json
+COPY --from=builder /build/node_modules /node_modules
+
+EXPOSE 8081
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8081/health \
+      || wget --no-verbose --tries=1 --spider http://agent:8081/health \
+      || exit 1
+
+CMD ["bun", "run", "dist/index.js"]

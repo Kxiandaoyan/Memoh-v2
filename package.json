@@ -1,0 +1,46 @@
+{
+  "name": "@memoh/monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "web:dev": "pnpm --filter @memoh/web dev",
+    "web:build": "pnpm --filter @memoh/web build",
+    "web:start": "pnpm --filter @memoh/web start",
+    "docs:dev": "pnpm --filter @memoh/docs dev",
+    "docs:build": "pnpm --filter @memoh/docs build",
+    "docs:preview": "pnpm --filter @memoh/docs preview",
+    "agent:dev": "go run ./agent-go/cmd/agent_gateway",
+    "agent:build": "go build ./agent-go/cmd/agent_gateway",
+    "agent:start": "go run ./agent-go/cmd/agent_gateway",
+    "release": "bumpp --all",
+    "generate-sdk": "openapi-ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.92.3",
+    "@types/node": "^25.0.3",
+    "bumpp": "^10.4.1",
+    "eslint": "^9.39.2",
+    "eslint-plugin-vue": "^10.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.52.0",
+    "vitest": "^4.0.16",
+    "vue-eslint-parser": "^10.2.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.8"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "@algolia/client-search"
+      ]
+    }
+  }
+}

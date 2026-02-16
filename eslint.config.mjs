@@ -1,0 +1,43 @@
+// @ts-check
+import vueParser from 'vue-eslint-parser'
+import tseslint from 'typescript-eslint'
+import vue from 'eslint-plugin-vue'
+
+export default [
+  ...tseslint.configs.recommended,
+  ...vue.configs['flat/recommended'],
+  { ignores: ['**/node_modules/**', '**/dist/**', 'packages/sdk/src/**'] },
+  {
+    files: ['packages/**/*.{js,jsx,ts,tsx}', 'agent/**/*.{js,jsx,ts,tsx}'],
+    languageOptions: {
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        projectService: true,
+      },
+    },
+    rules: {
+      quotes: ['error', 'single'],
+      semi: ['error', 'never'],
+    },
+  },
+  {
+    files: ['packages/**/*.vue', 'agent/**/*.vue'],
+    languageOptions: {
+      parser: vueParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        parser: {
+          js: 'espree',
+          ts: tseslint.parser,
+        },
+      },
+    },
+    rules: {
+      quotes: ['error', 'single'],
+      semi: ['error', 'never'],
+      'vue/multi-word-component-names': 'off',
+    },
+  },
+]

@@ -1,0 +1,7 @@
+[default.extend-words]
+
+[files]
+extend-exclude = [
+  "**/node_modules/**",
+
+]

@@ -1,0 +1,114 @@
+experimental_monorepo_root = true
+
+[tools]
+# Go version from go.mod
+go = "1.25.6"
+# Node.js for frontend packages
+node = "25"
+# Bun for agent gateway
+bun = "latest"
+# pnpm for workspace management
+pnpm = "10"
+# sqlc for sql management
+sqlc = "latest"
+# typos for spell check
+typos = "latest"
+# Lima for macOS
+lima = { version = "system", platform = "darwin" }
+
+[task_config]
+dir = "{{cwd}}"
+
+[settings]
+experimental = true
+
+[tasks.pnpm-install]
+description = "Install dependencies"
+run = "pnpm install"
+
+[tasks.go-install]
+description = "Install Go dependencies"
+run = "go mod download"
+
+[tasks.lima-up]
+run = "scripts/lima-up.sh"
+
+[tasks.lima-down]
+run = """
+if [ "$(uname -s)" = "Darwin" ]; then
+  limactl stop default
+fi
+"""
+
+[tasks.swagger-generate]
+description = "Generate Swagger documentation"
+run = "cd internal/handlers && go generate"
+
+[tasks.sdk-generate]
+description = "Generate SDK code"
+run = "pnpm run generate-sdk"
+depends = ["//:swagger-generate"]
+
+[tasks.sqlc-generate]
+description = "Generate SQL code"
+run = "sqlc generate"
+
+[tasks.db-up]
+description = "Initialize and Migrate Database"
+run = "scripts/db-up.sh"
+
+[tasks.db-down]
+description = "Drop Database"
+run = "scripts/db-drop.sh"
+
+[tasks.upgrade]
+description = "Upgrade existing Docker deployment to latest version"
+run = "scripts/upgrade.sh"
+
+[tasks.uninstall]
+description = "Uninstall Memoh (stop containers, remove volumes/images)"
+run = "scripts/uninstall.sh"
+
+[tasks.release]
+description = "Release new version"
+run = "pnpm release"
+
+[tasks.install-cli]
+description = "Install CLI"
+depends = ["//:pnpm-install"]
+run = "cd packages/cli && npm install -g"
+
+[tasks.build-cli]
+description = "Build Go CLI binary and install to local bin"
+run = """
+mkdir -p ~/.local/bin
+go build -trimpath -ldflags "-s -w" -o ~/.local/bin/memoh-cli ./cmd/cli
+chmod +x ~/.local/bin/memoh-cli
+echo "✓ CLI binary installed to ~/.local/bin/memoh-cli"
+"""
+
+[tasks.compile-mcp]
+description = "Build MCP binary into /app and signal container"
+run = "scripts/compile-mcp.sh"
+
+[tasks.dev]
+description = "Start development environment"
+depends = [
+  "//:swagger-generate",
+  "//:sdk-generate",
+  "//agent:dev",
+  "//cmd/agent:start",
+  "//packages/web:dev",
+]
+
+[tasks.setup]
+description = "Setup development environment"
+depends = [
+  "//:sqlc-generate",
+  "//:db-up",
+  "//:pnpm-install",
+  "//:go-install",
+  "//:install-cli",
+]
+run = "echo '✓ Setup complete! Next: Copy config.toml.example to config.toml and configure, then run: mise run dev'"
+

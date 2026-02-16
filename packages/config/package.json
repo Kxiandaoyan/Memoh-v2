@@ -1,0 +1,17 @@
+{
+  "name": "@memoh/config",
+  "version": "0.0.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "packageManager": "pnpm@10.27.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "toml": "^3.0.0"
+  }
+}

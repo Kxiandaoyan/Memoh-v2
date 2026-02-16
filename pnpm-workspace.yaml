@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+  - 'docs'
+  - 'agent'
+
+onlyBuiltDependencies:
+  - sqlite3

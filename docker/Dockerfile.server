@@ -1,0 +1,91 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /build
+
+RUN apk add --no-cache git make
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+
+ARG VERSION=dev
+ARG COMMIT_HASH=unknown
+ARG BUILD_TIME=unknown
+
+ARG TARGETOS
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -eux; \
+    build_os="${TARGETOS:-linux}"; \
+    build_arch="${TARGETARCH:-$(uname -m)}"; \
+    case "$build_arch" in \
+      x86_64) build_arch="amd64" ;; \
+      aarch64) build_arch="arm64" ;; \
+    esac; \
+    case "$build_arch" in \
+      amd64|arm64) ;; \
+      *) echo "unsupported TARGETARCH: $build_arch (only amd64/arm64)"; exit 1 ;; \
+    esac; \
+    CGO_ENABLED=0 GOOS="$build_os" GOARCH="$build_arch" \
+    go build -trimpath \
+    -ldflags "-s -w \
+      -X github.com/Kxiandaoyan/Memoh-v2/internal/version.Version=${VERSION} \
+      -X github.com/Kxiandaoyan/Memoh-v2/internal/version.CommitHash=${COMMIT_HASH} \
+      -X github.com/Kxiandaoyan/Memoh-v2/internal/version.BuildTime=${BUILD_TIME}" \
+    -o memoh-server ./cmd/agent/main.go
+
+FROM alpine:latest
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates tzdata wget nerdctl cni-plugins iptables \
+    && mkdir -p /opt/cni/bin \
+    && (cp -a /usr/lib/cni/. /opt/cni/bin/ 2>/dev/null || true) \
+    && (cp -a /usr/libexec/cni/. /opt/cni/bin/ 2>/dev/null || true) \
+    && mkdir -p /etc/cni/net.d /var/lib/cni \
+    && printf '%s\n' \
+      '{' \
+      '  "cniVersion": "1.0.0",' \
+      '  "name": "memoh-cni",' \
+      '  "plugins": [' \
+      '    {' \
+      '      "type": "bridge",' \
+      '      "bridge": "cni0",' \
+      '      "isGateway": true,' \
+      '      "ipMasq": true,' \
+      '      "promiscMode": true,' \
+      '      "ipam": {' \
+      '        "type": "host-local",' \
+      '        "ranges": [[' \
+      '          { "subnet": "10.88.0.0/16" }' \
+      '        ]],' \
+      '        "routes": [' \
+      '          { "dst": "0.0.0.0/0" }' \
+      '        ]' \
+      '      }' \
+      '    },' \
+      '    {' \
+      '      "type": "portmap",' \
+      '      "capabilities": { "portMappings": true }' \
+      '    }' \
+      '  ]' \
+      '}' > /etc/cni/net.d/10-memoh.conflist
+
+COPY --from=builder /build/memoh-server /app/memoh-server
+COPY --from=builder /build/spec /app/spec
+
+RUN mkdir -p /opt/memoh/data
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/health \
+      || wget --no-verbose --tries=1 --spider http://server:8080/health \
+      || exit 1
+
+CMD ["/app/memoh-server"]

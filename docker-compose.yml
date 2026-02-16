@@ -1,0 +1,141 @@
+name: "memoh"
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: memoh-postgres
+    environment:
+      POSTGRES_DB: memoh
+      POSTGRES_USER: memoh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memoh123}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      # Migrations run ONLY on first database initialization.
+      # For upgrades, use: scripts/upgrade.sh or run migrations manually.
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memoh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - memoh-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: memoh-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    expose:
+      - "6333"
+      - "6334"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - memoh-network
+
+  containerd:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.containerd
+    container_name: memoh-containerd
+    privileged: true
+    pid: host
+    volumes:
+      - containerd_sock:/run/containerd
+      - containerd_data:/var/lib/containerd
+      - memoh_data:/opt/memoh/data
+    restart: unless-stopped
+    networks:
+      - memoh-network
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+      args:
+        - VERSION=${MEMOH_VERSION:-dev}
+        - COMMIT_HASH=${MEMOH_COMMIT:-unknown}
+        - BUILD_TIME=${MEMOH_BUILD_TIME:-unknown}
+    container_name: memoh-server
+    pid: host
+    volumes:
+      - ${MEMOH_CONFIG:-./docker/config/config.docker.toml}:/app/config.toml:ro
+      - containerd_sock:/run/containerd
+      - containerd_data:/var/lib/containerd
+      - server_cni_state:/var/lib/cni
+      - memoh_data:/opt/memoh/data
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      containerd:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - memoh-network
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    container_name: memoh-agent
+    volumes:
+      - ${MEMOH_CONFIG:-./docker/config/config.docker.toml}:/config.toml:ro
+    ports:
+      - "8081:8081"
+    depends_on:
+      - server
+    restart: unless-stopped
+    networks:
+      - memoh-network
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        - VITE_API_URL=${VITE_API_URL:-/api}
+        - VITE_AGENT_URL=${VITE_AGENT_URL:-/agent}
+    container_name: memoh-web
+    ports:
+      - "8082:8082"
+    depends_on:
+      - server
+      - agent
+    restart: unless-stopped
+    networks:
+      - memoh-network
+
+volumes:
+  postgres_data:
+    driver: local
+  qdrant_data:
+    driver: local
+  containerd_sock:
+    driver: local
+  containerd_data:
+    driver: local
+  memoh_data:
+    driver: local
+  server_cni_state:
+    driver: local
+
+networks:
+  memoh-network:
+    driver: bridge
