@@ -534,11 +534,30 @@ func (s *QdrantStore) refreshCollectionSchema(ctx context.Context, vectors map[s
 			}
 		}
 		if len(vectors) > 0 {
+			missing := map[string]*qdrant.VectorParams{}
 			for name, dim := range vectors {
 				if existing, ok := s.vectorNames[name]; ok && existing == dim {
 					continue
 				}
-				return fmt.Errorf("collection missing vector %s (dim %d); migration required", name, dim)
+				missing[name] = &qdrant.VectorParams{
+					Size:     uint64(dim),
+					Distance: qdrant.Distance_Cosine,
+				}
+			}
+			if len(missing) > 0 {
+				slog.Info("qdrant: adding missing named vectors to collection",
+					slog.String("collection", s.collection),
+					slog.Int("count", len(missing)),
+				)
+				if err := s.client.UpdateCollection(ctx, &qdrant.UpdateCollection{
+					CollectionName: s.collection,
+					VectorsConfig:  qdrant.NewVectorsConfigMap(missing),
+				}); err != nil {
+					return fmt.Errorf("qdrant named vectors update: %w", err)
+				}
+				for name, p := range missing {
+					s.vectorNames[name] = int(p.GetSize())
+				}
 			}
 		}
 	} else {
