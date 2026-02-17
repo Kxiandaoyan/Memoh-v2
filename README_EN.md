@@ -121,8 +121,15 @@ Supports interactive configuration for workspace, data directory, admin password
 ### Upgrade (No Data Loss)
 
 ```bash
-cd /path/to/Memoh-v2
-./scripts/upgrade.sh
+curl -fsSL https://raw.githubusercontent.com/Kxiandaoyan/Memoh-v2/main/scripts/upgrade.sh | sh
+```
+
+The script automatically locates the Memoh project directory (current dir, `./Memoh-v2/`, `~/memoh/Memoh-v2/`) — no manual `cd` required.
+
+Or run directly from the project directory:
+
+```bash
+cd ~/memoh/Memoh-v2 && ./scripts/upgrade.sh
 ```
 
 Upgrade flow: auto-backup database → `git pull` latest code → rebuild Docker images → run database migrations → health check.
@@ -135,10 +142,18 @@ All data (PostgreSQL, Qdrant, bot files) is stored in Docker named volumes and h
 | `--no-pull` | Skip git pull (if code was updated manually) |
 | `-y` | Silent mode, skip all confirmation prompts |
 
+> Passing flags: `curl -fsSL ... | sh -s -- --no-backup -y`
+
 ### Uninstall
 
 ```bash
-./scripts/uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/Kxiandaoyan/Memoh-v2/main/scripts/uninstall.sh | sh
+```
+
+Or run directly from the project directory:
+
+```bash
+cd ~/memoh/Memoh-v2 && ./scripts/uninstall.sh
 ```
 
 By default, uninstall removes containers, images, and data volumes. Add flags to preserve data:
@@ -148,6 +163,8 @@ By default, uninstall removes containers, images, and data volumes. Add flags to
 | `--keep-data` | Keep Docker volumes (database, vector DB, bot data preserved) |
 | `--keep-images` | Keep built Docker images |
 | `-y` | Silent mode |
+
+> Passing flags: `curl -fsSL ... | sh -s -- --keep-data`
 
 A final database backup is automatically created in `backups/` before uninstalling.
 

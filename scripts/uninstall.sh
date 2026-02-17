@@ -28,15 +28,52 @@ if [ "$SILENT" = false ] && ! [ -e /dev/tty ]; then
 fi
 
 # ── Locate project root ──────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$PROJECT_ROOT"
+# Works for both ./scripts/uninstall.sh and curl ... | sh
+find_project_root() {
+  # 1) Try $0-based detection (works when script is run directly)
+  if [ -f "$0" ]; then
+    local dir
+    dir="$(cd "$(dirname "$0")" && pwd)"
+    if [ -f "$dir/../docker-compose.yml" ]; then
+      echo "$(cd "$dir/.." && pwd)"
+      return
+    fi
+  fi
+  # 2) Current directory
+  if [ -f "./docker-compose.yml" ] && [ -d "./.git" ]; then
+    pwd; return
+  fi
+  # 3) Memoh-v2 subdirectory under current dir
+  if [ -f "./Memoh-v2/docker-compose.yml" ]; then
+    echo "$(cd ./Memoh-v2 && pwd)"; return
+  fi
+  # 4) Default install location ~/memoh/Memoh-v2
+  local default_loc="${HOME:-/tmp}/memoh/Memoh-v2"
+  if [ -f "$default_loc/docker-compose.yml" ]; then
+    echo "$default_loc"; return
+  fi
+  # 5) ~/Memoh-v2
+  if [ -f "${HOME:-/tmp}/Memoh-v2/docker-compose.yml" ]; then
+    echo "${HOME:-/tmp}/Memoh-v2"; return
+  fi
+  return 1
+}
 
-if [ ! -f "docker-compose.yml" ]; then
-  echo "${RED}Error: docker-compose.yml not found in ${PROJECT_ROOT}${NC}"
-  echo "Please run this script from the Memoh project root."
+PROJECT_ROOT="$(find_project_root)" || {
+  echo "${RED}Error: Cannot find Memoh project directory.${NC}"
+  echo ""
+  echo "Looked in:"
+  echo "  • Current directory ($(pwd))"
+  echo "  • $(pwd)/Memoh-v2/"
+  echo "  • ${HOME:-/tmp}/memoh/Memoh-v2/"
+  echo "  • ${HOME:-/tmp}/Memoh-v2/"
+  echo ""
+  echo "Please cd into the Memoh project root first, then re-run."
   exit 1
-fi
+}
+
+cd "$PROJECT_ROOT"
+echo "  Project root: ${CYAN}${PROJECT_ROOT}${NC}"
 
 echo "${RED}========================================${NC}"
 echo "${RED}   Memoh Uninstall${NC}"

@@ -121,8 +121,15 @@ curl -fsSL https://raw.githubusercontent.com/Kxiandaoyan/Memoh-v2/main/scripts/i
 ### 升级（不丢数据）
 
 ```bash
-cd /path/to/Memoh-v2
-./scripts/upgrade.sh
+curl -fsSL https://raw.githubusercontent.com/Kxiandaoyan/Memoh-v2/main/scripts/upgrade.sh | sh
+```
+
+脚本会自动查找 Memoh 项目目录（当前目录、`./Memoh-v2/`、`~/memoh/Memoh-v2/`），无需手动 `cd`。
+
+也可以在项目目录下直接执行：
+
+```bash
+cd ~/memoh/Memoh-v2 && ./scripts/upgrade.sh
 ```
 
 升级流程：自动备份数据库 → `git pull` 拉取最新代码 → 重建 Docker 镜像 → 执行数据库迁移 → 健康检查。
@@ -135,10 +142,18 @@ cd /path/to/Memoh-v2
 | `--no-pull` | 跳过 git pull（已手动更新代码时） |
 | `-y` | 静默模式，跳过所有确认提示 |
 
+> 传参示例：`curl -fsSL ... | sh -s -- --no-backup -y`
+
 ### 卸载
 
 ```bash
-./scripts/uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/Kxiandaoyan/Memoh-v2/main/scripts/uninstall.sh | sh
+```
+
+或在项目目录下直接执行：
+
+```bash
+cd ~/memoh/Memoh-v2 && ./scripts/uninstall.sh
 ```
 
 默认卸载会删除容器、镜像和数据卷。可加参数保留数据：
@@ -148,6 +163,8 @@ cd /path/to/Memoh-v2
 | `--keep-data` | 保留 Docker volumes（数据库、向量库、Bot 数据不删） |
 | `--keep-images` | 保留已构建的 Docker 镜像 |
 | `-y` | 静默模式 |
+
+> 传参示例：`curl -fsSL ... | sh -s -- --keep-data`
 
 卸载前会自动创建数据库最终备份到 `backups/` 目录。
 
