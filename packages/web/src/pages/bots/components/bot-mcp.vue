@@ -1,12 +1,58 @@
 <template>
   <div class="max-w-4xl mx-auto space-y-5">
+    <!-- Built-in tools -->
+    <div class="rounded-lg border bg-card">
+      <button
+        class="flex w-full items-center justify-between px-4 py-3 text-left"
+        @click="builtinExpanded = !builtinExpanded"
+      >
+        <div class="space-y-0.5">
+          <h3 class="text-sm font-semibold">
+            {{ $t('mcp.builtinTitle') }}
+          </h3>
+          <p class="text-xs text-muted-foreground">
+            {{ $t('mcp.builtinDescription', { count: builtinTools.length }) }}
+          </p>
+        </div>
+        <svg
+          class="size-4 shrink-0 text-muted-foreground transition-transform duration-200"
+          :class="{ 'rotate-180': builtinExpanded }"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      <div
+        v-if="builtinExpanded"
+        class="border-t px-4 py-3"
+      >
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-for="tool in builtinTools"
+            :key="tool.name"
+            class="flex items-start gap-2 rounded-md border px-3 py-2"
+          >
+            <span class="mt-0.5 text-xs font-mono font-medium text-primary whitespace-nowrap">{{ tool.name }}</span>
+            <span class="text-xs text-muted-foreground leading-relaxed">{{ tool.desc }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- External MCP connections -->
     <div class="flex items-start justify-between gap-3">
       <div class="space-y-1 min-w-0">
         <h3 class="text-lg font-semibold">
-          {{ $t('mcp.addTitle') }}
+          {{ $t('mcp.externalTitle') }}
         </h3>
         <p class="text-sm text-muted-foreground">
-          {{ $t('mcp.addDescription') }}
+          {{ $t('mcp.externalDescription') }}
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2 shrink-0 justify-end">
@@ -606,6 +652,25 @@ interface McpServerEntry {
 
 const props = defineProps<{ botId: string }>()
 const { t } = useI18n()
+
+const builtinExpanded = ref(false)
+const builtinTools = computed(() => [
+  { name: 'read', desc: t('mcp.builtin.read') },
+  { name: 'write', desc: t('mcp.builtin.write') },
+  { name: 'list', desc: t('mcp.builtin.list') },
+  { name: 'edit', desc: t('mcp.builtin.edit') },
+  { name: 'exec', desc: t('mcp.builtin.exec') },
+  { name: 'send', desc: t('mcp.builtin.send') },
+  { name: 'react', desc: t('mcp.builtin.react') },
+  { name: 'lookup_channel_user', desc: t('mcp.builtin.lookupChannelUser') },
+  { name: 'search_memory', desc: t('mcp.builtin.searchMemory') },
+  { name: 'web_search', desc: t('mcp.builtin.webSearch') },
+  { name: 'list_schedule', desc: t('mcp.builtin.listSchedule') },
+  { name: 'get_schedule', desc: t('mcp.builtin.getSchedule') },
+  { name: 'create_schedule', desc: t('mcp.builtin.createSchedule') },
+  { name: 'update_schedule', desc: t('mcp.builtin.updateSchedule') },
+  { name: 'delete_schedule', desc: t('mcp.builtin.deleteSchedule') },
+])
 
 const loading = ref(false)
 const items = ref<McpItem[]>([])
