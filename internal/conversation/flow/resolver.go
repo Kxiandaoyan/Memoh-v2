@@ -891,6 +891,8 @@ func (r *Resolver) persistUserMessage(ctx context.Context, req conversation.Chat
 }
 
 func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest, messages []conversation.ModelMessage) error {
+	// Sanitize before storing so non-standard items (e.g. item_reference) are never persisted.
+	messages = sanitizeMessages(messages)
 	// Add user query as the first message if not already present in the round.
 	// This ensures the user's prompt is persisted alongside the assistant's response.
 	fullRound := make([]conversation.ModelMessage, 0, len(messages)+1)
@@ -1258,9 +1260,17 @@ func normalizeClientType(clientType string) (string, error) {
 }
 
 func sanitizeMessages(messages []conversation.ModelMessage) []conversation.ModelMessage {
+	supportedRoles := map[string]bool{
+		"user": true, "assistant": true, "system": true, "tool": true,
+	}
 	cleaned := make([]conversation.ModelMessage, 0, len(messages))
 	for _, msg := range messages {
-		if strings.TrimSpace(msg.Role) == "" {
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			continue
+		}
+		// Drop messages with non-standard roles (e.g. item_reference from OpenAI Responses API).
+		if !supportedRoles[role] {
 			continue
 		}
 		if !msg.HasContent() && strings.TrimSpace(msg.ToolCallID) == "" {

@@ -211,22 +211,34 @@ export const createAgent = (
   }
 
   const sanitizeMessages = (messages: ModelMessage[]): ModelMessage[] => {
+    const supportedRoles = new Set(['user', 'assistant', 'system', 'tool'])
     const supportedTypes = new Set(['text', 'image', 'file', 'tool-call', 'tool-result', 'reasoning'])
-    return messages.map((msg) => {
-      if (!Array.isArray(msg.content)) return msg
-      const original = msg.content as Array<Record<string, unknown>>
-      const filtered = original.filter((part) => {
-        if (!part || typeof part !== 'object') return true
-        const t = part.type
-        if (!t || typeof t !== 'string') return true
-        return supportedTypes.has(t)
+    return messages
+      .filter((msg) => {
+        // Drop messages with unsupported roles (e.g. item_reference from Responses API).
+        if (!msg || typeof msg !== 'object') return false
+        const role = (msg as Record<string, unknown>).role
+        if (typeof role !== 'string' || !supportedRoles.has(role)) return false
+        // Drop messages that have a non-standard "type" field at the top level.
+        const msgType = (msg as Record<string, unknown>).type
+        if (typeof msgType === 'string' && msgType !== '' && !supportedRoles.has(msgType)) return false
+        return true
       })
-      if (filtered.length === original.length) return msg
-      if (filtered.length === 0) {
-        return { ...msg, content: [{ type: 'text', text: '' }] } as ModelMessage
-      }
-      return { ...msg, content: filtered } as ModelMessage
-    })
+      .map((msg) => {
+        if (!Array.isArray(msg.content)) return msg
+        const original = msg.content as Array<Record<string, unknown>>
+        const filtered = original.filter((part) => {
+          if (!part || typeof part !== 'object') return true
+          const t = part.type
+          if (!t || typeof t !== 'string') return true
+          return supportedTypes.has(t)
+        })
+        if (filtered.length === original.length) return msg
+        if (filtered.length === 0) {
+          return { ...msg, content: [{ type: 'text', text: '' }] } as ModelMessage
+        }
+        return { ...msg, content: filtered } as ModelMessage
+      })
   }
 
   const ask = async (input: AgentInput) => {

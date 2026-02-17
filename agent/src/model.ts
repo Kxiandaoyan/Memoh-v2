@@ -15,11 +15,12 @@ export const createModel = (model: ModelConfig) => {
 
   switch (model.clientType) {
     case ClientType.OpenAI:
-      return createOpenAI({ apiKey, baseURL })(modelId)
     case ClientType.OpenAICompat:
     case ClientType.Ollama:
     case ClientType.Dashscope: {
-      // All OpenAI-compatible providers use .chat() for /chat/completions
+      // Force .chat() (Chat Completions API) for all OpenAI-based providers.
+      // The default auto-detect may use the Responses API which produces
+      // item_reference items that cause errors on subsequent turns.
       const provider = createOpenAI({ apiKey, baseURL })
       return provider.chat(modelId)
     }

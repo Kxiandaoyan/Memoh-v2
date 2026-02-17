@@ -3,6 +3,7 @@
     <!-- Chat Model -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.chatModel') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.chatModelHint') }}</p>
       <ModelSelect
         v-model="form.chat_model_id"
         :models="models"
@@ -15,6 +16,7 @@
     <!-- Memory Model -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.memoryModel') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.memoryModelHint') }}</p>
       <ModelSelect
         v-model="form.memory_model_id"
         :models="models"
@@ -27,6 +29,7 @@
     <!-- Embedding Model -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.embeddingModel') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.embeddingModelHint') }}</p>
       <ModelSelect
         v-model="form.embedding_model_id"
         :models="models"
@@ -39,6 +42,7 @@
     <!-- Search Provider -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.searchProvider') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.searchProviderHint') }}</p>
       <SearchProviderSelect
         v-model="form.search_provider_id"
         :providers="searchProviders"
@@ -51,6 +55,7 @@
     <!-- Max Context Load Time -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.maxContextLoadTime') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.maxContextLoadTimeHint') }}</p>
       <Input
         v-model.number="form.max_context_load_time"
         type="number"
@@ -61,6 +66,7 @@
     <!-- Language -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.language') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.languageHint') }}</p>
       <Input
         v-model="form.language"
         type="text"
@@ -113,7 +119,10 @@
     <!-- Allow Guest: only for public bot -->
     <template v-if="isPublicBot">
       <div class="flex items-center justify-between">
-        <Label>{{ $t('bots.settings.allowGuest') }}</Label>
+        <div class="space-y-0.5">
+          <Label>{{ $t('bots.settings.allowGuest') }}</Label>
+          <p class="text-sm text-muted-foreground">{{ $t('bots.settings.allowGuestHint') }}</p>
+        </div>
         <Switch
           :model-value="form.allow_guest"
           @update:model-value="(val) => form.allow_guest = !!val"

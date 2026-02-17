@@ -75,10 +75,16 @@
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="personal">
-                        {{ $t('bots.types.personal') }}
+                        <div>
+                          <div>{{ $t('bots.types.personal') }}</div>
+                          <p class="text-xs text-muted-foreground font-normal">{{ $t('bots.typePersonalHint') }}</p>
+                        </div>
                       </SelectItem>
                       <SelectItem value="public">
-                        {{ $t('bots.types.public') }}
+                        <div>
+                          <div>{{ $t('bots.types.public') }}</div>
+                          <p class="text-xs text-muted-foreground font-normal">{{ $t('bots.typePublicHint') }}</p>
+                        </div>
                       </SelectItem>
                     </SelectGroup>
                   </SelectContent>

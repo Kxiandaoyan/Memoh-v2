@@ -230,7 +230,7 @@ func (h *ContainerdHandler) CreateContainer(c echo.Context) error {
 		oci.WithProcessArgs("/bin/sh", "-lc", fmt.Sprintf("bootstrap(){ [ -e /app/mcp ] || { mkdir -p /app; [ -f /opt/mcp ] && cp -a /opt/mcp /app/mcp 2>/dev/null || true; }; if [ -d /opt/mcp-template ]; then mkdir -p %q; for f in /opt/mcp-template/*; do name=$(basename \"$f\"); [ -e %q/\"$name\" ] || cp -a \"$f\" %q/\"$name\" 2>/dev/null || true; done; fi; }; bootstrap; exec /app/mcp", dataMount, dataMount, dataMount)),
 	}
 
-	_, err = h.service.CreateContainer(ctx, ctr.CreateContainerRequest{
+	createReq := ctr.CreateContainerRequest{
 		ID:          containerID,
 		ImageRef:    image,
 		Snapshotter: snapshotter,
@@ -238,9 +238,21 @@ func (h *ContainerdHandler) CreateContainer(c echo.Context) error {
 			mcp.BotLabelKey: botID,
 		},
 		SpecOpts: specOpts,
-	})
-	if err != nil && !errdefs.IsAlreadyExists(err) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "snapshotter="+snapshotter+" image="+image+" err="+err.Error())
+	}
+	_, err = h.service.CreateContainer(ctx, createReq)
+	if err != nil {
+		if errdefs.IsAlreadyExists(err) {
+			// A stale container with the same ID may exist from a previous
+			// installation. Its snapshot may be gone. Clean it up and retry.
+			h.logger.Warn("stale container exists, cleaning up before create",
+				slog.String("container_id", containerID))
+			_ = h.service.DeleteContainer(ctx, containerID, &ctr.DeleteContainerOptions{CleanupSnapshot: true})
+			if _, retryErr := h.service.CreateContainer(ctx, createReq); retryErr != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "snapshotter="+snapshotter+" image="+image+" err="+retryErr.Error())
+			}
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "snapshotter="+snapshotter+" image="+image+" err="+err.Error())
+		}
 	}
 
 	if h.queries != nil {
@@ -347,6 +359,19 @@ func (h *ContainerdHandler) ensureContainerAndTask(ctx context.Context, containe
 		UseStdio: false,
 	})
 	if err != nil {
+		// The container metadata exists in containerd but the snapshot may be gone
+		// (e.g. after an upgrade that rebuilt the containerd data volume). In this
+		// case StartTask fails with "does not exist". We clean up the stale
+		// container and rebuild from scratch.
+		if errdefs.IsNotFound(err) || strings.Contains(err.Error(), "does not exist") {
+			h.logger.Warn("snapshot missing for container, cleaning up stale container and rebuilding",
+				slog.String("bot_id", botID),
+				slog.String("container_id", containerID),
+				slog.Any("error", err),
+			)
+			_ = h.service.DeleteContainer(ctx, containerID, &ctr.DeleteContainerOptions{CleanupSnapshot: false})
+			return h.SetupBotContainer(ctx, botID)
+		}
 		return err
 	}
 	if netErr := ctr.SetupNetwork(ctx, task, containerID); netErr != nil {
@@ -710,23 +735,28 @@ func (h *ContainerdHandler) DeleteSnapshot(c echo.Context) error {
 	if !strings.HasPrefix(snapshotName, containerID+"-") {
 		return echo.NewHTTPError(http.StatusForbidden, "snapshot does not belong to this bot")
 	}
+
+	// Determine the snapshotter. Try to get it from the container, fall back to config.
+	snapshotter := strings.TrimSpace(h.cfg.Snapshotter)
+	if snapshotter == "" {
+		snapshotter = "overlayfs"
+	}
 	container, err := h.service.GetContainer(ctx, containerID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, "container not found")
-	}
-	infoCtx := ctx
-	if strings.TrimSpace(h.namespace) != "" {
-		infoCtx = namespaces.WithNamespace(ctx, h.namespace)
-	}
-	info, err := container.Info(infoCtx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	if err := h.service.RemoveSnapshot(ctx, info.Snapshotter, snapshotName); err != nil {
-		if errdefs.IsNotFound(err) {
-			return echo.NewHTTPError(http.StatusNotFound, "snapshot not found")
+	if err == nil {
+		infoCtx := ctx
+		if strings.TrimSpace(h.namespace) != "" {
+			infoCtx = namespaces.WithNamespace(ctx, h.namespace)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		if info, infoErr := container.Info(infoCtx); infoErr == nil && info.Snapshotter != "" {
+			snapshotter = info.Snapshotter
+		}
+	}
+
+	if err := h.service.RemoveSnapshot(ctx, snapshotter, snapshotName); err != nil {
+		if !errdefs.IsNotFound(err) {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		// Snapshot already gone from containerd — still clean up DB record below.
 	}
 	if h.queries != nil {
 		_ = h.queries.DeleteSnapshot(ctx, snapshotName)
@@ -954,7 +984,7 @@ func (h *ContainerdHandler) SetupBotContainer(ctx context.Context, botID string)
 		oci.WithProcessArgs("/bin/sh", "-lc", fmt.Sprintf("bootstrap(){ [ -e /app/mcp ] || { mkdir -p /app; [ -f /opt/mcp ] && cp -a /opt/mcp /app/mcp 2>/dev/null || true; }; if [ -d /opt/mcp-template ]; then mkdir -p %q; for f in /opt/mcp-template/*; do name=$(basename \"$f\"); [ -e %q/\"$name\" ] || cp -a \"$f\" %q/\"$name\" 2>/dev/null || true; done; fi; }; bootstrap; exec /app/mcp", dataMount, dataMount, dataMount)),
 	}
 
-	_, err = h.service.CreateContainer(ctx, ctr.CreateContainerRequest{
+	setupReq := ctr.CreateContainerRequest{
 		ID:          containerID,
 		ImageRef:    image,
 		Snapshotter: snapshotter,
@@ -962,9 +992,20 @@ func (h *ContainerdHandler) SetupBotContainer(ctx context.Context, botID string)
 			mcp.BotLabelKey: botID,
 		},
 		SpecOpts: specOpts,
-	})
-	if err != nil && !errdefs.IsAlreadyExists(err) {
-		return err
+	}
+	_, err = h.service.CreateContainer(ctx, setupReq)
+	if err != nil {
+		if errdefs.IsAlreadyExists(err) {
+			// Stale container may linger from a previous run with a missing snapshot.
+			h.logger.Warn("setup: stale container exists, cleaning up before create",
+				slog.String("container_id", containerID))
+			_ = h.service.DeleteContainer(ctx, containerID, &ctr.DeleteContainerOptions{CleanupSnapshot: true})
+			if _, retryErr := h.service.CreateContainer(ctx, setupReq); retryErr != nil {
+				return retryErr
+			}
+		} else {
+			return err
+		}
 	}
 
 	if h.queries != nil {
@@ -1066,11 +1107,13 @@ func (h *ContainerdHandler) CleanupBotContainer(ctx context.Context, botID strin
 	if err := h.service.DeleteContainer(ctx, containerID, &ctr.DeleteContainerOptions{
 		CleanupSnapshot: true,
 	}); err != nil && !errdefs.IsNotFound(err) {
-		h.logger.Error("CleanupBotContainer: failed to delete container",
+		// The snapshot or container metadata may be partially missing (e.g. after
+		// an upgrade that recreated containerd state). Log the error but proceed
+		// to clean up the database record so the user can recreate.
+		h.logger.Warn("CleanupBotContainer: containerd delete failed, will still clean DB",
 			slog.String("container_id", containerID),
 			slog.Any("error", err),
 		)
-		return err
 	}
 
 	if h.queries != nil {

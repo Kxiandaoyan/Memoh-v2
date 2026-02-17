@@ -413,16 +413,26 @@ func (s *DefaultService) DeleteContainer(ctx context.Context, id string, opts *D
 		return err
 	}
 
-	deleteOpts := []containerd.DeleteOpts{}
 	cleanupSnapshot := true
 	if opts != nil {
 		cleanupSnapshot = opts.CleanupSnapshot
 	}
+
 	if cleanupSnapshot {
-		deleteOpts = append(deleteOpts, containerd.WithSnapshotCleanup)
+		if err := container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+			if errdefs.IsNotFound(err) || strings.Contains(err.Error(), "does not exist") {
+				// Snapshot is already gone (e.g. after an upgrade that recreated
+				// containerd state). Fall back to deleting just the container metadata.
+				s.logger.Warn("snapshot missing during container delete, removing metadata only",
+					slog.String("container_id", id), slog.Any("error", err))
+				return container.Delete(ctx)
+			}
+			return err
+		}
+		return nil
 	}
 
-	return container.Delete(ctx, deleteOpts...)
+	return container.Delete(ctx)
 }
 
 func (s *DefaultService) StartTask(ctx context.Context, containerID string, opts *StartTaskOptions) (containerd.Task, error) {
