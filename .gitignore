@@ -102,5 +102,5 @@ memory.db
 config.toml
 
 .workdocs/
-data
+/data
 _main-ref/
