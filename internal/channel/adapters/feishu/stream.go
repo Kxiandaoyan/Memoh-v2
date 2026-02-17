@@ -14,6 +14,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/common"
 )
 
 const (
@@ -64,21 +65,25 @@ func (s *feishuOutboundStream) Push(ctx context.Context, event channel.StreamEve
 			return nil
 		}
 		s.textBuffer.WriteString(event.Delta)
+		content := common.StripReasoningTagsStreaming(s.textBuffer.String())
+		if content == "" {
+			return nil
+		}
 		if err := s.ensureCard(ctx, feishuStreamThinkingText); err != nil {
 			return err
 		}
 		if time.Since(s.lastPatchedAt) < s.patchInterval && !strings.Contains(event.Delta, "\n") {
 			return nil
 		}
-		return s.patchCard(ctx, s.textBuffer.String())
+		return s.patchCard(ctx, content)
 	case channel.StreamEventFinal:
 		if event.Final == nil || event.Final.Message.IsEmpty() {
 			return nil
 		}
 		msg := event.Final.Message
-		finalText := strings.TrimSpace(msg.PlainText())
+		finalText := common.StripReasoningTags(msg.PlainText())
 		if finalText == "" {
-			finalText = strings.TrimSpace(s.textBuffer.String())
+			finalText = common.StripReasoningTags(s.textBuffer.String())
 		}
 		if finalText != "" {
 			if err := s.ensureCard(ctx, feishuStreamThinkingText); err != nil {

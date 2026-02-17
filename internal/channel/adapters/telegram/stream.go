@@ -12,6 +12,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/common"
 )
 
 const telegramStreamEditThrottle = 1000 * time.Millisecond
@@ -215,8 +216,11 @@ func (s *telegramOutboundStream) Push(ctx context.Context, event channel.StreamE
 			s.reasoning = false
 		}
 		s.buf.WriteString(event.Delta)
-		content := s.buf.String()
+		content := common.StripReasoningTagsStreaming(s.buf.String())
 		s.mu.Unlock()
+		if content == "" {
+			return nil
+		}
 		if err := s.ensureStreamMessage(ctx, content); err != nil {
 			return err
 		}
@@ -224,7 +228,7 @@ func (s *telegramOutboundStream) Push(ctx context.Context, event channel.StreamE
 	case channel.StreamEventFinal:
 		if event.Final == nil || event.Final.Message.IsEmpty() {
 			s.mu.Lock()
-			finalText := strings.TrimSpace(s.buf.String())
+			finalText := common.StripReasoningTags(s.buf.String())
 			s.mu.Unlock()
 			if finalText != "" {
 				if err := s.ensureStreamMessage(ctx, finalText); err != nil {
@@ -237,10 +241,10 @@ func (s *telegramOutboundStream) Push(ctx context.Context, event channel.StreamE
 			return nil
 		}
 		msg := event.Final.Message
-		finalText := strings.TrimSpace(msg.PlainText())
+		finalText := common.StripReasoningTags(msg.PlainText())
 		s.mu.Lock()
 		if finalText == "" {
-			finalText = strings.TrimSpace(s.buf.String())
+			finalText = common.StripReasoningTags(s.buf.String())
 		}
 		s.mu.Unlock()
 		// Convert markdown to Telegram HTML for the final message.
