@@ -247,8 +247,8 @@
     "avatarUpdateFailed": "Failed to update avatar",
     "typePlaceholder": "Select bot type",
     "types": {
-      "personal": "Personal",
-      "public": "Public"
+      "personal": "Private Chat",
+      "public": "Group Chat"
     },
     "active": "Active",
     "inactive": "Inactive",

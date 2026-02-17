@@ -97,6 +97,15 @@ type ListSnapshotsResponse struct {
 	Snapshots   []SnapshotInfo `json:"snapshots"`
 }
 
+type DeleteSnapshotResponse struct {
+	SnapshotName string `json:"snapshot_name"`
+}
+
+type RestoreSnapshotResponse struct {
+	ContainerID  string `json:"container_id"`
+	SnapshotName string `json:"snapshot_name"`
+}
+
 func NewContainerdHandler(log *slog.Logger, service ctr.Service, cfg config.MCPConfig, namespace string, botService *bots.Service, accountService *accounts.Service, policyService *policy.Service, queries *dbsqlc.Queries) *ContainerdHandler {
 	return &ContainerdHandler{
 		service:        service,
@@ -121,6 +130,8 @@ func (h *ContainerdHandler) Register(e *echo.Echo) {
 	group.POST("/stop", h.StopContainer)
 	group.POST("/snapshots", h.CreateSnapshot)
 	group.GET("/snapshots", h.ListSnapshots)
+	group.DELETE("/snapshots/:snapshot_name", h.DeleteSnapshot)
+	group.POST("/snapshots/:snapshot_name/restore", h.RestoreSnapshot)
 	group.GET("/skills", h.ListSkills)
 	group.POST("/skills", h.UpsertSkills)
 	group.DELETE("/skills", h.DeleteSkills)
@@ -599,6 +610,15 @@ func (h *ContainerdHandler) CreateSnapshot(c echo.Context) error {
 	if err := h.service.CommitSnapshot(ctx, info.Snapshotter, snapshotName, info.SnapshotKey); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	if h.queries != nil {
+		_ = h.queries.InsertSnapshot(ctx, dbsqlc.InsertSnapshotParams{
+			ID:               snapshotName,
+			ContainerID:      containerID,
+			ParentSnapshotID: pgtype.Text{},
+			Snapshotter:      info.Snapshotter,
+			Digest:           pgtype.Text{},
+		})
+	}
 	return c.JSON(http.StatusOK, CreateSnapshotResponse{
 		ContainerID:  containerID,
 		SnapshotName: snapshotName,
@@ -614,8 +634,14 @@ func (h *ContainerdHandler) CreateSnapshot(c echo.Context) error {
 // @Success 200 {object} ListSnapshotsResponse
 // @Router /bots/{bot_id}/container/snapshots [get]
 func (h *ContainerdHandler) ListSnapshots(c echo.Context) error {
-	if _, err := h.requireBotAccess(c); err != nil {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
 		return err
+	}
+	ctx := c.Request().Context()
+	containerID, err := h.botContainerID(ctx, botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "container not found for bot")
 	}
 	snapshotter := strings.TrimSpace(c.QueryParam("snapshotter"))
 	if snapshotter == "" {
@@ -624,12 +650,16 @@ func (h *ContainerdHandler) ListSnapshots(c echo.Context) error {
 	if snapshotter == "" {
 		snapshotter = "overlayfs"
 	}
-	snapshots, err := h.service.ListSnapshots(c.Request().Context(), snapshotter)
+	allSnapshots, err := h.service.ListSnapshots(ctx, snapshotter)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	items := make([]SnapshotInfo, 0, len(snapshots))
-	for _, info := range snapshots {
+	prefix := containerID + "-"
+	items := make([]SnapshotInfo, 0)
+	for _, info := range allSnapshots {
+		if !strings.HasPrefix(info.Name, prefix) {
+			continue
+		}
 		items = append(items, SnapshotInfo{
 			Snapshotter: snapshotter,
 			Name:        info.Name,

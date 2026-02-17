@@ -46,6 +46,11 @@ func NewService(log *slog.Logger, queries *sqlc.Queries, triggerer Triggerer, ru
 	return service
 }
 
+// Stop gracefully shuts down the cron scheduler, waiting for running jobs to finish.
+func (s *Service) Stop() context.Context {
+	return s.cron.Stop()
+}
+
 func (s *Service) Bootstrap(ctx context.Context) error {
 	if s.queries == nil {
 		return fmt.Errorf("schedule queries not configured")
@@ -54,11 +59,22 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var failed int
 	for _, item := range items {
 		if err := s.scheduleJob(item); err != nil {
-			return err
+			failed++
+			s.logger.Error("failed to register schedule, skipping",
+				slog.String("schedule_id", item.ID.String()),
+				slog.String("pattern", item.Pattern),
+				slog.Any("error", err),
+			)
 		}
 	}
+	s.logger.Info("schedule bootstrap complete",
+		slog.Int("total", len(items)),
+		slog.Int("registered", len(items)-failed),
+		slog.Int("failed", failed),
+	)
 	return nil
 }
 

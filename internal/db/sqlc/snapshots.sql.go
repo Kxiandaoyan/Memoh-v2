@@ -11,6 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteSnapshot = `-- name: DeleteSnapshot :exec
+DELETE FROM snapshots WHERE id = $1
+`
+
+func (q *Queries) DeleteSnapshot(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteSnapshot, id)
+	return err
+}
+
 const insertSnapshot = `-- name: InsertSnapshot :exec
 INSERT INTO snapshots (id, container_id, parent_snapshot_id, snapshotter, digest)
 VALUES (
@@ -40,4 +49,47 @@ func (q *Queries) InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) 
 		arg.Digest,
 	)
 	return err
+}
+
+const listSnapshotsByContainerID = `-- name: ListSnapshotsByContainerID :many
+SELECT id, container_id, parent_snapshot_id, snapshotter, digest, created_at
+FROM snapshots
+WHERE container_id = $1
+ORDER BY created_at DESC
+`
+
+type ListSnapshotsByContainerIDRow struct {
+	ID               string             `json:"id"`
+	ContainerID      string             `json:"container_id"`
+	ParentSnapshotID pgtype.Text        `json:"parent_snapshot_id"`
+	Snapshotter      string             `json:"snapshotter"`
+	Digest           pgtype.Text        `json:"digest"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListSnapshotsByContainerID(ctx context.Context, containerID string) ([]ListSnapshotsByContainerIDRow, error) {
+	rows, err := q.db.Query(ctx, listSnapshotsByContainerID, containerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSnapshotsByContainerIDRow
+	for rows.Next() {
+		var i ListSnapshotsByContainerIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContainerID,
+			&i.ParentSnapshotID,
+			&i.Snapshotter,
+			&i.Digest,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

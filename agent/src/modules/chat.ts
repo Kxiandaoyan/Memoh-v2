@@ -55,7 +55,6 @@ function buildAgentParams(body: AgentBody, bearer: string): AgentParams {
 export const chatModule = new Elysia({ prefix: '/chat' })
   .use(bearerMiddleware)
   .post('/', async ({ body, bearer }) => {
-    console.log('chat', body)
     const authFetcher = createAuthFetcher(bearer)
     const { ask } = createAgent(buildAgentParams(body, bearer!), authFetcher)
     return ask({
@@ -70,7 +69,6 @@ export const chatModule = new Elysia({ prefix: '/chat' })
     }),
   })
   .post('/stream', async function* ({ body, bearer }) {
-    console.log('stream', body)
     try {
       const authFetcher = createAuthFetcher(bearer)
       const { stream } = createAgent(buildAgentParams(body, bearer!), authFetcher)
@@ -98,7 +96,6 @@ export const chatModule = new Elysia({ prefix: '/chat' })
     }),
   })
   .post('/trigger-schedule', async ({ body, bearer }) => {
-    console.log('trigger-schedule', body)
     const authFetcher = createAuthFetcher(bearer)
     const { triggerSchedule } = createAgent(buildAgentParams(body, bearer!), authFetcher)
     return triggerSchedule({

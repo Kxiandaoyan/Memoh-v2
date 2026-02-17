@@ -463,6 +463,10 @@ func startScheduleService(lc fx.Lifecycle, scheduleService *schedule.Service) {
 		OnStart: func(ctx context.Context) error {
 			return scheduleService.Bootstrap(ctx)
 		},
+		OnStop: func(_ context.Context) error {
+			<-scheduleService.Stop().Done()
+			return nil
+		},
 	})
 }
 

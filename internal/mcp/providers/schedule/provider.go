@@ -177,6 +177,13 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		if id == "" {
 			return mcpgw.BuildToolErrorResult("id is required"), nil
 		}
+		existing, err := p.service.Get(ctx, id)
+		if err != nil {
+			return mcpgw.BuildToolErrorResult(err.Error()), nil
+		}
+		if existing.BotID != botID {
+			return mcpgw.BuildToolErrorResult("bot mismatch"), nil
+		}
 		req := sched.UpdateRequest{}
 		maxCalls, err := parseNullableIntArg(arguments, "max_calls")
 		if err != nil {
@@ -203,9 +210,6 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		item, err := p.service.Update(ctx, id, req)
 		if err != nil {
 			return mcpgw.BuildToolErrorResult(err.Error()), nil
-		}
-		if item.BotID != botID {
-			return mcpgw.BuildToolErrorResult("bot mismatch"), nil
 		}
 		return mcpgw.BuildToolSuccessResult(item), nil
 	case toolScheduleDelete:

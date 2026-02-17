@@ -137,6 +137,7 @@ type Service interface {
 	ListContainersByLabel(ctx context.Context, key, value string) ([]containerd.Container, error)
 	CommitSnapshot(ctx context.Context, snapshotter, name, key string) error
 	ListSnapshots(ctx context.Context, snapshotter string) ([]snapshots.Info, error)
+	RemoveSnapshot(ctx context.Context, snapshotter, key string) error
 	PrepareSnapshot(ctx context.Context, snapshotter, key, parent string) error
 	CreateContainerFromSnapshot(ctx context.Context, req CreateContainerRequest) (containerd.Container, error)
 	SnapshotMounts(ctx context.Context, snapshotter, key string) ([]mount.Mount, error)
@@ -812,6 +813,14 @@ func (s *DefaultService) ListSnapshots(ctx context.Context, snapshotter string) 
 		return nil, err
 	}
 	return infos, nil
+}
+
+func (s *DefaultService) RemoveSnapshot(ctx context.Context, snapshotter, key string) error {
+	if snapshotter == "" || key == "" {
+		return ErrInvalidArgument
+	}
+	ctx = s.withNamespace(ctx)
+	return s.client.SnapshotService(snapshotter).Remove(ctx, key)
 }
 
 func (s *DefaultService) PrepareSnapshot(ctx context.Context, snapshotter, key, parent string) error {
