@@ -29,15 +29,59 @@ echo "${GREEN}   Memoh One-Click Install${NC}"
 echo "${GREEN}========================================${NC}"
 echo ""
 
+# ---- Docker installation helper ----
+install_docker() {
+  echo "${CYAN}Installing Docker via official convenience script...${NC}"
+  echo ""
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | sh
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://get.docker.com | sh
+  else
+    echo "${RED}Error: curl or wget is required to install Docker${NC}"
+    exit 1
+  fi
+
+  # Start Docker service
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl start docker 2>/dev/null || true
+    systemctl enable docker 2>/dev/null || true
+  fi
+
+  # Verify installation
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "${RED}Docker installation failed. Please install manually:${NC}"
+    echo "  https://docs.docker.com/get-docker/"
+    exit 1
+  fi
+  echo ""
+  echo "${GREEN}✓ Docker installed successfully${NC}"
+}
+
 # Check Docker
 if ! command -v docker >/dev/null 2>&1; then
-    echo "${RED}Error: Docker is not installed${NC}"
-    echo "Install Docker first: https://docs.docker.com/get-docker/"
-    exit 1
+  echo "${YELLOW}Docker is not installed.${NC}"
+  if [ "$SILENT" = true ]; then
+    install_docker
+  else
+    printf "Install Docker automatically? [Y/n]: " > /dev/tty
+    read -r confirm < /dev/tty || true
+    case "$confirm" in
+      [nN]*)
+        echo "${RED}Docker is required. Exiting.${NC}"
+        exit 1
+        ;;
+      *)
+        install_docker
+        ;;
+    esac
+  fi
 fi
+
 if ! docker compose version >/dev/null 2>&1; then
     echo "${RED}Error: Docker Compose v2 is required${NC}"
-    echo "Install: https://docs.docker.com/compose/install/"
+    echo "Docker Compose is usually included with Docker Engine."
+    echo "If not, install it: https://docs.docker.com/compose/install/"
     exit 1
 fi
 echo "${GREEN}✓ Docker and Docker Compose detected${NC}"
