@@ -1,14 +1,9 @@
 package memory
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -485,6 +480,10 @@ func (s *QdrantStore) ensureCollection(ctx context.Context, vectors map[string]i
 		}
 		return s.ensurePayloadIndexes(ctx)
 	}
+	return s.createCollection(ctx, vectors)
+}
+
+func (s *QdrantStore) createCollection(ctx context.Context, vectors map[string]int) error {
 	var vectorsConfig *qdrant.VectorsConfig
 	if len(vectors) > 0 {
 		params := make(map[string]*qdrant.VectorParams, len(vectors))
@@ -546,12 +545,20 @@ func (s *QdrantStore) refreshCollectionSchema(ctx context.Context, vectors map[s
 				missing[name] = dim
 			}
 			if len(missing) > 0 {
-				if err := s.addNamedVectorsViaREST(ctx, missing); err != nil {
-					return fmt.Errorf("qdrant named vectors update: %w", err)
+				// Qdrant does not support adding new named vectors to an existing
+				// collection. The only option is to recreate the collection.
+				names := make([]string, 0, len(missing))
+				for n := range missing {
+					names = append(names, n)
 				}
-				for name, dim := range missing {
-					s.vectorNames[name] = dim
+				slog.Warn("qdrant: collection missing named vectors, recreating collection",
+					slog.String("collection", s.collection),
+					slog.Any("missing_vectors", names),
+				)
+				if err := s.client.DeleteCollection(ctx, s.collection); err != nil {
+					return fmt.Errorf("qdrant delete collection for rebuild: %w", err)
 				}
+				return s.createCollection(ctx, vectors)
 			}
 		}
 	} else {
@@ -630,78 +637,6 @@ func (s *QdrantStore) ensureSparseVectors(ctx context.Context) error {
 		}),
 	})
 	return err
-}
-
-// addNamedVectorsViaREST adds missing named vectors to an existing collection
-// using the Qdrant REST API (PATCH /collections/{name}).
-// The gRPC UpdateCollection only supports VectorsConfigDiff (modifying existing
-// vectors), so adding NEW named vectors requires the REST API.
-func (s *QdrantStore) addNamedVectorsViaREST(ctx context.Context, missing map[string]int) error {
-	restURL := qdrantRESTBaseURL(s.baseURL)
-	endpoint := fmt.Sprintf("%s/collections/%s", restURL, url.PathEscape(s.collection))
-
-	vectorsDef := map[string]any{}
-	for name, dim := range missing {
-		vectorsDef[name] = map[string]any{
-			"size":     dim,
-			"distance": "Cosine",
-		}
-	}
-	body := map[string]any{"vectors": vectorsDef}
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-
-	slog.Info("qdrant: adding missing named vectors via REST",
-		slog.String("collection", s.collection),
-		slog.Int("count", len(missing)),
-		slog.String("endpoint", endpoint),
-	)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if s.apiKey != "" {
-		req.Header.Set("api-key", s.apiKey)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("qdrant REST request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("qdrant REST error (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-	return nil
-}
-
-// qdrantRESTBaseURL derives the Qdrant REST API base URL from a gRPC base URL.
-// Qdrant serves REST on (gRPC port - 1), e.g. gRPC=6334 → REST=6333.
-func qdrantRESTBaseURL(baseURL string) string {
-	if baseURL == "" {
-		return "http://127.0.0.1:6333"
-	}
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return "http://127.0.0.1:6333"
-	}
-	grpcPort := 6334
-	if p := parsed.Port(); p != "" {
-		if v, err := strconv.Atoi(p); err == nil {
-			grpcPort = v
-		}
-	}
-	scheme := parsed.Scheme
-	if scheme == "" {
-		scheme = "http"
-	}
-	return fmt.Sprintf("%s://%s:%d", scheme, parsed.Hostname(), grpcPort-1)
 }
 
 func parseQdrantEndpoint(endpoint string) (string, int, bool, error) {
