@@ -53,6 +53,42 @@ func (s *Service) ListMeta(_ context.Context) []ProviderMeta {
 				},
 			},
 		},
+		{
+			Provider:    string(ProviderSerpApi),
+			DisplayName: "SerpApi",
+			ConfigSchema: ProviderConfigSchema{
+				Fields: map[string]ProviderFieldSchema{
+					"api_key": {
+						Type:        "secret",
+						Title:       "API Key",
+						Description: "SerpApi API key (from serpapi.com)",
+						Required:    true,
+					},
+					"engine": {
+						Type:        "string",
+						Title:       "Search Engine",
+						Description: "Search engine to use",
+						Required:    false,
+						Enum:        []string{"google", "bing", "duckduckgo", "yahoo", "baidu", "yandex", "naver"},
+						Example:     "google",
+					},
+					"base_url": {
+						Type:        "string",
+						Title:       "Base URL",
+						Description: "SerpApi base URL",
+						Required:    false,
+						Example:     "https://serpapi.com/search.json",
+					},
+					"timeout_seconds": {
+						Type:        "number",
+						Title:       "Timeout (seconds)",
+						Description: "HTTP timeout in seconds",
+						Required:    false,
+						Example:     15,
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -183,7 +219,7 @@ func (s *Service) toGetResponse(row sqlc.SearchProvider) GetResponse {
 
 func isValidProviderName(name ProviderName) bool {
 	switch name {
-	case ProviderBrave:
+	case ProviderBrave, ProviderSerpApi:
 		return true
 	default:
 		return false

@@ -11,6 +11,10 @@ import (
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/accounts"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/config"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/db"
+	dbsqlc "github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/models"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/settings"
 )
 
@@ -18,14 +22,20 @@ type SettingsHandler struct {
 	service        *settings.Service
 	botService     *bots.Service
 	accountService *accounts.Service
+	modelsService  *models.Service
+	queries        *dbsqlc.Queries
+	mcpCfg         config.MCPConfig
 	logger         *slog.Logger
 }
 
-func NewSettingsHandler(log *slog.Logger, service *settings.Service, botService *bots.Service, accountService *accounts.Service) *SettingsHandler {
+func NewSettingsHandler(log *slog.Logger, service *settings.Service, botService *bots.Service, accountService *accounts.Service, modelsService *models.Service, queries *dbsqlc.Queries, cfg config.Config) *SettingsHandler {
 	return &SettingsHandler{
 		service:        service,
 		botService:     botService,
 		accountService: accountService,
+		modelsService:  modelsService,
+		queries:        queries,
+		mcpCfg:         cfg.MCP,
 		logger:         log.With(slog.String("handler", "settings")),
 	}
 }
@@ -100,6 +110,10 @@ func (h *SettingsHandler) Upsert(c echo.Context) error {
 		h.logger.Error("upsert bot settings failed", slog.String("botID", botID), slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update bot settings")
 	}
+
+	// Regenerate ov.conf when OpenViking is enabled and models may have changed.
+	h.syncOVConfIfNeeded(c.Request().Context(), botID)
+
 	return c.JSON(http.StatusOK, resp)
 }
 
@@ -128,6 +142,33 @@ func (h *SettingsHandler) Delete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete bot settings")
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// syncOVConfIfNeeded checks whether OpenViking is enabled for the bot and, if so,
+// regenerates ov.conf from the current model settings.
+func (h *SettingsHandler) syncOVConfIfNeeded(ctx context.Context, botID string) {
+	if h.queries == nil {
+		return
+	}
+	botUUID, err := db.ParseUUID(botID)
+	if err != nil {
+		return
+	}
+	promptRow, err := h.queries.GetBotPrompts(ctx, botUUID)
+	if err != nil {
+		return
+	}
+	if !promptRow.EnableOpenviking {
+		return
+	}
+	// Reuse the PromptsHandler's ov.conf logic via a temporary instance.
+	syncer := &PromptsHandler{
+		modelsService: h.modelsService,
+		queries:       h.queries,
+		mcpCfg:        h.mcpCfg,
+		logger:        h.logger,
+	}
+	syncer.ensureOVConf(ctx, botID)
 }
 
 func (h *SettingsHandler) requireChannelIdentityID(c echo.Context) (string, error) {

@@ -67,6 +67,9 @@
         <template v-if="form.values.provider === 'brave'">
           <BraveSettings v-model="configProxy" />
         </template>
+        <template v-else-if="form.values.provider === 'serpapi'">
+          <SerpApiSettings v-model="configProxy" />
+        </template>
         <div
           v-else-if="form.values.provider"
           class="text-sm text-muted-foreground"
@@ -118,6 +121,7 @@ import {
 } from '@memoh/ui'
 import ConfirmPopover from '@/components/confirm-popover/index.vue'
 import BraveSettings from './brave-settings.vue'
+import SerpApiSettings from './serpapi-settings.vue'
 import SearchProviderLogo from '@/components/search-provider-logo/index.vue'
 import { computed, inject, ref, watch } from 'vue'
 import { toTypedSchema } from '@vee-validate/zod'
@@ -127,7 +131,7 @@ import { useMutation, useQueryCache } from '@pinia/colada'
 import { putSearchProvidersById, deleteSearchProvidersById } from '@memoh/sdk'
 import type { SearchprovidersGetResponse } from '@memoh/sdk'
 
-const PROVIDER_TYPES = ['brave'] as const
+const PROVIDER_TYPES = ['brave', 'serpapi'] as const
 
 const curProvider = inject('curSearchProvider', ref<SearchprovidersGetResponse>())
 const curProviderId = computed(() => curProvider.value?.id)

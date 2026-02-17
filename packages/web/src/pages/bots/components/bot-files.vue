@@ -34,7 +34,7 @@
 
     <!-- Empty state -->
     <div
-      v-else-if="files.length === 0"
+      v-else-if="visibleFiles.length === 0"
       class="rounded-md border p-6 text-center text-sm text-muted-foreground"
     >
       {{ $t('bots.files.empty') }}
@@ -48,7 +48,7 @@
       <!-- Sidebar file list -->
       <div class="w-48 shrink-0 space-y-1">
         <button
-          v-for="file in files"
+          v-for="file in visibleFiles"
           :key="file.name"
           type="button"
           class="w-full text-left px-3 py-2 rounded-md text-sm transition-colors"
@@ -162,6 +162,9 @@ const fileLoading = ref(false)
 const saving = ref(false)
 const editContent = ref('')
 const originalContent = ref('')
+
+const hiddenFiles = new Set(['resolv.conf'])
+const visibleFiles = computed(() => files.value.filter((f) => !hiddenFiles.has(f.name)))
 
 const isDirty = computed(() => editContent.value !== originalContent.value)
 

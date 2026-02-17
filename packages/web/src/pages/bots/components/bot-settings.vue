@@ -67,6 +67,49 @@
       />
     </div>
 
+    <!-- Task -->
+    <div class="space-y-2">
+      <Label>{{ $t('bots.settings.task') }}</Label>
+      <p class="text-sm text-muted-foreground">
+        {{ $t('bots.settings.taskDescription') }}
+      </p>
+      <Textarea
+        v-model="promptsForm.task"
+        :placeholder="$t('bots.settings.taskPlaceholder')"
+        rows="4"
+      />
+    </div>
+
+    <Separator />
+
+    <!-- Allow Self Evolution -->
+    <div class="flex items-center justify-between">
+      <div class="space-y-0.5">
+        <Label>{{ $t('bots.settings.allowSelfEvolution') }}</Label>
+        <p class="text-sm text-muted-foreground">
+          {{ $t('bots.settings.allowSelfEvolutionDescription') }}
+        </p>
+      </div>
+      <Switch
+        :model-value="promptsForm.allow_self_evolution"
+        @update:model-value="(val) => promptsForm.allow_self_evolution = !!val"
+      />
+    </div>
+
+    <!-- Enable OpenViking -->
+    <div class="flex items-center justify-between">
+      <div class="space-y-0.5">
+        <Label>{{ $t('bots.settings.enableOpenviking') }}</Label>
+        <p class="text-sm text-muted-foreground">
+          {{ $t('bots.settings.enableOpenvikingDescription') }}
+        </p>
+      </div>
+      <Switch
+        :model-value="promptsForm.enable_openviking"
+        @update:model-value="(val) => promptsForm.enable_openviking = !!val"
+      />
+    </div>
+
     <!-- Allow Guest: only for public bot -->
     <template v-if="isPublicBot">
       <div class="flex items-center justify-between">
@@ -76,16 +119,17 @@
           @update:model-value="(val) => form.allow_guest = !!val"
         />
       </div>
-      <Separator />
     </template>
+
+    <Separator />
 
     <!-- Save -->
     <div class="flex justify-end">
       <Button
-        :disabled="!hasChanges || isLoading"
+        :disabled="!hasChanges || saving"
         @click="handleSave"
       >
-        <Spinner v-if="isLoading" />
+        <Spinner v-if="saving" />
         {{ $t('bots.settings.save') }}
       </Button>
     </div>
@@ -132,8 +176,9 @@ import {
   Button,
   Separator,
   Spinner,
+  Textarea,
 } from '@memoh/ui'
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { useI18n } from 'vue-i18n'
@@ -143,8 +188,17 @@ import ModelSelect from './model-select.vue'
 import SearchProviderSelect from './search-provider-select.vue'
 import { useQuery, useMutation, useQueryCache } from '@pinia/colada'
 import { getBotsByBotIdSettings, putBotsByBotIdSettings, deleteBotsById, getModels, getProviders, getSearchProviders } from '@memoh/sdk'
+import { client } from '@memoh/sdk/client'
 import type { SettingsSettings } from '@memoh/sdk'
 import type { Ref } from 'vue'
+
+interface BotPrompts {
+  identity: string
+  soul: string
+  task: string
+  allow_self_evolution: boolean
+  enable_openviking: boolean
+}
 
 const props = defineProps<{
   botId: string
@@ -155,10 +209,11 @@ const isPublicBot = computed(() => props.botType === 'public')
 
 const { t } = useI18n()
 const router = useRouter()
+const saving = ref(false)
 
 const botIdRef = computed(() => props.botId) as Ref<string>
 
-// ---- Data ----
+// ---- Data: Settings ----
 const queryCache = useQueryCache()
 
 const { data: settings } = useQuery({
@@ -166,6 +221,19 @@ const { data: settings } = useQuery({
   query: async () => {
     const { data } = await getBotsByBotIdSettings({ path: { bot_id: botIdRef.value }, throwOnError: true })
     return data
+  },
+  enabled: () => !!botIdRef.value,
+})
+
+// ---- Data: Prompts (task, switches) ----
+const { data: prompts } = useQuery({
+  key: () => ['bot-prompts', botIdRef.value],
+  query: async (): Promise<BotPrompts> => {
+    const response = await client.get({
+      url: '/bots/{bot_id}/prompts',
+      path: { bot_id: botIdRef.value },
+    })
+    return response.data as BotPrompts
   },
   enabled: () => !!botIdRef.value,
 })
@@ -220,7 +288,7 @@ const models = computed(() => modelData.value ?? [])
 const providers = computed(() => providerData.value ?? [])
 const searchProviders = computed(() => searchProviderData.value ?? [])
 
-// ---- Form ----
+// ---- Form: Settings ----
 const form = reactive<SettingsSettings>({
   chat_model_id: '',
   memory_model_id: '',
@@ -231,7 +299,6 @@ const form = reactive<SettingsSettings>({
   allow_guest: false,
 })
 
-// 同步服务端数据到表单
 watch(settings, (val) => {
   if (val) {
     form.chat_model_id = val.chat_model_id ?? ''
@@ -244,7 +311,23 @@ watch(settings, (val) => {
   }
 }, { immediate: true })
 
-const hasChanges = computed(() => {
+// ---- Form: Prompts (task, switches) ----
+const promptsForm = reactive({
+  task: '',
+  allow_self_evolution: true,
+  enable_openviking: false,
+})
+
+watch(prompts, (val) => {
+  if (val) {
+    promptsForm.task = val.task ?? ''
+    promptsForm.allow_self_evolution = val.allow_self_evolution ?? true
+    promptsForm.enable_openviking = val.enable_openviking ?? false
+  }
+}, { immediate: true })
+
+// ---- Change detection ----
+const hasSettingsChanges = computed(() => {
   if (!settings.value) return true
   const s = settings.value
   let changed =
@@ -260,12 +343,49 @@ const hasChanges = computed(() => {
   return changed
 })
 
+const hasPromptsChanges = computed(() => {
+  if (!prompts.value) return true
+  const p = prompts.value
+  return (
+    promptsForm.task !== (p.task ?? '')
+    || promptsForm.allow_self_evolution !== (p.allow_self_evolution ?? true)
+    || promptsForm.enable_openviking !== (p.enable_openviking ?? false)
+  )
+})
+
+const hasChanges = computed(() => hasSettingsChanges.value || hasPromptsChanges.value)
+
+// ---- Save (dual API) ----
 async function handleSave() {
+  saving.value = true
   try {
-    await updateSettings({ ...form })
+    const promises: Promise<unknown>[] = []
+    if (hasSettingsChanges.value) {
+      promises.push(updateSettings({ ...form }))
+    }
+    if (hasPromptsChanges.value) {
+      promises.push(
+        client.put({
+          url: '/bots/{bot_id}/prompts',
+          path: { bot_id: botIdRef.value },
+          body: {
+            identity: '',
+            soul: '',
+            task: promptsForm.task,
+            allow_self_evolution: promptsForm.allow_self_evolution,
+            enable_openviking: promptsForm.enable_openviking,
+          },
+        }).then(() => {
+          queryCache.invalidateQueries({ key: ['bot-prompts', botIdRef.value] })
+        }),
+      )
+    }
+    await Promise.all(promises)
     toast.success(t('bots.settings.saveSuccess'))
-  } catch {
-    return
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, t('bots.settings.saveFailed')))
+  } finally {
+    saving.value = false
   }
 }
 

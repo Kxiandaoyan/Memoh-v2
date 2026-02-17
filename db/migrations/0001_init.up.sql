@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS search_providers (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT search_providers_name_unique UNIQUE (name),
-  CONSTRAINT search_providers_provider_check CHECK (provider IN ('brave'))
+  CONSTRAINT search_providers_provider_check CHECK (provider IN ('brave', 'serpapi'))
 );
 
 CREATE TABLE IF NOT EXISTS models (

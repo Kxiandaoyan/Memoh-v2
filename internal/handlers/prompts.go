@@ -14,6 +14,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/accounts"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/config"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/db"
 	dbsqlc "github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/models"
 )
@@ -125,9 +126,8 @@ func (h *PromptsHandler) Update(c echo.Context) error {
 
 // ovConfJSON is the structure for ov.conf.
 type ovConfJSON struct {
-	README    []string       `json:"_README"`
-	Embedding ovConfEmbed    `json:"embedding"`
-	VLM       ovConfVLM      `json:"vlm"`
+	Embedding ovConfEmbed `json:"embedding"`
+	VLM       ovConfVLM   `json:"vlm"`
 }
 
 type ovConfEmbed struct {
@@ -162,9 +162,9 @@ func mapClientTypeToOVProvider(clientType string) string {
 	}
 }
 
-// ensureOVConf creates ov.conf in the bot's data directory, auto-populated from
-// system-configured embedding and chat models. If the file already exists, it is
-// not overwritten (user may have customized it).
+// ensureOVConf generates ov.conf in the bot's data directory, populated from
+// bot-specific model settings (falling back to system-wide models).
+// The file is always regenerated to stay in sync with the current settings.
 func (h *PromptsHandler) ensureOVConf(ctx context.Context, botID string) {
 	dataRoot := strings.TrimSpace(h.mcpCfg.DataRoot)
 	if dataRoot == "" {
@@ -181,11 +181,8 @@ func (h *PromptsHandler) ensureOVConf(ctx context.Context, botID string) {
 		return
 	}
 	confPath := filepath.Join(botDir, "ov.conf")
-	if _, err := os.Stat(confPath); err == nil {
-		return // already exists, don't overwrite
-	}
 
-	conf := h.buildOVConf(ctx)
+	conf := h.buildOVConf(ctx, botID)
 
 	data, err := json.MarshalIndent(conf, "", "  ")
 	if err != nil {
@@ -195,24 +192,16 @@ func (h *PromptsHandler) ensureOVConf(ctx context.Context, botID string) {
 	data = append(data, '\n')
 
 	if err := os.WriteFile(confPath, data, 0o644); err != nil {
-		h.logger.Warn("ov.conf: failed to create", slog.Any("error", err))
+		h.logger.Warn("ov.conf: failed to write", slog.Any("error", err))
 		return
 	}
-	h.logger.Info("ov.conf created from system models", slog.String("bot_id", botID), slog.String("path", confPath))
+	h.logger.Info("ov.conf synced from bot settings", slog.String("bot_id", botID), slog.String("path", confPath))
 }
 
-// buildOVConf constructs ov.conf content from system-configured models/providers.
-func (h *PromptsHandler) buildOVConf(ctx context.Context) ovConfJSON {
+// buildOVConf constructs ov.conf content, preferring the bot's own model
+// settings and falling back to system-wide models.
+func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJSON {
 	conf := ovConfJSON{
-		README: []string{
-			"=== OpenViking Configuration ===",
-			"Auto-generated from system Models & Providers settings.",
-			"Edit via web UI: Bot Detail → Files → ov.conf",
-			"",
-			"embedding.dense — Vector embedding model (semantic search)",
-			"vlm — Vision/Language model (content understanding)",
-			"provider: 'openai' (also for compatible APIs) or 'volcengine'",
-		},
 		Embedding: ovConfEmbed{
 			Dense: ovConfDense{
 				APIBase:   "https://api.openai.com/v1",
@@ -235,51 +224,82 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context) ovConfJSON {
 		return conf
 	}
 
-	// Try to populate embedding from system's first embedding model.
-	embModels, err := h.modelsService.ListByType(ctx, models.ModelTypeEmbedding)
-	if err == nil && len(embModels) > 0 {
-		emb := embModels[0]
-		provider, provErr := models.FetchProviderByID(ctx, h.queries, emb.LlmProviderID)
-		if provErr == nil {
-			conf.Embedding.Dense.APIBase = provider.BaseUrl
-			conf.Embedding.Dense.APIKey = provider.ApiKey
-			conf.Embedding.Dense.Provider = mapClientTypeToOVProvider(provider.ClientType)
-			conf.Embedding.Dense.Model = emb.ModelID
-			if emb.Dimensions > 0 {
-				conf.Embedding.Dense.Dimension = emb.Dimensions
-			}
-			h.logger.Info("ov.conf: embedding from system",
-				slog.String("model", emb.ModelID),
-				slog.String("provider", provider.Name))
+	// Read bot-specific model settings.
+	var botEmbeddingModelID, botChatModelID string
+	if botUUID, err := db.ParseUUID(botID); err == nil {
+		if row, err := h.queries.GetSettingsByBotID(ctx, botUUID); err == nil {
+			botEmbeddingModelID = row.EmbeddingModelID.String
+			botChatModelID = row.ChatModelID.String
 		}
 	}
 
-	// Try to populate VLM from system's first multimodal chat model (prefer multimodal).
-	chatModels, err := h.modelsService.ListByType(ctx, models.ModelTypeChat)
-	if err == nil && len(chatModels) > 0 {
-		var selected *models.GetResponse
-		for i := range chatModels {
-			if chatModels[i].IsMultimodal {
-				selected = &chatModels[i]
-				break
+	// Populate embedding: prefer bot setting, fall back to system first embedding model.
+	embPopulated := false
+	if botEmbeddingModelID != "" {
+		if emb, err := h.modelsService.GetByID(ctx, botEmbeddingModelID); err == nil {
+			if provider, provErr := models.FetchProviderByID(ctx, h.queries, emb.LlmProviderID); provErr == nil {
+				h.applyEmbeddingConf(&conf, emb, provider)
+				embPopulated = true
 			}
 		}
-		if selected == nil {
-			selected = &chatModels[0]
+	}
+	if !embPopulated {
+		if embModels, err := h.modelsService.ListByType(ctx, models.ModelTypeEmbedding); err == nil && len(embModels) > 0 {
+			if provider, provErr := models.FetchProviderByID(ctx, h.queries, embModels[0].LlmProviderID); provErr == nil {
+				h.applyEmbeddingConf(&conf, embModels[0], provider)
+			}
 		}
-		provider, provErr := models.FetchProviderByID(ctx, h.queries, selected.LlmProviderID)
-		if provErr == nil {
-			conf.VLM.APIBase = provider.BaseUrl
-			conf.VLM.APIKey = provider.ApiKey
-			conf.VLM.Provider = mapClientTypeToOVProvider(provider.ClientType)
-			conf.VLM.Model = selected.ModelID
-			h.logger.Info("ov.conf: VLM from system",
-				slog.String("model", selected.ModelID),
-				slog.String("provider", provider.Name))
+	}
+
+	// Populate VLM: prefer bot chat model, fall back to system first multimodal chat model.
+	vlmPopulated := false
+	if botChatModelID != "" {
+		if chat, err := h.modelsService.GetByID(ctx, botChatModelID); err == nil {
+			if provider, provErr := models.FetchProviderByID(ctx, h.queries, chat.LlmProviderID); provErr == nil {
+				h.applyVLMConf(&conf, chat, provider)
+				vlmPopulated = true
+			}
+		}
+	}
+	if !vlmPopulated {
+		if chatModels, err := h.modelsService.ListByType(ctx, models.ModelTypeChat); err == nil && len(chatModels) > 0 {
+			selected := &chatModels[0]
+			for i := range chatModels {
+				if chatModels[i].IsMultimodal {
+					selected = &chatModels[i]
+					break
+				}
+			}
+			if provider, provErr := models.FetchProviderByID(ctx, h.queries, selected.LlmProviderID); provErr == nil {
+				h.applyVLMConf(&conf, *selected, provider)
+			}
 		}
 	}
 
 	return conf
+}
+
+func (h *PromptsHandler) applyEmbeddingConf(conf *ovConfJSON, emb models.GetResponse, provider dbsqlc.LlmProvider) {
+	conf.Embedding.Dense.APIBase = provider.BaseUrl
+	conf.Embedding.Dense.APIKey = provider.ApiKey
+	conf.Embedding.Dense.Provider = mapClientTypeToOVProvider(provider.ClientType)
+	conf.Embedding.Dense.Model = emb.ModelID
+	if emb.Dimensions > 0 {
+		conf.Embedding.Dense.Dimension = emb.Dimensions
+	}
+	h.logger.Info("ov.conf: embedding model resolved",
+		slog.String("model", emb.ModelID),
+		slog.String("provider", provider.Name))
+}
+
+func (h *PromptsHandler) applyVLMConf(conf *ovConfJSON, chat models.GetResponse, provider dbsqlc.LlmProvider) {
+	conf.VLM.APIBase = provider.BaseUrl
+	conf.VLM.APIKey = provider.ApiKey
+	conf.VLM.Provider = mapClientTypeToOVProvider(provider.ClientType)
+	conf.VLM.Model = chat.ModelID
+	h.logger.Info("ov.conf: VLM model resolved",
+		slog.String("model", chat.ModelID),
+		slog.String("provider", provider.Name))
 }
 
 func (h *PromptsHandler) requireChannelIdentityID(c echo.Context) (string, error) {

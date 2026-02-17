@@ -11,6 +11,7 @@
 
 const PROVIDER_ICONS: Record<string, [string, string]> = {
   brave: ['fab', 'brave'],
+  serpapi: ['fas', 'magnifying-glass-chart'],
 }
 
 const DEFAULT_ICON: [string, string] = ['fas', 'globe']

@@ -101,9 +101,17 @@ func (p *Executor) callWebSearch(ctx context.Context, providerName string, confi
 		count = 20
 	}
 
-	if strings.TrimSpace(providerName) != string(searchproviders.ProviderBrave) {
+	switch strings.TrimSpace(providerName) {
+	case string(searchproviders.ProviderBrave):
+		return p.callBraveSearch(ctx, configJSON, query, count)
+	case string(searchproviders.ProviderSerpApi):
+		return p.callSerpApiSearch(ctx, configJSON, query, count)
+	default:
 		return mcpgw.BuildToolErrorResult("unsupported search provider"), nil
 	}
+}
+
+func (p *Executor) callBraveSearch(ctx context.Context, configJSON []byte, query string, count int) (map[string]any, error) {
 	cfg := parseConfig(configJSON)
 	endpoint := strings.TrimRight(firstNonEmpty(stringValue(cfg["base_url"]), "https://api.search.brave.com/res/v1/web/search"), "/")
 	reqURL, err := url.Parse(endpoint)
@@ -156,6 +164,72 @@ func (p *Executor) callWebSearch(ctx context.Context, providerName string, confi
 			"title":       item.Title,
 			"url":         item.URL,
 			"description": item.Description,
+		})
+	}
+	return mcpgw.BuildToolSuccessResult(map[string]any{
+		"query":   query,
+		"results": results,
+	}), nil
+}
+
+func (p *Executor) callSerpApiSearch(ctx context.Context, configJSON []byte, query string, count int) (map[string]any, error) {
+	cfg := parseConfig(configJSON)
+	apiKey := strings.TrimSpace(stringValue(cfg["api_key"]))
+	if apiKey == "" {
+		return mcpgw.BuildToolErrorResult("serpapi api_key is required"), nil
+	}
+
+	engine := firstNonEmpty(stringValue(cfg["engine"]), "google")
+	endpoint := firstNonEmpty(stringValue(cfg["base_url"]), "https://serpapi.com/search.json")
+
+	reqURL, err := url.Parse(endpoint)
+	if err != nil {
+		return mcpgw.BuildToolErrorResult("invalid serpapi base_url"), nil
+	}
+	params := reqURL.Query()
+	params.Set("q", query)
+	params.Set("api_key", apiKey)
+	params.Set("engine", engine)
+	params.Set("num", fmt.Sprintf("%d", count))
+	reqURL.RawQuery = params.Encode()
+
+	timeout := parseTimeout(configJSON, 15*time.Second)
+	client := &http.Client{Timeout: timeout}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	if err != nil {
+		return mcpgw.BuildToolErrorResult(err.Error()), nil
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return mcpgw.BuildToolErrorResult(err.Error()), nil
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return mcpgw.BuildToolErrorResult(err.Error()), nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return mcpgw.BuildToolErrorResult(fmt.Sprintf("serpapi request failed (HTTP %d)", resp.StatusCode)), nil
+	}
+
+	var raw struct {
+		OrganicResults []struct {
+			Title   string `json:"title"`
+			Link    string `json:"link"`
+			Snippet string `json:"snippet"`
+		} `json:"organic_results"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return mcpgw.BuildToolErrorResult("invalid serpapi response"), nil
+	}
+
+	results := make([]map[string]any, 0, len(raw.OrganicResults))
+	for _, item := range raw.OrganicResults {
+		results = append(results, map[string]any{
+			"title":       item.Title,
+			"url":         item.Link,
+			"description": item.Snippet,
 		})
 	}
 	return mcpgw.BuildToolSuccessResult(map[string]any{

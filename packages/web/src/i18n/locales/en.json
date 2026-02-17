@@ -185,7 +185,11 @@
     "searchPlaceholder": "Search providers...",
     "emptyTitle": "No Search Providers",
     "emptyDescription": "Add a search provider to configure web search",
-    "deleteConfirm": "Are you sure you want to delete this search provider? This action cannot be undone."
+    "deleteConfirm": "Are you sure you want to delete this search provider? This action cannot be undone.",
+    "serpapi": {
+      "engine": "Search Engine",
+      "enginePlaceholder": "Select search engine"
+    }
   },
   "mcp": {
     "addTitle": "Add MCP",
@@ -449,11 +453,19 @@
       "searchProviderPlaceholder": "Select search provider",
       "maxContextLoadTime": "Max Context Load Time",
       "language": "Language",
+      "task": "Task Instruction",
+      "taskDescription": "Define the bot's current task objective. The agent references this on every conversation.",
+      "taskPlaceholder": "Define what this bot should do.\nExample:\n- You are a translation bot, only do Chinese-English translation\n- Always reply in the same language as the user",
+      "allowSelfEvolution": "Allow Self Evolution",
+      "allowSelfEvolutionDescription": "When enabled, the bot can modify its own IDENTITY.md, SOUL.md, and TOOLS.md files to evolve its personality over time.",
+      "enableOpenviking": "Enable OpenViking Context Database",
+      "enableOpenvikingDescription": "When enabled, the bot uses OpenViking's tiered context database for memory and knowledge management. ov.conf is auto-generated from your current model settings.",
       "allowGuest": "Allow Guest Access",
       "allowGuestPersonalHint": "Personal bots do not support guest access. Use a public bot instead.",
       "searchModel": "Search models…",
       "noModel": "No models available",
       "saveSuccess": "Settings saved",
+      "saveFailed": "Failed to save settings",
       "save": "Save Settings",
       "dangerZone": "Danger Zone",
       "deleteBotDescription": "Deleting this bot cannot be undone. Proceed with caution.",

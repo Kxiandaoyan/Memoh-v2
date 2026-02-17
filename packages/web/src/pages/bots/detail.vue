@@ -107,9 +107,6 @@
         <TabsTrigger value="overview">
           {{ $t('bots.tabs.overview') }}
         </TabsTrigger>
-        <TabsTrigger value="persona">
-          {{ $t('bots.tabs.persona') }}
-        </TabsTrigger>
         <TabsTrigger value="memory">
           {{ $t('bots.tabs.memory') }}
         </TabsTrigger>
@@ -233,12 +230,6 @@
             </ul>
           </div>
         </div>
-      </TabsContent>
-      <TabsContent
-        value="persona"
-        class="mt-6"
-      >
-        <BotPrompts :bot-id="botId" />
       </TabsContent>
       <TabsContent
         value="memory"
@@ -600,7 +591,6 @@ import type {
 } from '@memoh/sdk'
 import ConfirmPopover from '@/components/confirm-popover/index.vue'
 import BotSettings from './components/bot-settings.vue'
-import BotPrompts from './components/bot-prompts.vue'
 import BotChannels from './components/bot-channels.vue'
 import BotMcp from './components/bot-mcp.vue'
 import BotMemory from './components/bot-memory.vue'

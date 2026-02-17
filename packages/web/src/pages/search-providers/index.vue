@@ -32,7 +32,7 @@ import AddSearchProvider from './components/add-search-provider.vue'
 import ProviderSetting from './components/provider-setting.vue'
 import SearchProviderLogo from '@/components/search-provider-logo/index.vue'
 
-const PROVIDER_TYPES = ['brave'] as const
+const PROVIDER_TYPES = ['brave', 'serpapi'] as const
 
 const filterProvider = ref('')
 const { data: providerData } = useQuery({

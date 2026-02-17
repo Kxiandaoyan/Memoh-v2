@@ -181,7 +181,11 @@
     "searchPlaceholder": "搜索提供方…",
     "emptyTitle": "暂无搜索提供方",
     "emptyDescription": "请先添加搜索提供方，才能配置搜索功能",
-    "deleteConfirm": "确定删除该搜索提供方？删除后无法恢复。"
+    "deleteConfirm": "确定删除该搜索提供方？删除后无法恢复。",
+    "serpapi": {
+      "engine": "搜索引擎",
+      "enginePlaceholder": "选择搜索引擎"
+    }
   },
   "mcp": {
     "addTitle": "添加 MCP",
@@ -445,11 +449,19 @@
       "searchProviderPlaceholder": "选择搜索提供方",
       "maxContextLoadTime": "最大上下文加载时间",
       "language": "语言",
+      "task": "任务指令",
+      "taskDescription": "定义 Bot 当前阶段的任务目标，Agent 每次对话时都会参考。",
+      "taskPlaceholder": "定义这个 Bot 应该做什么。\n示例：\n- 你是一个翻译 Bot，只做中英翻译\n- 始终使用与用户相同的语言回复",
+      "allowSelfEvolution": "允许自我进化",
+      "allowSelfEvolutionDescription": "开启后，Bot 可以修改自己的 IDENTITY.md、SOUL.md 和 TOOLS.md 文件，从而在对话中逐渐发展自己的个性。",
+      "enableOpenviking": "启用 OpenViking 上下文数据库",
+      "enableOpenvikingDescription": "开启后，Bot 可使用 OpenViking 分层上下文数据库管理记忆和知识。ov.conf 会根据当前模型设置自动生成。",
       "allowGuest": "允许游客访问",
       "allowGuestPersonalHint": "个人 Bot 不支持游客访问，请使用公开 Bot。",
       "searchModel": "搜索模型…",
       "noModel": "暂无可选模型",
       "saveSuccess": "设置已保存",
+      "saveFailed": "保存设置失败",
       "save": "保存设置",
       "dangerZone": "危险操作",
       "deleteBotDescription": "删除此 Bot 后无法恢复，请谨慎操作。",

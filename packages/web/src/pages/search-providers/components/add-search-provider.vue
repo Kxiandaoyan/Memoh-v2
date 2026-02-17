@@ -122,7 +122,7 @@ import { useForm } from 'vee-validate'
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { postSearchProviders } from '@memoh/sdk'
 
-const PROVIDER_TYPES = ['brave'] as const
+const PROVIDER_TYPES = ['brave', 'serpapi'] as const
 
 const open = defineModel<boolean>('open')
 
