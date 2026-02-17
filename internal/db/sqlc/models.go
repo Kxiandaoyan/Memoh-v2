@@ -154,6 +154,20 @@ type ConversationSummary struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EvolutionLog struct {
+	ID                pgtype.UUID        `json:"id"`
+	BotID             pgtype.UUID        `json:"bot_id"`
+	HeartbeatConfigID pgtype.UUID        `json:"heartbeat_config_id"`
+	TriggerReason     string             `json:"trigger_reason"`
+	Status            string             `json:"status"`
+	ChangesSummary    pgtype.Text        `json:"changes_summary"`
+	FilesModified     []string           `json:"files_modified"`
+	AgentResponse     pgtype.Text        `json:"agent_response"`
+	StartedAt         pgtype.Timestamptz `json:"started_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
 type HeartbeatConfig struct {
 	ID              pgtype.UUID        `json:"id"`
 	BotID           pgtype.UUID        `json:"bot_id"`

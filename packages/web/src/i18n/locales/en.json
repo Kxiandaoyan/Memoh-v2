@@ -300,6 +300,34 @@
     "deleteSuccess": "Bot deleted",
     "emptyTitle": "No Bots",
     "emptyDescription": "Click the button above to create your first bot",
+    "templates": {
+      "title": "Choose a Template",
+      "subtitle": "Start with a pre-built persona, or create from scratch",
+      "blank": "Blank Bot",
+      "blankDescription": "Start from scratch with an empty persona",
+      "categories": {
+        "all": "All",
+        "productivity": "Productivity",
+        "development": "Development",
+        "creative": "Creative",
+        "education": "Education",
+        "personal": "Personal"
+      },
+      "names": {
+        "research-analyst": "Research Analyst",
+        "code-architect": "Code Architect",
+        "writing-editor": "Writing Editor",
+        "daily-secretary": "Daily Secretary",
+        "data-wrangler": "Data Wrangler",
+        "knowledge-curator": "Knowledge Curator",
+        "language-tutor": "Language Tutor",
+        "creative-muse": "Creative Muse",
+        "ops-monitor": "Ops Monitor",
+        "life-strategist": "Life Strategist"
+      }
+    },
+    "step": "Step {current} of {total}",
+    "next": "Next",
     "displayName": "Name",
     "displayNamePlaceholder": "Give your bot a name",
     "avatarUrl": "Avatar URL",
@@ -559,7 +587,21 @@
       "selectFile": "Select a file to view its contents",
       "fileNotFound": "File not found or not yet created",
       "goToEvolutionTab": "View details in Evolution tab →",
-      "heartbeatPending": "Evolution heartbeat is being set up. If the button stays grey, try toggling the switch off and on."
+      "heartbeatPending": "Evolution heartbeat is being set up. If the button stays grey, try toggling the switch off and on.",
+      "historyTitle": "Evolution History",
+      "historyEmpty": "No evolution runs recorded yet. Evolution logs will appear here after the first reflection cycle.",
+      "historyLoadFailed": "Failed to load evolution history",
+      "statusRunning": "Running",
+      "statusCompleted": "Completed",
+      "statusFailed": "Failed",
+      "statusSkipped": "Skipped",
+      "showDetails": "Show details",
+      "hideDetails": "Hide details",
+      "agentResponse": "Agent Response",
+      "triggerReason": "Trigger",
+      "startedAt": "Started",
+      "completedAt": "Completed at",
+      "loadMore": "Load more"
     },
     "capabilities": {
       "title": "Container Capabilities",

@@ -59,6 +59,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/server"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/settings"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/subagent"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/templates"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/version"
 )
 
@@ -146,6 +147,7 @@ func main() {
 			provideServerHandler(provideUsersHandler),
 			provideServerHandler(handlers.NewMCPHandler),
 			provideServerHandler(provideSharedFilesHandler),
+			provideServerHandler(templates.NewHandler),
 			provideServerHandler(provideCLIHandler),
 			provideServerHandler(provideWebHandler),
 

@@ -18,6 +18,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/route"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/heartbeat"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/identity"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/templates"
 )
 
 // UsersHandler manages user/account CRUD and bot operations via REST API.
@@ -461,6 +462,25 @@ func (h *UsersHandler) CreateBot(c echo.Context) error {
 		if hbErr != nil {
 			h.logger.Warn("failed to create default heartbeat for new bot",
 				slog.String("bot_id", resp.ID), slog.Any("error", hbErr))
+		}
+	}
+
+	// Apply template prompts if a template_id was specified.
+	if req.TemplateID != "" {
+		tmpl, tmplErr := templates.Get(req.TemplateID)
+		if tmplErr != nil {
+			h.logger.Warn("template not found, skipping prompt application",
+				slog.String("bot_id", resp.ID), slog.String("template_id", req.TemplateID), slog.Any("error", tmplErr))
+		} else {
+			updateReq := bots.UpdatePromptsRequest{
+				Identity: &tmpl.Identity,
+				Soul:     &tmpl.Soul,
+				Task:     &tmpl.Task,
+			}
+			if _, pErr := h.botService.UpdatePrompts(c.Request().Context(), resp.ID, updateReq); pErr != nil {
+				h.logger.Warn("failed to apply template prompts",
+					slog.String("bot_id", resp.ID), slog.String("template_id", req.TemplateID), slog.Any("error", pErr))
+			}
 		}
 	}
 

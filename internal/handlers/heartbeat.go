@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -40,6 +41,12 @@ func (h *HeartbeatHandler) Register(e *echo.Echo) {
 	group.PUT("/:id", h.Update)
 	group.DELETE("/:id", h.Delete)
 	group.POST("/:id/trigger", h.Trigger)
+
+	// Evolution log routes
+	evoGroup := e.Group("/bots/:bot_id/evolution-logs")
+	evoGroup.GET("", h.ListEvolutionLogs)
+	evoGroup.GET("/:id", h.GetEvolutionLog)
+	evoGroup.POST("/:id/complete", h.CompleteEvolutionLog)
 }
 
 // Create godoc
@@ -266,4 +273,115 @@ func (h *HeartbeatHandler) requireUserID(c echo.Context) (string, error) {
 
 func (h *HeartbeatHandler) authorizeBotAccess(ctx context.Context, channelIdentityID, botID string) (bots.Bot, error) {
 	return AuthorizeBotAccess(ctx, h.botService, h.accountService, channelIdentityID, botID, bots.AccessPolicy{AllowPublicMember: false})
+}
+
+// ── Evolution Log Endpoints ─────────────────────────────────────────
+
+// ListEvolutionLogs godoc
+// @Summary List evolution logs
+// @Description List evolution log entries for a bot with pagination
+// @Tags evolution
+// @Param bot_id path string true "Bot ID"
+// @Param limit query int false "Max items to return" default(20)
+// @Param offset query int false "Number of items to skip" default(0)
+// @Success 200 {object} heartbeat.ListEvolutionLogsResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/evolution-logs [get]
+func (h *HeartbeatHandler) ListEvolutionLogs(c echo.Context) error {
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return err
+	}
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
+	}
+	if _, err := h.authorizeBotAccess(c.Request().Context(), userID, botID); err != nil {
+		return err
+	}
+	limit := 20
+	if v := c.QueryParam("limit"); v != "" {
+		if parsed, pErr := strconv.Atoi(v); pErr == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	offset := 0
+	if v := c.QueryParam("offset"); v != "" {
+		if parsed, pErr := strconv.Atoi(v); pErr == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+	resp, err := h.engine.ListEvolutionLogs(c.Request().Context(), botID, limit, offset)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// GetEvolutionLog godoc
+// @Summary Get evolution log
+// @Description Get a single evolution log entry by ID
+// @Tags evolution
+// @Param bot_id path string true "Bot ID"
+// @Param id path string true "Evolution log ID"
+// @Success 200 {object} heartbeat.EvolutionLog
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /bots/{bot_id}/evolution-logs/{id} [get]
+func (h *HeartbeatHandler) GetEvolutionLog(c echo.Context) error {
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return err
+	}
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
+	}
+	if _, err := h.authorizeBotAccess(c.Request().Context(), userID, botID); err != nil {
+		return err
+	}
+	logID := c.Param("id")
+	if logID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id is required")
+	}
+	item, err := h.engine.GetEvolutionLog(c.Request().Context(), logID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	if item.BotID != botID {
+		return echo.NewHTTPError(http.StatusForbidden, "bot mismatch")
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+// CompleteEvolutionLog godoc
+// @Summary Complete evolution log
+// @Description Mark an evolution log as completed, failed, or skipped (callback from agent gateway)
+// @Tags evolution
+// @Param bot_id path string true "Bot ID"
+// @Param id path string true "Evolution log ID"
+// @Param payload body heartbeat.CompleteEvolutionLogRequest true "Completion payload"
+// @Success 200 {object} heartbeat.EvolutionLog
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/evolution-logs/{id}/complete [post]
+func (h *HeartbeatHandler) CompleteEvolutionLog(c echo.Context) error {
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
+	}
+	logID := c.Param("id")
+	if logID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id is required")
+	}
+	var req heartbeat.CompleteEvolutionLogRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	item, err := h.engine.CompleteEvolutionLog(c.Request().Context(), logID, req)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, item)
 }

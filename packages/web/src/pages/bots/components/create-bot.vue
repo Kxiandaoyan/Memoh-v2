@@ -11,122 +11,202 @@
         </Button>
       </slot>
     </DialogTrigger>
-    <DialogContent class="sm:max-w-md">
-      <form @submit="handleSubmit">
+    <DialogContent :class="step === 0 ? 'sm:max-w-2xl' : 'sm:max-w-md'">
+      <!-- Step 0: Template Selection -->
+      <template v-if="step === 0">
         <DialogHeader>
-          <DialogTitle>{{ $t('bots.createBot') }}</DialogTitle>
+          <DialogTitle>{{ $t('bots.templates.title') }}</DialogTitle>
           <DialogDescription>
-            <Separator class="my-4" />
+            {{ $t('bots.templates.subtitle') }}
           </DialogDescription>
         </DialogHeader>
 
-        <div class="flex flex-col gap-4">
-          <!-- Display Name -->
-          <FormField
-            v-slot="{ componentField }"
-            name="display_name"
+        <!-- Category Tabs -->
+        <div class="flex gap-1.5 flex-wrap mt-2">
+          <Button
+            v-for="cat in categories"
+            :key="cat"
+            :variant="selectedCategory === cat ? 'default' : 'outline'"
+            size="sm"
+            @click="selectedCategory = cat"
           >
-            <FormItem>
-              <Label class="mb-2">{{ $t('bots.displayName') }}</Label>
-              <FormControl>
-                <Input
-                  type="text"
-                  :placeholder="$t('bots.displayNamePlaceholder')"
-                  v-bind="componentField"
-                />
-              </FormControl>
-            </FormItem>
-          </FormField>
-
-          <!-- Avatar URL -->
-          <FormField
-            v-slot="{ componentField }"
-            name="avatar_url"
-          >
-            <FormItem>
-              <Label class="mb-2">
-                {{ $t('bots.avatarUrl') }}
-                <span class="text-muted-foreground text-xs ml-1">({{ $t('common.optional') }})</span>
-              </Label>
-              <FormControl>
-                <Input
-                  type="text"
-                  :placeholder="$t('bots.avatarUrlPlaceholder')"
-                  v-bind="componentField"
-                />
-              </FormControl>
-            </FormItem>
-          </FormField>
-
-          <!-- Type -->
-          <FormField
-            v-slot="{ componentField }"
-            name="type"
-          >
-            <FormItem>
-              <Label class="mb-2">
-                {{ $t('common.type') }}
-              </Label>
-              <FormControl>
-                <Select v-bind="componentField">
-                  <SelectTrigger class="w-full">
-                    <SelectValue :placeholder="$t('bots.typePlaceholder')" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="personal">
-                        <div>
-                          <div>{{ $t('bots.types.personal') }}</div>
-                          <p class="text-xs text-muted-foreground font-normal">{{ $t('bots.typePersonalHint') }}</p>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="public">
-                        <div>
-                          <div>{{ $t('bots.types.public') }}</div>
-                          <p class="text-xs text-muted-foreground font-normal">{{ $t('bots.typePublicHint') }}</p>
-                        </div>
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </FormControl>
-            </FormItem>
-          </FormField>
-          <!-- Privileged -->
-          <FormField
-            v-slot="{ value, handleChange }"
-            name="is_privileged"
-          >
-            <FormItem>
-              <div class="flex items-center justify-between">
-                <div class="space-y-0.5">
-                  <Label>{{ $t('bots.settings.isPrivileged') }}</Label>
-                  <p class="text-xs text-muted-foreground">{{ $t('bots.settings.isPrivilegedHint') }}</p>
-                </div>
-                <Switch
-                  :checked="value"
-                  @update:checked="handleChange"
-                />
-              </div>
-            </FormItem>
-          </FormField>
+            {{ $t(`bots.templates.categories.${cat}`) }}
+          </Button>
         </div>
 
-        <DialogFooter class="mt-6">
+        <!-- Template Grid -->
+        <div class="grid grid-cols-2 gap-3 mt-4 max-h-[400px] overflow-y-auto pr-1">
+          <!-- Blank Bot Card -->
+          <div
+            class="border rounded-lg p-3 cursor-pointer transition-all hover:border-primary"
+            :class="selectedTemplateId === '' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border'"
+            @click="selectTemplate('')"
+          >
+            <div class="flex items-center gap-2 mb-1.5">
+              <div class="w-8 h-8 rounded-md bg-muted flex items-center justify-center">
+                <FontAwesomeIcon :icon="['fas', 'file']" class="text-muted-foreground text-sm" />
+              </div>
+              <span class="font-medium text-sm">{{ $t('bots.templates.blank') }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground line-clamp-2">{{ $t('bots.templates.blankDescription') }}</p>
+          </div>
+
+          <!-- Template Cards -->
+          <div
+            v-for="tmpl in filteredTemplates"
+            :key="tmpl.id"
+            class="border rounded-lg p-3 cursor-pointer transition-all hover:border-primary"
+            :class="selectedTemplateId === tmpl.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border'"
+            @click="selectTemplate(tmpl.id)"
+          >
+            <div class="flex items-center gap-2 mb-1.5">
+              <div class="w-8 h-8 rounded-md bg-muted flex items-center justify-center">
+                <FontAwesomeIcon :icon="['fas', tmpl.icon]" class="text-muted-foreground text-sm" />
+              </div>
+              <span class="font-medium text-sm">{{ $t(`bots.templates.names.${tmpl.id}`) }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground line-clamp-2">{{ tmpl.description }}</p>
+          </div>
+        </div>
+
+        <DialogFooter class="mt-4">
           <DialogClose as-child>
             <Button variant="outline">
               {{ $t('common.cancel') }}
             </Button>
           </DialogClose>
-          <Button
-            type="submit"
-            :disabled="!form.meta.value.valid || submitLoading"
-          >
-            <Spinner v-if="submitLoading" />
-            {{ $t('bots.createBot') }}
+          <Button @click="step = 1">
+            {{ $t('bots.next') }}
           </Button>
         </DialogFooter>
-      </form>
+      </template>
+
+      <!-- Step 1: Bot Configuration Form -->
+      <template v-else>
+        <form @submit="handleSubmit">
+          <DialogHeader>
+            <DialogTitle>{{ $t('bots.createBot') }}</DialogTitle>
+            <DialogDescription>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="text-xs text-muted-foreground">{{ $t('bots.step', { current: 2, total: 2 }) }}</span>
+                <span v-if="selectedTemplateId" class="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                  {{ $t(`bots.templates.names.${selectedTemplateId}`) }}
+                </span>
+              </div>
+              <Separator class="my-3" />
+            </DialogDescription>
+          </DialogHeader>
+
+          <div class="flex flex-col gap-4">
+            <!-- Display Name -->
+            <FormField
+              v-slot="{ componentField }"
+              name="display_name"
+            >
+              <FormItem>
+                <Label class="mb-2">{{ $t('bots.displayName') }}</Label>
+                <FormControl>
+                  <Input
+                    type="text"
+                    :placeholder="$t('bots.displayNamePlaceholder')"
+                    v-bind="componentField"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Avatar URL -->
+            <FormField
+              v-slot="{ componentField }"
+              name="avatar_url"
+            >
+              <FormItem>
+                <Label class="mb-2">
+                  {{ $t('bots.avatarUrl') }}
+                  <span class="text-muted-foreground text-xs ml-1">({{ $t('common.optional') }})</span>
+                </Label>
+                <FormControl>
+                  <Input
+                    type="text"
+                    :placeholder="$t('bots.avatarUrlPlaceholder')"
+                    v-bind="componentField"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Type -->
+            <FormField
+              v-slot="{ componentField }"
+              name="type"
+            >
+              <FormItem>
+                <Label class="mb-2">
+                  {{ $t('common.type') }}
+                </Label>
+                <FormControl>
+                  <Select v-bind="componentField">
+                    <SelectTrigger class="w-full">
+                      <SelectValue :placeholder="$t('bots.typePlaceholder')" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="personal">
+                          <div>
+                            <div>{{ $t('bots.types.personal') }}</div>
+                            <p class="text-xs text-muted-foreground font-normal">{{ $t('bots.typePersonalHint') }}</p>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="public">
+                          <div>
+                            <div>{{ $t('bots.types.public') }}</div>
+                            <p class="text-xs text-muted-foreground font-normal">{{ $t('bots.typePublicHint') }}</p>
+                          </div>
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+              </FormItem>
+            </FormField>
+            <!-- Privileged -->
+            <FormField
+              v-slot="{ value, handleChange }"
+              name="is_privileged"
+            >
+              <FormItem>
+                <div class="flex items-center justify-between">
+                  <div class="space-y-0.5">
+                    <Label>{{ $t('bots.settings.isPrivileged') }}</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('bots.settings.isPrivilegedHint') }}</p>
+                  </div>
+                  <Switch
+                    :checked="value"
+                    @update:checked="handleChange"
+                  />
+                </div>
+              </FormItem>
+            </FormField>
+          </div>
+
+          <DialogFooter class="mt-6">
+            <Button
+              variant="outline"
+              type="button"
+              @click="step = 0"
+            >
+              {{ $t('common.back') }}
+            </Button>
+            <Button
+              type="submit"
+              :disabled="!form.meta.value.valid || submitLoading"
+            >
+              <Spinner v-if="submitLoading" />
+              {{ $t('bots.createBot') }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </template>
     </DialogContent>
   </Dialog>
 </template>
@@ -160,11 +240,46 @@ import {
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import z from 'zod'
-import { watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { postBotsMutation, getBotsQueryKey } from '@memoh/sdk/colada'
 
 const open = defineModel<boolean>('open', { default: false })
+
+const step = ref(0)
+const selectedTemplateId = ref('')
+const selectedCategory = ref('all')
+
+interface TemplateMeta {
+  id: string
+  icon: string
+  category: string
+  description: string
+}
+
+const allTemplates: TemplateMeta[] = [
+  { id: 'research-analyst', icon: 'magnifying-glass', category: 'productivity', description: 'Deep web researcher with critical analysis skills.' },
+  { id: 'code-architect', icon: 'code', category: 'development', description: 'Pragmatic full-stack developer. Simplicity over complexity.' },
+  { id: 'writing-editor', icon: 'pen-nib', category: 'creative', description: 'Meticulous editor and writing coach.' },
+  { id: 'daily-secretary', icon: 'calendar-check', category: 'productivity', description: 'Efficient personal assistant for daily operations.' },
+  { id: 'data-wrangler', icon: 'chart-bar', category: 'development', description: 'Turns messy data into clear insights.' },
+  { id: 'knowledge-curator', icon: 'book-open', category: 'productivity', description: 'Personal knowledge architect — your second brain.' },
+  { id: 'language-tutor', icon: 'language', category: 'education', description: 'Patient language learning partner.' },
+  { id: 'creative-muse', icon: 'lightbulb', category: 'creative', description: 'Brainstorming and ideation partner.' },
+  { id: 'ops-monitor', icon: 'server', category: 'development', description: 'Systems reliability and monitoring partner.' },
+  { id: 'life-strategist', icon: 'compass', category: 'personal', description: 'Personal growth and decision-making partner.' },
+]
+
+const categories = ['all', 'productivity', 'development', 'creative', 'education', 'personal']
+
+const filteredTemplates = computed(() => {
+  if (selectedCategory.value === 'all') return allTemplates
+  return allTemplates.filter(t => t.category === selectedCategory.value)
+})
+
+function selectTemplate(id: string) {
+  selectedTemplateId.value = id
+}
 
 const formSchema = toTypedSchema(z.object({
   display_name: z.string().min(1),
@@ -191,6 +306,9 @@ const { mutate: createBot, isLoading: submitLoading } = useMutation({
 
 watch(open, (val) => {
   if (val) {
+    step.value = 0
+    selectedTemplateId.value = ''
+    selectedCategory.value = 'all'
     form.resetForm({
       values: {
         display_name: '',
@@ -213,7 +331,8 @@ const handleSubmit = form.handleSubmit(async (values) => {
         type: values.type,
         is_active: true,
         is_privileged: values.is_privileged || false,
-      },
+        template_id: selectedTemplateId.value || undefined,
+      } as any,
     })
     open.value = false
   } catch {

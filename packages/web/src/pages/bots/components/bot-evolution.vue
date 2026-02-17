@@ -118,6 +118,83 @@
       </div>
     </div>
 
+    <!-- Evolution History Timeline -->
+    <div class="rounded-md border p-4">
+      <h4 class="text-sm font-semibold mb-3">
+        <FontAwesomeIcon :icon="['fas', 'timeline']" class="mr-1.5 text-indigo-500" />
+        {{ $t('bots.evolution.historyTitle') }}
+      </h4>
+
+      <div
+        v-if="loadingHistory"
+        class="flex items-center gap-2 text-sm text-muted-foreground"
+      >
+        <Spinner />
+        <span>{{ $t('common.loading') }}</span>
+      </div>
+
+      <div
+        v-else-if="evolutionLogs.length === 0"
+        class="text-sm text-muted-foreground py-4 text-center"
+      >
+        {{ $t('bots.evolution.historyEmpty') }}
+      </div>
+
+      <div
+        v-else
+        class="space-y-3"
+      >
+        <div
+          v-for="log in evolutionLogs"
+          :key="log.id"
+          class="border-l-2 pl-4 py-2"
+          :class="statusBorderClass(log.status)"
+        >
+          <div class="flex items-center gap-2">
+            <Badge :variant="statusBadgeVariant(log.status)" class="text-xs">
+              {{ $t(`bots.evolution.status${capitalize(log.status)}`) }}
+            </Badge>
+            <span class="text-xs text-muted-foreground">
+              {{ formatDateTime(log.started_at) }}
+            </span>
+            <Badge variant="outline" class="text-xs">
+              {{ log.trigger_reason }}
+            </Badge>
+          </div>
+          <div
+            v-if="log.changes_summary"
+            class="text-xs text-muted-foreground mt-1.5"
+          >
+            {{ log.changes_summary }}
+          </div>
+          <button
+            v-if="log.agent_response"
+            class="text-xs text-primary mt-1 hover:underline cursor-pointer"
+            @click="toggleExpandLog(log.id)"
+          >
+            {{ expandedLogs.has(log.id) ? $t('bots.evolution.hideDetails') : $t('bots.evolution.showDetails') }}
+          </button>
+          <div
+            v-if="expandedLogs.has(log.id) && log.agent_response"
+            class="mt-2 rounded-md bg-muted/50 p-3 max-h-60 overflow-auto"
+          >
+            <pre class="text-xs whitespace-pre-wrap font-mono">{{ log.agent_response }}</pre>
+          </div>
+        </div>
+
+        <Button
+          v-if="hasMoreLogs"
+          variant="outline"
+          size="sm"
+          class="w-full"
+          :disabled="loadingHistory"
+          @click="loadMoreHistory"
+        >
+          {{ $t('bots.evolution.loadMore') }}
+        </Button>
+      </div>
+    </div>
+
     <!-- Persona File Viewer -->
     <div class="rounded-md border p-4">
       <h4 class="text-sm font-semibold mb-3">
@@ -173,6 +250,7 @@ import {
   postBotsByBotIdHeartbeatByIdTrigger,
   getBotsByBotIdFilesByFilename,
 } from '@memoh/sdk'
+import { client } from '@memoh/sdk/client'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
@@ -187,6 +265,26 @@ const evolutionHeartbeatId = ref<string | null>(null)
 const triggering = ref(false)
 const loadingExperiments = ref(false)
 const loadingStatus = ref(false)
+
+// Evolution history state
+interface EvolutionLogEntry {
+  id: string
+  bot_id: string
+  trigger_reason: string
+  status: string
+  changes_summary: string
+  agent_response: string
+  started_at: string
+  completed_at: string
+}
+
+const evolutionLogs = ref<EvolutionLogEntry[]>([])
+const loadingHistory = ref(false)
+const historyTotal = ref(0)
+const historyOffset = ref(0)
+const historyLimit = 10
+const expandedLogs = ref(new Set<string>())
+const hasMoreLogs = ref(false)
 
 interface Experiment {
   title: string
@@ -344,8 +442,89 @@ function formatInterval(seconds: number): string {
   return `${seconds}s`
 }
 
+// ── Evolution History ────────────────────────────────────────
+
+async function loadEvolutionHistory() {
+  loadingHistory.value = true
+  try {
+    const { data } = await client.get({
+      url: `/bots/${props.botId}/evolution-logs`,
+      query: { limit: historyLimit, offset: 0 },
+    })
+    const resp = data as { items?: EvolutionLogEntry[]; total?: number }
+    evolutionLogs.value = resp?.items ?? []
+    historyTotal.value = resp?.total ?? 0
+    historyOffset.value = evolutionLogs.value.length
+    hasMoreLogs.value = historyOffset.value < historyTotal.value
+  } catch {
+    // silently fail
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+async function loadMoreHistory() {
+  loadingHistory.value = true
+  try {
+    const { data } = await client.get({
+      url: `/bots/${props.botId}/evolution-logs`,
+      query: { limit: historyLimit, offset: historyOffset.value },
+    })
+    const resp = data as { items?: EvolutionLogEntry[]; total?: number }
+    const newItems = resp?.items ?? []
+    evolutionLogs.value.push(...newItems)
+    historyOffset.value += newItems.length
+    hasMoreLogs.value = historyOffset.value < (resp?.total ?? 0)
+  } catch {
+    toast.error(t('bots.evolution.historyLoadFailed'))
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+function toggleExpandLog(logId: string) {
+  if (expandedLogs.value.has(logId)) {
+    expandedLogs.value.delete(logId)
+  } else {
+    expandedLogs.value.add(logId)
+  }
+}
+
+function statusBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' {
+  switch (status) {
+    case 'completed': return 'default'
+    case 'failed': return 'destructive'
+    case 'skipped': return 'secondary'
+    default: return 'secondary'
+  }
+}
+
+function statusBorderClass(status: string): string {
+  switch (status) {
+    case 'completed': return 'border-green-500/50'
+    case 'failed': return 'border-red-500/50'
+    case 'skipped': return 'border-yellow-500/50'
+    case 'running': return 'border-blue-500/50'
+    default: return 'border-muted-foreground/30'
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function formatDateTime(iso: string): string {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
 onMounted(() => {
   loadEvolutionStatus()
   loadExperiments()
+  loadEvolutionHistory()
 })
 </script>

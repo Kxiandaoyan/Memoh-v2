@@ -443,6 +443,7 @@ func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload h
 	}
 	rc, err := r.resolve(ctx, req)
 	if err != nil {
+		r.completeEvolutionLogOnError(ctx, payload.EvolutionLogID, err)
 		return err
 	}
 
@@ -462,10 +463,83 @@ func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload h
 
 	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
 	if err != nil {
+		r.completeEvolutionLogOnError(ctx, payload.EvolutionLogID, err)
 		return err
 	}
 	r.recordTokenUsage(ctx, botID, resp.Usage, rc.model.ModelID, "heartbeat")
+
+	// Complete evolution log if this was an evolution heartbeat.
+	r.completeEvolutionLogFromResponse(ctx, payload.EvolutionLogID, resp)
+
 	return r.storeRound(ctx, req, resp.Messages)
+}
+
+// completeEvolutionLogFromResponse parses the agent response and completes the evolution log.
+func (r *Resolver) completeEvolutionLogFromResponse(ctx context.Context, logID string, resp gatewayResponse) {
+	if logID == "" || r.queries == nil {
+		return
+	}
+	pgLogID, err := db.ParseUUID(logID)
+	if err != nil {
+		return
+	}
+
+	// Extract the assistant's text from the response messages.
+	var textParts []string
+	for _, msg := range resp.Messages {
+		if msg.Role == "assistant" {
+			if t := msg.TextContent(); t != "" {
+				textParts = append(textParts, t)
+			}
+		}
+	}
+	agentText := strings.TrimSpace(strings.Join(textParts, "\n"))
+
+	// Determine status based on the agent response text.
+	status := "completed"
+	lowerText := strings.ToLower(agentText)
+	if strings.Contains(lowerText, "no evolution needed") || strings.Contains(lowerText, "no changes needed") {
+		status = "skipped"
+	}
+
+	// Extract a brief summary (first paragraph or first 500 chars).
+	summary := agentText
+	if idx := strings.Index(summary, "\n\n"); idx > 0 && idx < 500 {
+		summary = summary[:idx]
+	} else if len(summary) > 500 {
+		summary = summary[:500] + "..."
+	}
+
+	_, completeErr := r.queries.CompleteEvolutionLog(ctx, sqlc.CompleteEvolutionLogParams{
+		ID:             pgLogID,
+		Status:         status,
+		ChangesSummary: pgtype.Text{String: summary, Valid: summary != ""},
+		FilesModified:  nil,
+		AgentResponse:  pgtype.Text{String: agentText, Valid: agentText != ""},
+	})
+	if completeErr != nil {
+		r.logger.Warn("failed to complete evolution log",
+			slog.String("log_id", logID), slog.Any("error", completeErr))
+	}
+}
+
+// completeEvolutionLogOnError marks an evolution log as failed.
+func (r *Resolver) completeEvolutionLogOnError(ctx context.Context, logID string, triggerErr error) {
+	if logID == "" || r.queries == nil {
+		return
+	}
+	pgLogID, err := db.ParseUUID(logID)
+	if err != nil {
+		return
+	}
+	errMsg := triggerErr.Error()
+	_, _ = r.queries.CompleteEvolutionLog(ctx, sqlc.CompleteEvolutionLogParams{
+		ID:             pgLogID,
+		Status:         "failed",
+		ChangesSummary: pgtype.Text{String: "Error: " + errMsg, Valid: true},
+		FilesModified:  nil,
+		AgentResponse:  pgtype.Text{Valid: false},
+	})
 }
 
 // --- StreamChat ---

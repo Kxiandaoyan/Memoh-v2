@@ -389,12 +389,34 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 	if err != nil {
 		return fmt.Errorf("generate token: %w", err)
 	}
-	return e.triggerer.TriggerHeartbeat(ctx, cfg.BotID, TriggerPayload{
+
+	payload := TriggerPayload{
 		HeartbeatID: cfg.ID,
 		Prompt:      cfg.Prompt,
 		Reason:      reason,
 		OwnerUserID: ownerUserID,
-	}, token)
+	}
+
+	// If this is an evolution heartbeat, create an evolution log entry.
+	if strings.Contains(cfg.Prompt, EvolutionPromptMarker) {
+		pgBotID, parseErr := db.ParseUUID(cfg.BotID)
+		if parseErr == nil {
+			pgConfigID, _ := db.ParseUUID(cfg.ID)
+			logRow, logErr := e.queries.CreateEvolutionLog(ctx, sqlc.CreateEvolutionLogParams{
+				BotID:             pgBotID,
+				HeartbeatConfigID: pgConfigID,
+				TriggerReason:     reason,
+			})
+			if logErr != nil {
+				e.logger.Warn("failed to create evolution log",
+					slog.String("bot_id", cfg.BotID), slog.Any("error", logErr))
+			} else {
+				payload.EvolutionLogID = logRow.ID.String()
+			}
+		}
+	}
+
+	return e.triggerer.TriggerHeartbeat(ctx, cfg.BotID, payload, token)
 }
 
 func (e *Engine) resolveBotOwner(ctx context.Context, botID string) (string, error) {

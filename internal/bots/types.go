@@ -46,6 +46,7 @@ type CreateBotRequest struct {
 	AvatarURL    string         `json:"avatar_url,omitempty"`
 	IsActive     *bool          `json:"is_active,omitempty"`
 	IsPrivileged bool           `json:"is_privileged,omitempty"`
+	TemplateID   string         `json:"template_id,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
