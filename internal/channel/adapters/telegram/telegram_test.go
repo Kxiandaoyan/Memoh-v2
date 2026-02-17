@@ -321,11 +321,12 @@ func TestIsTelegramMessageNotModified(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"plain error", fmt.Errorf("network error"), false},
-		{"other api error", tgbotapi.Error{Code: 400, Message: "Bad Request: chat not found"}, false},
-		{"message is not modified", tgbotapi.Error{Code: 400, Message: productionMessageNotModified}, true},
-		{"production exact", tgbotapi.Error{Code: 400, Message: productionMessageNotModified}, true},
-		{"same text but code 500", tgbotapi.Error{Code: 500, Message: "message is not modified"}, false},
-		{"wrapped same", fmt.Errorf("wrapped: %w", tgbotapi.Error{Code: 400, Message: "Bad Request: message is not modified"}), true},
+		{"other api error", &tgbotapi.Error{Code: 400, Message: "Bad Request: chat not found"}, false},
+		{"message is not modified", &tgbotapi.Error{Code: 400, Message: productionMessageNotModified}, true},
+		{"production exact", &tgbotapi.Error{Code: 400, Message: productionMessageNotModified}, true},
+		{"same text but code 500", &tgbotapi.Error{Code: 500, Message: "message is not modified"}, false},
+		{"wrapped pointer", fmt.Errorf("wrapped: %w", &tgbotapi.Error{Code: 400, Message: "Bad Request: message is not modified"}), true},
+		{"string fallback", fmt.Errorf("Bad Request: message is not modified"), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -346,8 +347,9 @@ func TestIsTelegramTooManyRequests(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"429", tgbotapi.Error{Code: 429, Message: "Too Many Requests"}, true},
-		{"400", tgbotapi.Error{Code: 400, Message: "Bad Request"}, false},
+		{"429", &tgbotapi.Error{Code: 429, Message: "Too Many Requests"}, true},
+		{"400", &tgbotapi.Error{Code: 400, Message: "Bad Request"}, false},
+		{"wrapped 429", fmt.Errorf("wrapped: %w", &tgbotapi.Error{Code: 429, Message: "Too Many Requests"}), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -368,8 +370,8 @@ func TestGetTelegramRetryAfter(t *testing.T) {
 		want time.Duration
 	}{
 		{"nil", nil, 0},
-		{"no retry_after", tgbotapi.Error{Code: 429, Message: "Too Many Requests"}, 0},
-		{"retry_after 2", tgbotapi.Error{Code: 429, Message: "Too Many Requests", ResponseParameters: tgbotapi.ResponseParameters{RetryAfter: 2}}, 2 * time.Second},
+		{"no retry_after", &tgbotapi.Error{Code: 429, Message: "Too Many Requests"}, 0},
+		{"retry_after 2", &tgbotapi.Error{Code: 429, Message: "Too Many Requests", ResponseParameters: tgbotapi.ResponseParameters{RetryAfter: 2}}, 2 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

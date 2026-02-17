@@ -14,7 +14,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
 )
 
-const telegramStreamEditThrottle = 5000 * time.Millisecond
+const telegramStreamEditThrottle = 1000 * time.Millisecond
 
 var testEditFunc func(bot *tgbotapi.BotAPI, chatID int64, msgID int, text string, parseMode string) error
 
@@ -27,6 +27,7 @@ type telegramOutboundStream struct {
 	closed       atomic.Bool
 	mu           sync.Mutex
 	buf          strings.Builder
+	reasoning    bool
 	streamChatID int64
 	streamMsgID  int
 	lastEdited   string
@@ -67,7 +68,7 @@ func (s *telegramOutboundStream) ensureStreamMessage(ctx context.Context, text s
 	}
 	s.streamChatID = chatID
 	s.streamMsgID = msgID
-	s.lastEdited = strings.TrimSpace(text)
+	s.lastEdited = truncateTelegramText(sanitizeTelegramText(strings.TrimSpace(text)))
 	s.lastEditedAt = time.Now()
 	s.mu.Unlock()
 	return nil
@@ -83,8 +84,8 @@ func (s *telegramOutboundStream) editStreamMessage(ctx context.Context, text str
 	if msgID == 0 {
 		return nil
 	}
-	trimmed := strings.TrimSpace(text)
-	if trimmed == lastEdited {
+	rendered := truncateTelegramText(sanitizeTelegramText(strings.TrimSpace(text)))
+	if rendered == lastEdited {
 		return nil
 	}
 	if time.Since(lastEditedAt) < telegramStreamEditThrottle {
@@ -111,15 +112,13 @@ func (s *telegramOutboundStream) editStreamMessage(ctx context.Context, text str
 			s.mu.Unlock()
 			return nil
 		}
-		// "message is not modified" is already handled inside editTelegramMessageText,
-		// but guard here as well in case the error shape changes across library versions.
 		if isTelegramMessageNotModified(editErr) {
 			return nil
 		}
 		return editErr
 	}
 	s.mu.Lock()
-	s.lastEdited = trimmed
+	s.lastEdited = rendered
 	s.lastEditedAt = time.Now()
 	s.mu.Unlock()
 	return nil
@@ -138,8 +137,8 @@ func (s *telegramOutboundStream) editStreamMessageFinal(ctx context.Context, tex
 	if msgID == 0 {
 		return nil
 	}
-	trimmed := strings.TrimSpace(text)
-	if trimmed == lastEdited {
+	rendered := truncateTelegramText(sanitizeTelegramText(strings.TrimSpace(text)))
+	if rendered == lastEdited {
 		return nil
 	}
 	bot, _, err := s.getBotAndReply(ctx)
@@ -155,16 +154,14 @@ func (s *telegramOutboundStream) editStreamMessageFinal(ctx context.Context, tex
 		}
 		if editErr == nil {
 			s.mu.Lock()
-			s.lastEdited = trimmed
+			s.lastEdited = rendered
 			s.lastEditedAt = time.Now()
 			s.mu.Unlock()
 			return nil
 		}
-		// "message is not modified" means the rendered content is identical;
-		// treat this as success rather than propagating an error to the user.
 		if isTelegramMessageNotModified(editErr) {
 			s.mu.Lock()
-			s.lastEdited = trimmed
+			s.lastEdited = rendered
 			s.lastEditedAt = time.Now()
 			s.mu.Unlock()
 			return nil
@@ -204,7 +201,19 @@ func (s *telegramOutboundStream) Push(ctx context.Context, event channel.StreamE
 		if event.Delta == "" {
 			return nil
 		}
+		isReasoning := false
+		if phase, ok := event.Metadata["phase"].(string); ok && phase == "reasoning" {
+			isReasoning = true
+		}
 		s.mu.Lock()
+		if isReasoning {
+			s.reasoning = true
+			s.mu.Unlock()
+			return nil
+		}
+		if s.reasoning {
+			s.reasoning = false
+		}
 		s.buf.WriteString(event.Delta)
 		content := s.buf.String()
 		s.mu.Unlock()

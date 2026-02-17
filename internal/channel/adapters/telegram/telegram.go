@@ -477,29 +477,29 @@ func isTelegramMessageNotModified(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr tgbotapi.Error
+	var apiErr *tgbotapi.Error
 	if errors.As(err, &apiErr) {
 		return apiErr.Code == 400 && strings.Contains(apiErr.Message, "message is not modified")
 	}
-	return false
+	return strings.Contains(err.Error(), "message is not modified")
 }
 
 func isTelegramTooManyRequests(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr tgbotapi.Error
+	var apiErr *tgbotapi.Error
 	if errors.As(err, &apiErr) {
 		return apiErr.Code == 429
 	}
-	return false
+	return strings.Contains(err.Error(), "Too Many Requests")
 }
 
 func getTelegramRetryAfter(err error) time.Duration {
 	if err == nil {
 		return 0
 	}
-	var apiErr tgbotapi.Error
+	var apiErr *tgbotapi.Error
 	if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
 		return time.Duration(apiErr.RetryAfter) * time.Second
 	}

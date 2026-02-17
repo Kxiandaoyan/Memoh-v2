@@ -60,6 +60,9 @@ func (s *feishuOutboundStream) Push(ctx context.Context, event channel.StreamEve
 		if event.Delta == "" {
 			return nil
 		}
+		if phase, ok := event.Metadata["phase"].(string); ok && phase == "reasoning" {
+			return nil
+		}
 		s.textBuffer.WriteString(event.Delta)
 		if err := s.ensureCard(ctx, feishuStreamThinkingText); err != nil {
 			return err

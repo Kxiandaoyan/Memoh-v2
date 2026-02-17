@@ -206,7 +206,7 @@ func TestEditStreamMessage_429SetsBackoffAndReturnsNil(t *testing.T) {
 		return &tgbotapi.BotAPI{Token: "fake"}, nil
 	}
 	testEditFunc = func(*tgbotapi.BotAPI, int64, int, string, string) error {
-		return tgbotapi.Error{
+		return &tgbotapi.Error{
 			Code:               429,
 			Message:            "Too Many Requests",
 			ResponseParameters: tgbotapi.ResponseParameters{RetryAfter: 2},
@@ -254,7 +254,7 @@ func TestEditStreamMessage_MessageNotModifiedIsSilenced(t *testing.T) {
 		return &tgbotapi.BotAPI{Token: "fake"}, nil
 	}
 	testEditFunc = func(*tgbotapi.BotAPI, int64, int, string, string) error {
-		return tgbotapi.Error{
+		return &tgbotapi.Error{
 			Code:    400,
 			Message: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
 		}
@@ -291,7 +291,7 @@ func TestEditStreamMessageFinal_MessageNotModifiedIsSuccess(t *testing.T) {
 		return &tgbotapi.BotAPI{Token: "fake"}, nil
 	}
 	testEditFunc = func(*tgbotapi.BotAPI, int64, int, string, string) error {
-		return tgbotapi.Error{
+		return &tgbotapi.Error{
 			Code:    400,
 			Message: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
 		}
