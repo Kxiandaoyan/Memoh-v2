@@ -303,25 +303,35 @@
       "blankDescription": "从零开始，不使用任何预设人格",
       "categories": {
         "all": "全部",
-        "business": "商业",
+        "productivity": "效率",
         "development": "开发",
-        "design": "设计",
-        "productivity": "效率"
+        "creative": "创意",
+        "education": "教育",
+        "personal": "个人"
       },
       "names": {
-        "ceo-bezos": "CEO 战略顾问",
-        "cto-vogels": "CTO 架构师",
-        "fullstack-dhh": "全栈开发",
-        "interaction-cooper": "交互设计",
-        "marketing-godin": "营销策略",
-        "operations-pg": "运营增长",
-        "product-norman": "产品设计",
-        "qa-bach": "质量保证",
-        "sales-ross": "销售策略",
-        "ui-duarte": "UI 设计",
         "research-analyst": "研究分析师",
+        "code-architect": "代码架构师",
+        "writing-editor": "写作编辑",
         "daily-secretary": "日程秘书",
-        "knowledge-curator": "知识管理师"
+        "data-wrangler": "数据分析师",
+        "knowledge-curator": "知识管理师",
+        "language-tutor": "语言导师",
+        "creative-muse": "创意缪斯",
+        "ops-monitor": "运维监控",
+        "life-strategist": "人生策略师"
+      },
+      "descriptions": {
+        "research-analyst": "深度网络调研与批判性分析，帮你找到可靠答案",
+        "code-architect": "务实的全栈开发者，推崇简洁优于复杂",
+        "writing-editor": "细致入微的编辑与写作教练",
+        "daily-secretary": "高效个人助理，管理你的日常事务",
+        "data-wrangler": "将杂乱数据转化为清晰洞察",
+        "knowledge-curator": "个人知识架构师 — 你的第二大脑",
+        "language-tutor": "耐心的语言学习伙伴",
+        "creative-muse": "头脑风暴与创意激发伙伴",
+        "ops-monitor": "系统可靠性与运维监控伙伴",
+        "life-strategist": "个人成长与决策辅助伙伴"
       }
     },
     "step": "步骤 {current}/{total}",

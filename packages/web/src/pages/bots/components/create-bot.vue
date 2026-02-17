@@ -65,7 +65,7 @@
               </div>
               <span class="font-medium text-sm">{{ $t(`bots.templates.names.${tmpl.id}`) }}</span>
             </div>
-            <p class="text-xs text-muted-foreground line-clamp-2">{{ tmpl.description }}</p>
+            <p class="text-xs text-muted-foreground line-clamp-2">{{ $t(`bots.templates.descriptions.${tmpl.id}`) }}</p>
           </div>
         </div>
 
@@ -254,20 +254,19 @@ interface TemplateMeta {
   id: string
   icon: string
   category: string
-  description: string
 }
 
 const allTemplates: TemplateMeta[] = [
-  { id: 'research-analyst', icon: 'magnifying-glass', category: 'productivity', description: 'Deep web researcher with critical analysis skills.' },
-  { id: 'code-architect', icon: 'code', category: 'development', description: 'Pragmatic full-stack developer. Simplicity over complexity.' },
-  { id: 'writing-editor', icon: 'pen-nib', category: 'creative', description: 'Meticulous editor and writing coach.' },
-  { id: 'daily-secretary', icon: 'calendar-check', category: 'productivity', description: 'Efficient personal assistant for daily operations.' },
-  { id: 'data-wrangler', icon: 'chart-bar', category: 'development', description: 'Turns messy data into clear insights.' },
-  { id: 'knowledge-curator', icon: 'book-open', category: 'productivity', description: 'Personal knowledge architect — your second brain.' },
-  { id: 'language-tutor', icon: 'language', category: 'education', description: 'Patient language learning partner.' },
-  { id: 'creative-muse', icon: 'lightbulb', category: 'creative', description: 'Brainstorming and ideation partner.' },
-  { id: 'ops-monitor', icon: 'server', category: 'development', description: 'Systems reliability and monitoring partner.' },
-  { id: 'life-strategist', icon: 'compass', category: 'personal', description: 'Personal growth and decision-making partner.' },
+  { id: 'research-analyst', icon: 'magnifying-glass', category: 'productivity' },
+  { id: 'code-architect', icon: 'code', category: 'development' },
+  { id: 'writing-editor', icon: 'pen-nib', category: 'creative' },
+  { id: 'daily-secretary', icon: 'calendar-check', category: 'productivity' },
+  { id: 'data-wrangler', icon: 'chart-bar', category: 'development' },
+  { id: 'knowledge-curator', icon: 'book-open', category: 'productivity' },
+  { id: 'language-tutor', icon: 'language', category: 'education' },
+  { id: 'creative-muse', icon: 'lightbulb', category: 'creative' },
+  { id: 'ops-monitor', icon: 'server', category: 'development' },
+  { id: 'life-strategist', icon: 'compass', category: 'personal' },
 ]
 
 const categories = ['all', 'productivity', 'development', 'creative', 'education', 'personal']
