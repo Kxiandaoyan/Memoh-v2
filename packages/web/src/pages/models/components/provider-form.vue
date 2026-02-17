@@ -23,6 +23,13 @@
 
       <section>
         <h4 class="scroll-m-20 font-semibold tracking-tight">
+          {{ $t('common.type') }}
+        </h4>
+        <p class="text-xs text-muted-foreground mt-1">{{ getProviderLabel(provider?.client_type || '') }}</p>
+      </section>
+
+      <section>
+        <h4 class="scroll-m-20 font-semibold tracking-tight">
           {{ $t('provider.apiKey') }}
         </h4>
         <p class="text-xs text-muted-foreground mt-1">{{ $t('provider.apiKeyHint') }}</p>
@@ -103,6 +110,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import z from 'zod'
 import { useForm } from 'vee-validate'
 import type { ProvidersGetResponse } from '@memoh/sdk'
+import { getProviderLabel } from '@/data/model-catalog'
 
 const props = defineProps<{
   provider: Partial<ProvidersGetResponse> | undefined

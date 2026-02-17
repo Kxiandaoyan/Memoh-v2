@@ -144,6 +144,8 @@ definitions:
       metadata:
         additionalProperties: {}
         type: object
+      template_id:
+        type: string
       type:
         type: string
     type: object
@@ -922,6 +924,19 @@ definitions:
       ok:
         type: boolean
     type: object
+  heartbeat.CompleteEvolutionLogRequest:
+    properties:
+      agent_response:
+        type: string
+      changes_summary:
+        type: string
+      files_modified:
+        items:
+          type: string
+        type: array
+      status:
+        type: string
+    type: object
   heartbeat.Config:
     properties:
       bot_id:
@@ -964,6 +979,42 @@ definitions:
     x-enum-varnames:
     - TriggerMessageCreated
     - TriggerScheduleCompleted
+  heartbeat.EvolutionLog:
+    properties:
+      agent_response:
+        type: string
+      bot_id:
+        type: string
+      changes_summary:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      files_modified:
+        items:
+          type: string
+        type: array
+      heartbeat_config_id:
+        type: string
+      id:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      trigger_reason:
+        type: string
+    type: object
+  heartbeat.ListEvolutionLogsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/heartbeat.EvolutionLog'
+        type: array
+      total:
+        type: integer
+    type: object
   heartbeat.ListResponse:
     properties:
       items:
@@ -1234,10 +1285,14 @@ definitions:
         type: boolean
       llm_provider_id:
         type: string
+      max_tokens:
+        type: integer
       model_id:
         type: string
       name:
         type: string
+      reasoning:
+        type: boolean
       type:
         $ref: '#/definitions/models.ModelType'
     type: object
@@ -1269,10 +1324,14 @@ definitions:
         type: boolean
       llm_provider_id:
         type: string
+      max_tokens:
+        type: integer
       model_id:
         type: string
       name:
         type: string
+      reasoning:
+        type: boolean
       type:
         $ref: '#/definitions/models.ModelType'
     type: object
@@ -1300,10 +1359,14 @@ definitions:
         type: boolean
       llm_provider_id:
         type: string
+      max_tokens:
+        type: integer
       model_id:
         type: string
       name:
         type: string
+      reasoning:
+        type: boolean
       type:
         $ref: '#/definitions/models.ModelType'
     type: object
@@ -1319,6 +1382,23 @@ definitions:
     - xai
     - ollama
     - dashscope
+    - deepseek
+    - zai-global
+    - zai-cn
+    - zai-coding-global
+    - zai-coding-cn
+    - minimax-global
+    - minimax-cn
+    - moonshot-global
+    - moonshot-cn
+    - volcengine
+    - volcengine-coding
+    - qianfan
+    - groq
+    - openrouter
+    - together
+    - fireworks
+    - perplexity
     type: string
     x-enum-varnames:
     - ClientTypeOpenAI
@@ -1331,6 +1411,23 @@ definitions:
     - ClientTypeXAI
     - ClientTypeOllama
     - ClientTypeDashscope
+    - ClientTypeDeepSeek
+    - ClientTypeZaiGlobal
+    - ClientTypeZaiCN
+    - ClientTypeZaiCodingGlobal
+    - ClientTypeZaiCodingCN
+    - ClientTypeMinimaxGlobal
+    - ClientTypeMinimaxCN
+    - ClientTypeMoonshotGlobal
+    - ClientTypeMoonshotCN
+    - ClientTypeVolcengine
+    - ClientTypeVolcengineCoding
+    - ClientTypeQianfan
+    - ClientTypeGroq
+    - ClientTypeOpenRouter
+    - ClientTypeTogether
+    - ClientTypeFireworks
+    - ClientTypePerplexity
   providers.CountResponse:
     properties:
       count:
@@ -1550,6 +1647,8 @@ definitions:
         type: string
       search_provider_id:
         type: string
+      vlm_model_id:
+        type: string
     type: object
   settings.UpsertRequest:
     properties:
@@ -1566,6 +1665,8 @@ definitions:
       memory_model_id:
         type: string
       search_provider_id:
+        type: string
+      vlm_model_id:
         type: string
     type: object
   subagent.AddSkillsRequest:
@@ -2095,6 +2196,108 @@ paths:
       summary: Stop container task for bot
       tags:
       - containerd
+  /bots/{bot_id}/evolution-logs:
+    get:
+      description: List evolution log entries for a bot with pagination
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - default: 20
+        description: Max items to return
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Number of items to skip
+        in: query
+        name: offset
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heartbeat.ListEvolutionLogsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List evolution logs
+      tags:
+      - evolution
+  /bots/{bot_id}/evolution-logs/{id}:
+    get:
+      description: Get a single evolution log entry by ID
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Evolution log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heartbeat.EvolutionLog'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get evolution log
+      tags:
+      - evolution
+  /bots/{bot_id}/evolution-logs/{id}/complete:
+    post:
+      description: Mark an evolution log as completed, failed, or skipped (callback
+        from agent gateway)
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Evolution log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Completion payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/heartbeat.CompleteEvolutionLogRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heartbeat.EvolutionLog'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Complete evolution log
+      tags:
+      - evolution
   /bots/{bot_id}/files:
     get:
       description: Returns a list of text/markdown files in the bot's data directory
@@ -4329,7 +4532,10 @@ paths:
         name: type
         type: string
       - description: Client type (openai, openai-compat, anthropic, google, azure,
-          bedrock, mistral, xai, ollama, dashscope)
+          bedrock, mistral, xai, ollama, dashscope, deepseek, zai-global, zai-cn,
+          zai-coding-global, zai-coding-cn, minimax-global, minimax-cn, moonshot-global,
+          moonshot-cn, volcengine, volcengine-coding, qianfan, groq, openrouter, together,
+          fireworks, perplexity)
         in: query
         name: client_type
         type: string

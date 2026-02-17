@@ -9,6 +9,23 @@ export enum ClientType {
   XAI = 'xai',
   Ollama = 'ollama',
   Dashscope = 'dashscope',
+  DeepSeek = 'deepseek',
+  ZaiGlobal = 'zai-global',
+  ZaiCN = 'zai-cn',
+  ZaiCodingGlobal = 'zai-coding-global',
+  ZaiCodingCN = 'zai-coding-cn',
+  MinimaxGlobal = 'minimax-global',
+  MinimaxCN = 'minimax-cn',
+  MoonshotGlobal = 'moonshot-global',
+  MoonshotCN = 'moonshot-cn',
+  Volcengine = 'volcengine',
+  VolcengineCoding = 'volcengine-coding',
+  Qianfan = 'qianfan',
+  Groq = 'groq',
+  OpenRouter = 'openrouter',
+  Together = 'together',
+  Fireworks = 'fireworks',
+  Perplexity = 'perplexity',
 }
 
 export enum ModelInput {
@@ -22,4 +39,6 @@ export interface ModelConfig {
   modelId: string
   clientType: ClientType
   input: ModelInput[]
+  reasoning?: boolean
+  maxTokens?: number
 }

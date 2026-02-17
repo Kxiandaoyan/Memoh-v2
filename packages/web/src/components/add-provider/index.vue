@@ -93,7 +93,7 @@
                           :key="type"
                           :value="type"
                         >
-                          {{ type }}
+                          {{ getProviderLabel(type) }}
                         </SelectItem>
                       </SelectGroup>
                     </SelectContent>
@@ -152,14 +152,12 @@ import {
 import { toTypedSchema } from '@vee-validate/zod'
 import z from 'zod'
 import { useForm } from 'vee-validate'
+import { watch } from 'vue'
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { postProviders } from '@memoh/sdk'
-import type { ProvidersClientType } from '@memoh/sdk'
+import { providerCatalog, getProviderDefaultBaseUrl, getProviderLabel } from '@/data/model-catalog'
 
-const CLIENT_TYPES: ProvidersClientType[] = [
-  'openai', 'openai-compat', 'anthropic', 'google',
-  'azure', 'bedrock', 'mistral', 'xai', 'ollama', 'dashscope',
-]
+const CLIENT_TYPES = Object.keys(providerCatalog)
 
 const open = defineModel<boolean>('open')
 
@@ -184,6 +182,15 @@ const providerSchema = toTypedSchema(z.object({
 
 const form = useForm({
   validationSchema: providerSchema,
+})
+
+watch(() => form.values.client_type, (newType) => {
+  if (newType) {
+    const defaultUrl = getProviderDefaultBaseUrl(newType)
+    if (defaultUrl && !form.values.base_url) {
+      form.setFieldValue('base_url', defaultUrl)
+    }
+  }
 })
 
 const createProvider = form.handleSubmit(async (value) => {

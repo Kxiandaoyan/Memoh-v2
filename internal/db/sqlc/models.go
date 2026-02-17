@@ -219,6 +219,8 @@ type Model struct {
 	Type            string             `json:"type"`
 	ContextWindow   int32              `json:"context_window"`
 	FallbackModelID pgtype.UUID        `json:"fallback_model_id"`
+	Reasoning       bool               `json:"reasoning"`
+	MaxTokens       int32              `json:"max_tokens"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }

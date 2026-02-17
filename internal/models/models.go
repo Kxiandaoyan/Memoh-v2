@@ -50,6 +50,8 @@ func (s *Service) Create(ctx context.Context, req AddRequest) (AddResponse, erro
 		IsMultimodal:  model.IsMultimodal,
 		Type:          string(model.Type),
 		ContextWindow: contextWindow,
+		Reasoning:     model.Reasoning,
+		MaxTokens:     int32(model.MaxTokens),
 	}
 
 	// Handle optional name field
@@ -218,6 +220,8 @@ func (s *Service) UpdateByID(ctx context.Context, id string, req UpdateRequest) 
 		IsMultimodal:  model.IsMultimodal,
 		Type:          string(model.Type),
 		ContextWindow: contextWindow,
+		Reasoning:     model.Reasoning,
+		MaxTokens:     int32(model.MaxTokens),
 	}
 
 	llmProviderID, err := db.ParseUUID(model.LlmProviderID)
@@ -272,6 +276,8 @@ func (s *Service) UpdateByModelID(ctx context.Context, modelID string, req Updat
 		IsMultimodal:  model.IsMultimodal,
 		Type:          string(model.Type),
 		ContextWindow: contextWindow,
+		Reasoning:     model.Reasoning,
+		MaxTokens:     int32(model.MaxTokens),
 	}
 
 	llmProviderID, err := db.ParseUUID(model.LlmProviderID)
@@ -364,6 +370,8 @@ func (s *Service) convertToGetResponse(ctx context.Context, dbModel sqlc.Model) 
 			Input:         modelInputFromMultimodal(dbModel.IsMultimodal),
 			Type:          ModelType(dbModel.Type),
 			ContextWindow: int(dbModel.ContextWindow),
+			Reasoning:     dbModel.Reasoning,
+			MaxTokens:     int(dbModel.MaxTokens),
 		},
 	}
 
@@ -437,7 +445,24 @@ func isValidClientType(clientType ClientType) bool {
 		ClientTypeMistral,
 		ClientTypeXAI,
 		ClientTypeOllama,
-		ClientTypeDashscope:
+		ClientTypeDashscope,
+		ClientTypeDeepSeek,
+		ClientTypeZaiGlobal,
+		ClientTypeZaiCN,
+		ClientTypeZaiCodingGlobal,
+		ClientTypeZaiCodingCN,
+		ClientTypeMinimaxGlobal,
+		ClientTypeMinimaxCN,
+		ClientTypeMoonshotGlobal,
+		ClientTypeMoonshotCN,
+		ClientTypeVolcengine,
+		ClientTypeVolcengineCoding,
+		ClientTypeQianfan,
+		ClientTypeGroq,
+		ClientTypeOpenRouter,
+		ClientTypeTogether,
+		ClientTypeFireworks,
+		ClientTypePerplexity:
 		return true
 	default:
 		return false

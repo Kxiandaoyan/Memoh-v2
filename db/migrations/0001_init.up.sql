@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS llm_providers (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT llm_providers_name_unique UNIQUE (name),
-  CONSTRAINT llm_providers_client_type_check CHECK (client_type IN ('openai', 'openai-compat', 'anthropic', 'google', 'azure', 'bedrock', 'mistral', 'xai', 'ollama', 'dashscope'))
+  CONSTRAINT llm_providers_client_type_check CHECK (client_type IN ('openai', 'openai-compat', 'anthropic', 'google', 'azure', 'bedrock', 'mistral', 'xai', 'ollama', 'dashscope', 'deepseek', 'zai-global', 'zai-cn', 'zai-coding-global', 'zai-coding-cn', 'minimax-global', 'minimax-cn', 'moonshot-global', 'moonshot-cn', 'volcengine', 'volcengine-coding', 'qianfan', 'groq', 'openrouter', 'together', 'fireworks', 'perplexity'))
 );
 
 CREATE TABLE IF NOT EXISTS search_providers (
@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS models (
   type TEXT NOT NULL DEFAULT 'chat',
   context_window INTEGER NOT NULL DEFAULT 128000,
   fallback_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
+  reasoning BOOLEAN NOT NULL DEFAULT false,
+  max_tokens INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT models_model_id_unique UNIQUE (model_id),

@@ -21,16 +21,33 @@ const (
 type ClientType string
 
 const (
-	ClientTypeOpenAI       ClientType = "openai"
-	ClientTypeOpenAICompat ClientType = "openai-compat"
-	ClientTypeAnthropic    ClientType = "anthropic"
-	ClientTypeGoogle       ClientType = "google"
-	ClientTypeAzure        ClientType = "azure"
-	ClientTypeBedrock      ClientType = "bedrock"
-	ClientTypeMistral      ClientType = "mistral"
-	ClientTypeXAI          ClientType = "xai"
-	ClientTypeOllama       ClientType = "ollama"
-	ClientTypeDashscope    ClientType = "dashscope"
+	ClientTypeOpenAI          ClientType = "openai"
+	ClientTypeOpenAICompat    ClientType = "openai-compat"
+	ClientTypeAnthropic       ClientType = "anthropic"
+	ClientTypeGoogle          ClientType = "google"
+	ClientTypeAzure           ClientType = "azure"
+	ClientTypeBedrock         ClientType = "bedrock"
+	ClientTypeMistral         ClientType = "mistral"
+	ClientTypeXAI             ClientType = "xai"
+	ClientTypeOllama          ClientType = "ollama"
+	ClientTypeDashscope       ClientType = "dashscope"
+	ClientTypeDeepSeek        ClientType = "deepseek"
+	ClientTypeZaiGlobal       ClientType = "zai-global"
+	ClientTypeZaiCN           ClientType = "zai-cn"
+	ClientTypeZaiCodingGlobal ClientType = "zai-coding-global"
+	ClientTypeZaiCodingCN     ClientType = "zai-coding-cn"
+	ClientTypeMinimaxGlobal   ClientType = "minimax-global"
+	ClientTypeMinimaxCN       ClientType = "minimax-cn"
+	ClientTypeMoonshotGlobal  ClientType = "moonshot-global"
+	ClientTypeMoonshotCN      ClientType = "moonshot-cn"
+	ClientTypeVolcengine      ClientType = "volcengine"
+	ClientTypeVolcengineCoding ClientType = "volcengine-coding"
+	ClientTypeQianfan         ClientType = "qianfan"
+	ClientTypeGroq            ClientType = "groq"
+	ClientTypeOpenRouter      ClientType = "openrouter"
+	ClientTypeTogether        ClientType = "together"
+	ClientTypeFireworks       ClientType = "fireworks"
+	ClientTypePerplexity      ClientType = "perplexity"
 )
 
 type Model struct {
@@ -43,6 +60,8 @@ type Model struct {
 	Dimensions      int       `json:"dimensions"`
 	ContextWindow   int       `json:"context_window"`
 	FallbackModelID string    `json:"fallback_model_id,omitempty"`
+	Reasoning       bool      `json:"reasoning"`
+	MaxTokens       int       `json:"max_tokens"`
 }
 
 func (m *Model) Validate() error {

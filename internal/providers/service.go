@@ -233,7 +233,11 @@ func isValidClientType(clientType ClientType) bool {
 	switch clientType {
 	case ClientTypeOpenAI, ClientTypeOpenAICompat, ClientTypeAnthropic, ClientTypeGoogle,
 		ClientTypeAzure, ClientTypeBedrock, ClientTypeMistral, ClientTypeXAI,
-		ClientTypeOllama, ClientTypeDashscope:
+		ClientTypeOllama, ClientTypeDashscope,
+		ClientTypeDeepSeek, ClientTypeZaiGlobal, ClientTypeZaiCN, ClientTypeZaiCodingGlobal, ClientTypeZaiCodingCN,
+		ClientTypeMinimaxGlobal, ClientTypeMinimaxCN, ClientTypeMoonshotGlobal, ClientTypeMoonshotCN,
+		ClientTypeVolcengine, ClientTypeVolcengineCoding, ClientTypeQianfan,
+		ClientTypeGroq, ClientTypeOpenRouter, ClientTypeTogether, ClientTypeFireworks, ClientTypePerplexity:
 		return true
 	default:
 		return false

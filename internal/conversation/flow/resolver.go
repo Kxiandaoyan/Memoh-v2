@@ -115,6 +115,8 @@ type gatewayModelConfig struct {
 	Input      []string `json:"input"`
 	APIKey     string   `json:"apiKey"`
 	BaseURL    string   `json:"baseUrl"`
+	Reasoning  bool     `json:"reasoning,omitempty"`
+	MaxTokens  int      `json:"maxTokens,omitempty"`
 }
 
 type gatewayIdentity struct {
@@ -307,6 +309,8 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			Input:      chatModel.Input,
 			APIKey:     provider.ApiKey,
 			BaseURL:    provider.BaseUrl,
+			Reasoning:  chatModel.Reasoning,
+			MaxTokens:  chatModel.MaxTokens,
 		},
 		ActiveContextTime:  maxCtx,
 		Language:            botSettings.Language,
@@ -1230,6 +1234,8 @@ func (r *Resolver) tryFallback(ctx context.Context, primary resolvedContext) (re
 		Input:      fbModel.Input,
 		APIKey:     fbProvider.ApiKey,
 		BaseURL:    fbProvider.BaseUrl,
+		Reasoning:  fbModel.Reasoning,
+		MaxTokens:  fbModel.MaxTokens,
 	}
 	return resolvedContext{payload: fbPayload, model: fbModel, provider: fbProvider}, nil
 }
@@ -1326,7 +1332,11 @@ func normalizeClientType(clientType string) (string, error) {
 	ct := strings.ToLower(strings.TrimSpace(clientType))
 	switch ct {
 	case "openai", "openai-compat", "anthropic", "google",
-		"azure", "bedrock", "mistral", "xai", "ollama", "dashscope":
+		"azure", "bedrock", "mistral", "xai", "ollama", "dashscope",
+		"deepseek", "zai-global", "zai-cn", "zai-coding-global", "zai-coding-cn",
+		"minimax-global", "minimax-cn", "moonshot-global", "moonshot-cn",
+		"volcengine", "volcengine-coding", "qianfan",
+		"groq", "openrouter", "together", "fireworks", "perplexity":
 		return ct, nil
 	default:
 		return "", fmt.Errorf("unsupported agent gateway client type: %s", clientType)
@@ -1578,6 +1588,8 @@ func (r *Resolver) asyncSummarize(
 			Input:      chatModel.Input,
 			APIKey:     provider.ApiKey,
 			BaseURL:    provider.BaseUrl,
+			Reasoning:  chatModel.Reasoning,
+			MaxTokens:  chatModel.MaxTokens,
 		}, droppedCopy, token)
 		if err != nil {
 			r.logger.Warn("summarize request failed", slog.String("bot_id", botID), slog.Any("error", err))

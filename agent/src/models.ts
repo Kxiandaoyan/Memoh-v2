@@ -11,6 +11,10 @@ export const AgentSkillModel = z.object({
 export const ClientTypeModel = z.enum([
   'openai', 'openai-compat', 'anthropic', 'google',
   'azure', 'bedrock', 'mistral', 'xai', 'ollama', 'dashscope',
+  'deepseek', 'zai-global', 'zai-cn', 'zai-coding-global', 'zai-coding-cn',
+  'minimax-global', 'minimax-cn', 'moonshot-global', 'moonshot-cn',
+  'volcengine', 'volcengine-coding', 'qianfan',
+  'groq', 'openrouter', 'together', 'fireworks', 'perplexity',
 ])
 
 export const ModelConfigModel = z.object({
@@ -19,6 +23,8 @@ export const ModelConfigModel = z.object({
   input: z.array(z.enum(['text', 'image'])),
   apiKey: z.string().min(1, 'API key is required'),
   baseUrl: z.string(),
+  reasoning: z.boolean().optional().default(false),
+  maxTokens: z.number().optional().default(0),
 })
 
 export const AllowedActionModel = z.enum(allActions)

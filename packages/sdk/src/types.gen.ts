@@ -95,6 +95,7 @@ export type BotsCreateBotRequest = {
     metadata?: {
         [key: string]: unknown;
     };
+    template_id?: string;
     type?: string;
 };
 
@@ -557,6 +558,13 @@ export type HandlersSkillsOpResponse = {
     ok?: boolean;
 };
 
+export type HeartbeatCompleteEvolutionLogRequest = {
+    agent_response?: string;
+    changes_summary?: string;
+    files_modified?: Array<string>;
+    status?: string;
+};
+
 export type HeartbeatConfig = {
     bot_id?: string;
     created_at?: string;
@@ -576,6 +584,25 @@ export type HeartbeatCreateRequest = {
 };
 
 export type HeartbeatEventTrigger = 'message_created' | 'schedule_completed';
+
+export type HeartbeatEvolutionLog = {
+    agent_response?: string;
+    bot_id?: string;
+    changes_summary?: string;
+    completed_at?: string;
+    created_at?: string;
+    files_modified?: Array<string>;
+    heartbeat_config_id?: string;
+    id?: string;
+    started_at?: string;
+    status?: string;
+    trigger_reason?: string;
+};
+
+export type HeartbeatListEvolutionLogsResponse = {
+    items?: Array<HeartbeatEvolutionLog>;
+    total?: number;
+};
 
 export type HeartbeatListResponse = {
     items?: Array<HeartbeatConfig>;
@@ -748,8 +775,10 @@ export type ModelsAddRequest = {
     input?: Array<string>;
     is_multimodal?: boolean;
     llm_provider_id?: string;
+    max_tokens?: number;
     model_id?: string;
     name?: string;
+    reasoning?: boolean;
     type?: ModelsModelType;
 };
 
@@ -769,8 +798,10 @@ export type ModelsGetResponse = {
     input?: Array<string>;
     is_multimodal?: boolean;
     llm_provider_id?: string;
+    max_tokens?: number;
     model_id?: string;
     name?: string;
+    reasoning?: boolean;
     type?: ModelsModelType;
 };
 
@@ -783,12 +814,14 @@ export type ModelsUpdateRequest = {
     input?: Array<string>;
     is_multimodal?: boolean;
     llm_provider_id?: string;
+    max_tokens?: number;
     model_id?: string;
     name?: string;
+    reasoning?: boolean;
     type?: ModelsModelType;
 };
 
-export type ProvidersClientType = 'openai' | 'openai-compat' | 'anthropic' | 'google' | 'azure' | 'bedrock' | 'mistral' | 'xai' | 'ollama' | 'dashscope';
+export type ProvidersClientType = 'openai' | 'openai-compat' | 'anthropic' | 'google' | 'azure' | 'bedrock' | 'mistral' | 'xai' | 'ollama' | 'dashscope' | 'deepseek' | 'zai-global' | 'zai-cn' | 'zai-coding-global' | 'zai-coding-cn' | 'minimax-global' | 'minimax-cn' | 'moonshot-global' | 'moonshot-cn' | 'volcengine' | 'volcengine-coding' | 'qianfan' | 'groq' | 'openrouter' | 'together' | 'fireworks' | 'perplexity';
 
 export type ProvidersCountResponse = {
     count?: number;
@@ -925,22 +958,22 @@ export type SettingsSettings = {
     allow_guest?: boolean;
     chat_model_id?: string;
     embedding_model_id?: string;
-    vlm_model_id?: string;
     language?: string;
     max_context_load_time?: number;
     memory_model_id?: string;
     search_provider_id?: string;
+    vlm_model_id?: string;
 };
 
 export type SettingsUpsertRequest = {
     allow_guest?: boolean;
     chat_model_id?: string;
     embedding_model_id?: string;
-    vlm_model_id?: string;
     language?: string;
     max_context_load_time?: number;
     memory_model_id?: string;
     search_provider_id?: string;
+    vlm_model_id?: string;
 };
 
 export type SubagentAddSkillsRequest = {
@@ -1560,6 +1593,128 @@ export type PostBotsByBotIdContainerStopResponses = {
 };
 
 export type PostBotsByBotIdContainerStopResponse = PostBotsByBotIdContainerStopResponses[keyof PostBotsByBotIdContainerStopResponses];
+
+export type GetBotsByBotIdEvolutionLogsData = {
+    body?: never;
+    path: {
+        /**
+         * Bot ID
+         */
+        bot_id: string;
+    };
+    query?: {
+        /**
+         * Max items to return
+         */
+        limit?: number;
+        /**
+         * Number of items to skip
+         */
+        offset?: number;
+    };
+    url: '/bots/{bot_id}/evolution-logs';
+};
+
+export type GetBotsByBotIdEvolutionLogsErrors = {
+    /**
+     * Bad Request
+     */
+    400: HandlersErrorResponse;
+    /**
+     * Internal Server Error
+     */
+    500: HandlersErrorResponse;
+};
+
+export type GetBotsByBotIdEvolutionLogsError = GetBotsByBotIdEvolutionLogsErrors[keyof GetBotsByBotIdEvolutionLogsErrors];
+
+export type GetBotsByBotIdEvolutionLogsResponses = {
+    /**
+     * OK
+     */
+    200: HeartbeatListEvolutionLogsResponse;
+};
+
+export type GetBotsByBotIdEvolutionLogsResponse = GetBotsByBotIdEvolutionLogsResponses[keyof GetBotsByBotIdEvolutionLogsResponses];
+
+export type GetBotsByBotIdEvolutionLogsByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Bot ID
+         */
+        bot_id: string;
+        /**
+         * Evolution log ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/evolution-logs/{id}';
+};
+
+export type GetBotsByBotIdEvolutionLogsByIdErrors = {
+    /**
+     * Bad Request
+     */
+    400: HandlersErrorResponse;
+    /**
+     * Not Found
+     */
+    404: HandlersErrorResponse;
+};
+
+export type GetBotsByBotIdEvolutionLogsByIdError = GetBotsByBotIdEvolutionLogsByIdErrors[keyof GetBotsByBotIdEvolutionLogsByIdErrors];
+
+export type GetBotsByBotIdEvolutionLogsByIdResponses = {
+    /**
+     * OK
+     */
+    200: HeartbeatEvolutionLog;
+};
+
+export type GetBotsByBotIdEvolutionLogsByIdResponse = GetBotsByBotIdEvolutionLogsByIdResponses[keyof GetBotsByBotIdEvolutionLogsByIdResponses];
+
+export type PostBotsByBotIdEvolutionLogsByIdCompleteData = {
+    /**
+     * Completion payload
+     */
+    body: HeartbeatCompleteEvolutionLogRequest;
+    path: {
+        /**
+         * Bot ID
+         */
+        bot_id: string;
+        /**
+         * Evolution log ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/evolution-logs/{id}/complete';
+};
+
+export type PostBotsByBotIdEvolutionLogsByIdCompleteErrors = {
+    /**
+     * Bad Request
+     */
+    400: HandlersErrorResponse;
+    /**
+     * Internal Server Error
+     */
+    500: HandlersErrorResponse;
+};
+
+export type PostBotsByBotIdEvolutionLogsByIdCompleteError = PostBotsByBotIdEvolutionLogsByIdCompleteErrors[keyof PostBotsByBotIdEvolutionLogsByIdCompleteErrors];
+
+export type PostBotsByBotIdEvolutionLogsByIdCompleteResponses = {
+    /**
+     * OK
+     */
+    200: HeartbeatEvolutionLog;
+};
+
+export type PostBotsByBotIdEvolutionLogsByIdCompleteResponse = PostBotsByBotIdEvolutionLogsByIdCompleteResponses[keyof PostBotsByBotIdEvolutionLogsByIdCompleteResponses];
 
 export type GetBotsByBotIdFilesData = {
     body?: never;
@@ -4289,7 +4444,7 @@ export type GetModelsData = {
          */
         type?: string;
         /**
-         * Client type (openai, openai-compat, anthropic, google, azure, bedrock, mistral, xai, ollama, dashscope)
+         * Client type (openai, openai-compat, anthropic, google, azure, bedrock, mistral, xai, ollama, dashscope, deepseek, zai-global, zai-cn, zai-coding-global, zai-coding-cn, minimax-global, minimax-cn, moonshot-global, moonshot-cn, volcengine, volcengine-coding, qianfan, groq, openrouter, together, fireworks, perplexity)
          */
         client_type?: string;
     };

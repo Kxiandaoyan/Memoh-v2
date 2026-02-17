@@ -42,6 +42,26 @@ export const createModel = (model: ModelConfig) => {
       return createMistral({ apiKey, baseURL: baseURL || undefined })(modelId)
     case ClientType.XAI:
       return createXai({ apiKey, baseURL: baseURL || undefined })(modelId)
+    case ClientType.DeepSeek:
+    case ClientType.ZaiGlobal:
+    case ClientType.ZaiCN:
+    case ClientType.ZaiCodingGlobal:
+    case ClientType.ZaiCodingCN:
+    case ClientType.MinimaxGlobal:
+    case ClientType.MinimaxCN:
+    case ClientType.MoonshotGlobal:
+    case ClientType.MoonshotCN:
+    case ClientType.Volcengine:
+    case ClientType.VolcengineCoding:
+    case ClientType.Qianfan:
+    case ClientType.Groq:
+    case ClientType.OpenRouter:
+    case ClientType.Together:
+    case ClientType.Fireworks:
+    case ClientType.Perplexity: {
+      const provider = createOpenAI({ apiKey, baseURL })
+      return provider.chat(modelId)
+    }
     default:
       return createAiGateway({ apiKey, baseURL })(modelId)
   }

@@ -74,7 +74,7 @@ func (h *ModelsHandler) Create(c echo.Context) error {
 // @Description Get a list of all configured models, optionally filtered by type or client type
 // @Tags models
 // @Param type query string false "Model type (chat, embedding)"
-// @Param client_type query string false "Client type (openai, openai-compat, anthropic, google, azure, bedrock, mistral, xai, ollama, dashscope)"
+// @Param client_type query string false "Client type (openai, openai-compat, anthropic, google, azure, bedrock, mistral, xai, ollama, dashscope, deepseek, zai-global, zai-cn, zai-coding-global, zai-coding-cn, minimax-global, minimax-cn, moonshot-global, moonshot-cn, volcengine, volcengine-coding, qianfan, groq, openrouter, together, fireworks, perplexity)"
 // @Success 200 {array} models.GetResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse

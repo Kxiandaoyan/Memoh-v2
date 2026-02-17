@@ -46,6 +46,36 @@
               </FormItem>
             </FormField>
 
+            <!-- Catalog Model Selector -->
+            <FormItem v-if="catalogModels.length > 0">
+              <Label class="mb-2">
+                {{ $t('models.selectFromCatalog') || 'Select from catalog' }}
+                <span class="text-muted-foreground text-xs ml-1">({{ $t('common.optional') }})</span>
+              </Label>
+              <Select
+                :model-value="selectedCatalogId"
+                @update:model-value="onCatalogSelect"
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue :placeholder="$t('models.catalogPlaceholder') || 'Choose a model to auto-fill...'" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="__custom__">
+                      {{ $t('models.customModel') || 'Custom (manual input)' }}
+                    </SelectItem>
+                    <SelectItem
+                      v-for="m in catalogModels"
+                      :key="m.modelId"
+                      :value="m.modelId"
+                    >
+                      {{ m.name }} ({{ m.modelId }})
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </FormItem>
+
             <!-- Model -->
             <FormField
               v-slot="{ componentField }"
@@ -186,6 +216,45 @@
                 />
               </FormItem>
             </FormField>
+
+            <!-- Reasoning (chat only) -->
+            <FormField
+              v-if="selectedType === 'chat'"
+              v-slot="{ componentField }"
+              name="reasoning"
+            >
+              <FormItem class="flex items-center justify-between">
+                <div>
+                  <Label>Reasoning</Label>
+                  <p class="text-xs text-muted-foreground">{{ $t('models.reasoningHint') || 'Model supports extended thinking / chain-of-thought' }}</p>
+                </div>
+                <Switch
+                  v-model="componentField.modelValue"
+                  @update:model-value="componentField['onUpdate:modelValue']"
+                />
+              </FormItem>
+            </FormField>
+
+            <!-- Max Tokens (chat only) -->
+            <FormField
+              v-if="selectedType === 'chat'"
+              v-slot="{ componentField }"
+              name="max_tokens"
+            >
+              <FormItem>
+                <Label class="mb-2">
+                  Max Tokens
+                  <span class="text-muted-foreground text-xs ml-1">({{ $t('models.maxTokensHint') || 'max output tokens, 0 = model default' }})</span>
+                </Label>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    v-bind="componentField"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
           </div>
           <DialogFooter class="mt-4">
             <DialogClose as-child>
@@ -239,7 +308,8 @@ import { toTypedSchema } from '@vee-validate/zod'
 import z from 'zod'
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { postModels, putModelsModelByModelId, getModels } from '@memoh/sdk'
-import type { ModelsGetResponse } from '@memoh/sdk'
+import type { ModelsGetResponse, ProvidersGetResponse } from '@memoh/sdk'
+import { getProviderModels, type CatalogModel } from '@/data/model-catalog'
 
 const formSchema = toTypedSchema(z.object({
   type: z.string().min(1),
@@ -249,6 +319,8 @@ const formSchema = toTypedSchema(z.object({
   is_multimodal: z.coerce.boolean().optional(),
   context_window: z.coerce.number().min(1).optional(),
   fallback_model_id: z.string().optional(),
+  reasoning: z.coerce.boolean().optional(),
+  max_tokens: z.coerce.number().optional(),
 }))
 
 const form = useForm({
@@ -260,6 +332,27 @@ const selectedType = computed(() => form.values.type || editInfo?.value?.type)
 const open = inject<Ref<boolean>>('openModel', ref(false))
 const title = inject<Ref<'edit' | 'title'>>('openModelTitle', ref('title'))
 const editInfo = inject<Ref<ModelsGetResponse | null>>('openModelState', ref(null))
+
+const curProvider = inject('curProvider', ref<ProvidersGetResponse>())
+const catalogModels = computed<CatalogModel[]>(() => {
+  const ct = (curProvider.value as any)?.client_type
+  return ct ? getProviderModels(ct) : []
+})
+const selectedCatalogId = ref<string>('')
+
+function onCatalogSelect(modelId: string) {
+  selectedCatalogId.value = modelId
+  if (modelId === '__custom__') return
+  const entry = catalogModels.value.find(m => m.modelId === modelId)
+  if (!entry) return
+  form.setFieldValue('model_id', entry.modelId)
+  form.setFieldValue('name', entry.name)
+  form.setFieldValue('context_window', entry.contextWindow)
+  form.setFieldValue('is_multimodal', entry.isMultimodal)
+  form.setFieldValue('reasoning', entry.reasoning)
+  form.setFieldValue('max_tokens', entry.maxTokens)
+  userEditedName.value = true
+}
 
 // 保存按钮：编辑模式直接可提交（表单已预填充，handleSubmit 内部会校验）
 // 新建模式需要必填字段有值
@@ -278,6 +371,8 @@ const emptyValues = {
   is_multimodal: undefined as boolean | undefined,
   context_window: 128000 as number | undefined,
   fallback_model_id: '' as string | undefined,
+  reasoning: false as boolean | undefined,
+  max_tokens: 0 as number | undefined,
 }
 
 // Display Name 自动跟随 Model ID，除非用户主动修改过
@@ -367,6 +462,8 @@ async function addModel(e: Event) {
       if (fallback_model_id) {
         payload.fallback_model_id = fallback_model_id
       }
+      payload.reasoning = form.values.reasoning ?? (isEdit ? (fallback as any)?.reasoning : false)
+      payload.max_tokens = form.values.max_tokens ?? (isEdit ? (fallback as any)?.max_tokens : 0)
     }
 
     if (isEdit) {
@@ -399,13 +496,15 @@ watch(open, async () => {
     const { type, model_id, name, dimensions, is_multimodal } = editInfo.value
     const context_window = (editInfo.value as any).context_window || 128000
     const fallback_model_id = (editInfo.value as any).fallback_model_id || ''
-    form.resetForm({ values: { type, model_id, name, dimensions, is_multimodal, context_window, fallback_model_id } })
-    // 编辑时，如果已有 name 且与 model_id 不同，视为用户自定义
+    const reasoning = (editInfo.value as any).reasoning ?? false
+    const max_tokens = (editInfo.value as any).max_tokens ?? 0
+    form.resetForm({ values: { type, model_id, name, dimensions, is_multimodal, context_window, fallback_model_id, reasoning, max_tokens } })
     userEditedName.value = !!(name && name !== model_id)
+    selectedCatalogId.value = ''
   } else {
-    // 新建模式：显式传空值，避免复用上次编辑数据
     form.resetForm({ values: { ...emptyValues } })
     userEditedName.value = false
+    selectedCatalogId.value = ''
   }
 }, {
   immediate: true,

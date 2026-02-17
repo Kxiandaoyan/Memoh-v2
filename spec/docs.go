@@ -653,6 +653,157 @@ const docTemplate = `{
                 }
             }
         },
+        "/bots/{bot_id}/evolution-logs": {
+            "get": {
+                "description": "List evolution log entries for a bot with pagination",
+                "tags": [
+                    "evolution"
+                ],
+                "summary": "List evolution logs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max items to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.ListEvolutionLogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/evolution-logs/{id}": {
+            "get": {
+                "description": "Get a single evolution log entry by ID",
+                "tags": [
+                    "evolution"
+                ],
+                "summary": "Get evolution log",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Evolution log ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.EvolutionLog"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/evolution-logs/{id}/complete": {
+            "post": {
+                "description": "Mark an evolution log as completed, failed, or skipped (callback from agent gateway)",
+                "tags": [
+                    "evolution"
+                ],
+                "summary": "Complete evolution log",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Evolution log ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Completion payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.CompleteEvolutionLogRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.EvolutionLog"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/bots/{bot_id}/files": {
             "get": {
                 "description": "Returns a list of text/markdown files in the bot's data directory (non-recursive, top-level only)",
@@ -4000,7 +4151,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Client type (openai, openai-compat, anthropic, google, azure, bedrock, mistral, xai, ollama, dashscope)",
+                        "description": "Client type (openai, openai-compat, anthropic, google, azure, bedrock, mistral, xai, ollama, dashscope, deepseek, zai-global, zai-cn, zai-coding-global, zai-coding-cn, minimax-global, minimax-cn, moonshot-global, moonshot-cn, volcengine, volcengine-coding, qianfan, groq, openrouter, together, fireworks, perplexity)",
                         "name": "client_type",
                         "in": "query"
                     }
@@ -5734,6 +5885,9 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "template_id": {
+                    "type": "string"
+                },
                 "type": {
                     "type": "string"
                 }
@@ -6904,6 +7058,26 @@ const docTemplate = `{
                 }
             }
         },
+        "heartbeat.CompleteEvolutionLogRequest": {
+            "type": "object",
+            "properties": {
+                "agent_response": {
+                    "type": "string"
+                },
+                "changes_summary": {
+                    "type": "string"
+                },
+                "files_modified": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "heartbeat.Config": {
             "type": "object",
             "properties": {
@@ -6966,6 +7140,61 @@ const docTemplate = `{
                 "TriggerMessageCreated",
                 "TriggerScheduleCompleted"
             ]
+        },
+        "heartbeat.EvolutionLog": {
+            "type": "object",
+            "properties": {
+                "agent_response": {
+                    "type": "string"
+                },
+                "bot_id": {
+                    "type": "string"
+                },
+                "changes_summary": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "files_modified": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "heartbeat_config_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "trigger_reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "heartbeat.ListEvolutionLogsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heartbeat.EvolutionLog"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
         },
         "heartbeat.ListResponse": {
             "type": "object",
@@ -7377,11 +7606,17 @@ const docTemplate = `{
                 "llm_provider_id": {
                     "type": "string"
                 },
+                "max_tokens": {
+                    "type": "integer"
+                },
                 "model_id": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
+                },
+                "reasoning": {
+                    "type": "boolean"
                 },
                 "type": {
                     "$ref": "#/definitions/models.ModelType"
@@ -7431,11 +7666,17 @@ const docTemplate = `{
                 "llm_provider_id": {
                     "type": "string"
                 },
+                "max_tokens": {
+                    "type": "integer"
+                },
                 "model_id": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
+                },
+                "reasoning": {
+                    "type": "boolean"
                 },
                 "type": {
                     "$ref": "#/definitions/models.ModelType"
@@ -7477,11 +7718,17 @@ const docTemplate = `{
                 "llm_provider_id": {
                     "type": "string"
                 },
+                "max_tokens": {
+                    "type": "integer"
+                },
                 "model_id": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
+                },
+                "reasoning": {
+                    "type": "boolean"
                 },
                 "type": {
                     "$ref": "#/definitions/models.ModelType"
@@ -7500,7 +7747,24 @@ const docTemplate = `{
                 "mistral",
                 "xai",
                 "ollama",
-                "dashscope"
+                "dashscope",
+                "deepseek",
+                "zai-global",
+                "zai-cn",
+                "zai-coding-global",
+                "zai-coding-cn",
+                "minimax-global",
+                "minimax-cn",
+                "moonshot-global",
+                "moonshot-cn",
+                "volcengine",
+                "volcengine-coding",
+                "qianfan",
+                "groq",
+                "openrouter",
+                "together",
+                "fireworks",
+                "perplexity"
             ],
             "x-enum-varnames": [
                 "ClientTypeOpenAI",
@@ -7512,7 +7776,24 @@ const docTemplate = `{
                 "ClientTypeMistral",
                 "ClientTypeXAI",
                 "ClientTypeOllama",
-                "ClientTypeDashscope"
+                "ClientTypeDashscope",
+                "ClientTypeDeepSeek",
+                "ClientTypeZaiGlobal",
+                "ClientTypeZaiCN",
+                "ClientTypeZaiCodingGlobal",
+                "ClientTypeZaiCodingCN",
+                "ClientTypeMinimaxGlobal",
+                "ClientTypeMinimaxCN",
+                "ClientTypeMoonshotGlobal",
+                "ClientTypeMoonshotCN",
+                "ClientTypeVolcengine",
+                "ClientTypeVolcengineCoding",
+                "ClientTypeQianfan",
+                "ClientTypeGroq",
+                "ClientTypeOpenRouter",
+                "ClientTypeTogether",
+                "ClientTypeFireworks",
+                "ClientTypePerplexity"
             ]
         },
         "providers.CountResponse": {
@@ -7844,6 +8125,9 @@ const docTemplate = `{
                 },
                 "search_provider_id": {
                     "type": "string"
+                },
+                "vlm_model_id": {
+                    "type": "string"
                 }
             }
         },
@@ -7869,6 +8153,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "search_provider_id": {
+                    "type": "string"
+                },
+                "vlm_model_id": {
                     "type": "string"
                 }
             }
