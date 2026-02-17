@@ -67,7 +67,7 @@ func (s *telegramOutboundStream) ensureStreamMessage(ctx context.Context, text s
 	}
 	s.streamChatID = chatID
 	s.streamMsgID = msgID
-	s.lastEdited = text
+	s.lastEdited = strings.TrimSpace(text)
 	s.lastEditedAt = time.Now()
 	s.mu.Unlock()
 	return nil
@@ -83,7 +83,8 @@ func (s *telegramOutboundStream) editStreamMessage(ctx context.Context, text str
 	if msgID == 0 {
 		return nil
 	}
-	if strings.TrimSpace(text) == lastEdited {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == lastEdited {
 		return nil
 	}
 	if time.Since(lastEditedAt) < telegramStreamEditThrottle {
@@ -110,10 +111,15 @@ func (s *telegramOutboundStream) editStreamMessage(ctx context.Context, text str
 			s.mu.Unlock()
 			return nil
 		}
+		// "message is not modified" is already handled inside editTelegramMessageText,
+		// but guard here as well in case the error shape changes across library versions.
+		if isTelegramMessageNotModified(editErr) {
+			return nil
+		}
 		return editErr
 	}
 	s.mu.Lock()
-	s.lastEdited = text
+	s.lastEdited = trimmed
 	s.lastEditedAt = time.Now()
 	s.mu.Unlock()
 	return nil
@@ -132,7 +138,8 @@ func (s *telegramOutboundStream) editStreamMessageFinal(ctx context.Context, tex
 	if msgID == 0 {
 		return nil
 	}
-	if strings.TrimSpace(text) == lastEdited {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == lastEdited {
 		return nil
 	}
 	bot, _, err := s.getBotAndReply(ctx)
@@ -148,7 +155,16 @@ func (s *telegramOutboundStream) editStreamMessageFinal(ctx context.Context, tex
 		}
 		if editErr == nil {
 			s.mu.Lock()
-			s.lastEdited = text
+			s.lastEdited = trimmed
+			s.lastEditedAt = time.Now()
+			s.mu.Unlock()
+			return nil
+		}
+		// "message is not modified" means the rendered content is identical;
+		// treat this as success rather than propagating an error to the user.
+		if isTelegramMessageNotModified(editErr) {
+			s.mu.Lock()
+			s.lastEdited = trimmed
 			s.lastEditedAt = time.Now()
 			s.mu.Unlock()
 			return nil

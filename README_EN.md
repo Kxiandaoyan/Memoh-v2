@@ -27,6 +27,7 @@ Each bot gets its own container, memory, and skills — deploy AI agents like hi
   - [Common Models Cheat Sheet](#common-models-cheat-sheet)
   - [Configuration Steps](#configuration-steps)
   - [Persona vs Files](#persona-vs-files)
+  - [OpenViking Tiered Context Database](#openviking-tiered-context-database)
   - [Heartbeat & Subagents](#heartbeat--subagents)
 - [Comparison with OpenClaw](#comprehensive-comparison-with-openclaw-42-items)
 - [Installation & Upgrade](#installation--upgrade)
@@ -168,8 +169,11 @@ When your bot chats with you, it needs to find relevant content from a large his
 | **OpenAI** | `text-embedding-ada-002` | 1536 | Legacy classic |
 | **Alibaba/Dashscope** | `text-embedding-v3` | 1024 | Optimized for Chinese |
 | **Cohere** | `embed-multilingual-v3.0` | 1024 | Strong multilingual support |
+| **Qwen** | [`qwen3-embedding-8b`](https://openrouter.ai/qwen/qwen3-embedding-8b) | Variable | **Recommended** — multilingual + long text + code, 32K context |
 | **Local** | `bge-large-zh-v1.5` | 1024 | Chinese local model (HuggingFace) |
 | **Local** | `nomic-embed-text` | 768 | Runs directly in Ollama |
+
+> **Top Pick: [Qwen3 Embedding 8B](https://openrouter.ai/qwen/qwen3-embedding-8b)** — The latest Embedding model from the Qwen family, inheriting strong multilingual capabilities, long-text understanding, and reasoning skills. Leads in text retrieval, code retrieval, text classification, clustering, and bitext mining. Supports 32K context. Available via OpenRouter (`https://openrouter.ai/api/v1`) at just $0.01/M input tokens.
 
 > **Dimensions** is the length of the vector output by the Embedding model. You must enter the correct dimension value when creating an Embedding model, or vector storage will fail.
 
@@ -214,6 +218,34 @@ A bot's "personality" comes from two sources, **database takes priority, files a
 - If the Persona tab is empty, the agent auto-reads container `.md` files
 - With "Self-Evolution" enabled, the bot can modify its own container files over time
 - `TOOLS.md` is always read from container files (defines bot tools and capabilities)
+
+### OpenViking Tiered Context Database
+
+[OpenViking](https://github.com/openviking) is a tiered context database integrated into Memoh, giving bots structured long-term memory capabilities beyond flat vector retrieval.
+
+**Why OpenViking?**
+
+Regular vector memory is "flat" — every memory is stored and retrieved equally. But human memory is layered: some things are core knowledge (always needed), others are fine details (occasionally referenced). OpenViking mirrors this structure:
+
+| Tier | Name | Description | Analogy |
+|---|---|---|---|
+| **L0** | Summary Layer | Highly compressed overview | A book's table of contents |
+| **L1** | Knowledge Layer | Structured knowledge and key facts | A book's chapter summaries |
+| **L2** | Detail Layer | Complete original content and details | A book's full text |
+
+**How it works:**
+
+1. During conversation, the bot first loads L0 summaries (minimal tokens) to get the big picture
+2. It then loads specific L1/L2 sections on demand
+3. This dramatically reduces token consumption per conversation while retaining full knowledge depth
+
+**How to enable:**
+
+1. In the bot's Persona tab, toggle **"Enable OpenViking Context Database"**
+2. The system auto-generates an `ov.conf` config file, pre-populated with API info from your configured Providers/Models
+3. The bot container can then use the OpenViking Python API for knowledge management
+
+> OpenViking requires an Embedding model. We recommend [Qwen3 Embedding 8B](https://openrouter.ai/qwen/qwen3-embedding-8b) or a local Embedding model.
 
 ### Heartbeat & Subagents
 

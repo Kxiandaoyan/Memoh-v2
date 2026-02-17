@@ -233,6 +233,86 @@ func TestEditStreamMessage_429SetsBackoffAndReturnsNil(t *testing.T) {
 	}
 }
 
+// Test that "message is not modified" Telegram error is swallowed in editStreamMessage (safety net).
+func TestEditStreamMessage_MessageNotModifiedIsSilenced(t *testing.T) {
+	t.Parallel()
+
+	adapter := NewTelegramAdapter(nil)
+	s := &telegramOutboundStream{
+		adapter:      adapter,
+		cfg:          channel.ChannelConfig{ID: "test", Credentials: map[string]any{"bot_token": "fake"}},
+		streamChatID: 1,
+		streamMsgID:  1,
+		lastEdited:   "old",
+		lastEditedAt: time.Now().Add(-time.Minute),
+	}
+	ctx := context.Background()
+
+	origGetBot := getOrCreateBotForTest
+	origEdit := testEditFunc
+	getOrCreateBotForTest = func(_ *TelegramAdapter, _, _ string) (*tgbotapi.BotAPI, error) {
+		return &tgbotapi.BotAPI{Token: "fake"}, nil
+	}
+	testEditFunc = func(*tgbotapi.BotAPI, int64, int, string, string) error {
+		return tgbotapi.Error{
+			Code:    400,
+			Message: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
+		}
+	}
+	defer func() {
+		getOrCreateBotForTest = origGetBot
+		testEditFunc = origEdit
+	}()
+
+	err := s.editStreamMessage(ctx, "new text")
+	if err != nil {
+		t.Fatalf("editStreamMessage should silently swallow 'message is not modified': %v", err)
+	}
+}
+
+// Test that "message is not modified" Telegram error is treated as success in editStreamMessageFinal.
+func TestEditStreamMessageFinal_MessageNotModifiedIsSuccess(t *testing.T) {
+	t.Parallel()
+
+	adapter := NewTelegramAdapter(nil)
+	s := &telegramOutboundStream{
+		adapter:      adapter,
+		cfg:          channel.ChannelConfig{ID: "test", Credentials: map[string]any{"bot_token": "fake"}},
+		streamChatID: 1,
+		streamMsgID:  1,
+		lastEdited:   "old",
+		lastEditedAt: time.Now().Add(-time.Minute),
+	}
+	ctx := context.Background()
+
+	origGetBot := getOrCreateBotForTest
+	origEdit := testEditFunc
+	getOrCreateBotForTest = func(_ *TelegramAdapter, _, _ string) (*tgbotapi.BotAPI, error) {
+		return &tgbotapi.BotAPI{Token: "fake"}, nil
+	}
+	testEditFunc = func(*tgbotapi.BotAPI, int64, int, string, string) error {
+		return tgbotapi.Error{
+			Code:    400,
+			Message: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
+		}
+	}
+	defer func() {
+		getOrCreateBotForTest = origGetBot
+		testEditFunc = origEdit
+	}()
+
+	err := s.editStreamMessageFinal(ctx, "new text")
+	if err != nil {
+		t.Fatalf("editStreamMessageFinal should treat 'message is not modified' as success: %v", err)
+	}
+	s.mu.Lock()
+	lastEdited := s.lastEdited
+	s.mu.Unlock()
+	if lastEdited != "new text" {
+		t.Fatalf("expected lastEdited to be updated on 'not modified': got %q", lastEdited)
+	}
+}
+
 func TestEditStreamMessageFinal_Success(t *testing.T) {
 	t.Parallel()
 
