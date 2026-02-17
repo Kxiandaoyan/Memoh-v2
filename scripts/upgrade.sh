@@ -190,7 +190,8 @@ MIGRATION_FAILED=false
 for migration_file in db/migrations/*.up.sql; do
   if [ -f "$migration_file" ]; then
     FNAME=$(basename "$migration_file")
-    if docker compose exec -T postgres psql -U memoh -d memoh -f "/docker-entrypoint-initdb.d/${FNAME}" >/dev/null 2>&1; then
+    # Migration files are mounted at /migrations inside the postgres container.
+    if docker compose exec -T postgres psql -U memoh -d memoh -f "/migrations/${FNAME}" >/dev/null 2>&1; then
       echo "  ${GREEN}✓${NC} ${FNAME}"
     else
       echo "  ${RED}✗${NC} ${FNAME}"

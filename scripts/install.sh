@@ -99,8 +99,8 @@ cleanup_previous_install() {
     docker rmi "$img" 2>/dev/null || true
   done
 
-  # Remove old Docker volumes (only memoh-prefixed)
-  docker volume ls --format '{{.Name}}' | grep -E '^memoh' | while read -r vol; do
+  # Remove old Docker volumes (only volumes from the "memoh" compose project)
+  docker volume ls --format '{{.Name}}' | grep -E '^memoh_' | while read -r vol; do
     docker volume rm "$vol" 2>/dev/null || true
   done
 
@@ -199,13 +199,20 @@ if [ ! -f config.toml ] && [ -f /tmp/memoh-config-backup.toml ]; then
   cp /tmp/memoh-config-backup.toml config.toml
   rm -f /tmp/memoh-config-backup.toml
 else
-  # Generate config.toml from template
+  # Generate config.toml from template.
+  # Use awk for replacements to avoid sed delimiter conflicts with
+  # special characters in passwords and JWT secrets.
   cp docker/config/config.docker.toml config.toml
-  sed -i.bak "s|username = \"admin\"|username = \"${ADMIN_USER}\"|" config.toml
-  sed -i.bak "s|password = \"admin123\"|password = \"${ADMIN_PASS}\"|" config.toml
-  sed -i.bak "s|jwt_secret = \".*\"|jwt_secret = \"${JWT_SECRET}\"|" config.toml
-  sed -i.bak "s|password = \"memoh123\"|password = \"${PG_PASS}\"|" config.toml
-  rm -f config.toml.bak
+  awk -v au="$ADMIN_USER" -v ap="$ADMIN_PASS" -v js="$JWT_SECRET" -v pp="$PG_PASS" '
+    /^\[admin\]/       { in_admin=1; in_pg=0 }
+    /^\[postgres\]/    { in_pg=1; in_admin=0 }
+    /^\[/              { if (!/^\[admin\]/ && !/^\[postgres\]/) { in_admin=0; in_pg=0 } }
+    in_admin && /^username/ { printf "username = \"%s\"\n", au; next }
+    in_admin && /^password/ { printf "password = \"%s\"\n", ap; next }
+    /^jwt_secret/            { printf "jwt_secret = \"%s\"\n", js; next }
+    in_pg && /^password/     { printf "password = \"%s\"\n", pp; next }
+    { print }
+  ' config.toml > config.toml.tmp && mv config.toml.tmp config.toml
 fi
 
 export POSTGRES_PASSWORD="${PG_PASS}"
@@ -221,9 +228,36 @@ echo "${GREEN}Starting services (first build may take a few minutes)...${NC}"
 docker compose up -d --build
 
 echo ""
-echo "${GREEN}========================================${NC}"
-echo "${GREEN}   Memoh is running!${NC}"
-echo "${GREEN}========================================${NC}"
+echo "${YELLOW}Waiting for services to become healthy (up to 120s)...${NC}"
+MAX_WAIT=120
+ELAPSED=0
+while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
+  HEALTHY=$(docker compose ps --format json 2>/dev/null | grep -c '"healthy"' || true)
+  TOTAL=$(docker compose ps -q 2>/dev/null | wc -l | tr -d ' ')
+  # Consider ready when at least server + web are healthy (5 out of 6 have healthchecks)
+  if [ "$HEALTHY" -ge 4 ]; then
+    break
+  fi
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
+  printf "  ... %ds elapsed (%s/%s healthy)\n" "$ELAPSED" "$HEALTHY" "$TOTAL"
+done
+
+if [ "$HEALTHY" -ge 4 ]; then
+  echo ""
+  echo "${GREEN}========================================${NC}"
+  echo "${GREEN}   Memoh is running!${NC}"
+  echo "${GREEN}========================================${NC}"
+else
+  echo ""
+  echo "${YELLOW}========================================${NC}"
+  echo "${YELLOW}   Memoh is starting (some services${NC}"
+  echo "${YELLOW}   may still be initializing)${NC}"
+  echo "${YELLOW}========================================${NC}"
+  echo ""
+  echo "${YELLOW}Check status: docker compose ps${NC}"
+  echo "${YELLOW}Check logs:   docker compose logs server${NC}"
+fi
 echo ""
 echo "  Web UI:          http://localhost:8082"
 echo "  API:             http://localhost:8080"
@@ -235,5 +269,3 @@ echo "Commands:"
 echo "  cd ${INSTALL_DIR} && docker compose ps       # Status"
 echo "  cd ${INSTALL_DIR} && docker compose logs -f   # Logs"
 echo "  cd ${INSTALL_DIR} && docker compose down      # Stop"
-echo ""
-echo "${YELLOW}First startup may take 1-2 minutes, please be patient.${NC}"
