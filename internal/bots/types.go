@@ -137,6 +137,7 @@ const (
 const (
 	BotStatusCreating = "creating"
 	BotStatusReady    = "ready"
+	BotStatusFailed   = "failed"
 	BotStatusDeleting = "deleting"
 )
 

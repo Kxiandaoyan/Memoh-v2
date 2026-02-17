@@ -110,7 +110,7 @@ export const chatModule = new Elysia({ prefix: '/chat' })
   })
   .post('/summarize', async ({ body }) => {
     const model = createModel(body.model as ModelConfig)
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model,
       system: [
         'You are a precise conversation summarizer.',
@@ -121,7 +121,14 @@ export const chatModule = new Elysia({ prefix: '/chat' })
       ].join('\n'),
       messages: body.messages,
     })
-    return { summary: text }
+    return {
+      summary: text,
+      usage: {
+        prompt_tokens: usage.promptTokens,
+        completion_tokens: usage.completionTokens,
+        total_tokens: (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0),
+      },
+    }
   }, {
     body: z.object({
       model: ModelConfigModel,

@@ -65,7 +65,7 @@ func (s *Service) Create(ctx context.Context, req AddRequest) (AddResponse, erro
 	}
 
 	if model.FallbackModelID != "" {
-		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID)
+		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID, model.ModelID)
 		if err != nil {
 			return AddResponse{}, err
 		}
@@ -239,7 +239,7 @@ func (s *Service) UpdateByID(ctx context.Context, id string, req UpdateRequest) 
 	}
 
 	if model.FallbackModelID != "" {
-		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID)
+		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID, model.ModelID)
 		if err != nil {
 			return GetResponse{}, err
 		}
@@ -295,7 +295,7 @@ func (s *Service) UpdateByModelID(ctx context.Context, modelID string, req Updat
 	}
 
 	if model.FallbackModelID != "" {
-		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID)
+		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID, model.ModelID)
 		if err != nil {
 			return GetResponse{}, err
 		}
@@ -402,19 +402,45 @@ func (s *Service) convertToGetResponse(ctx context.Context, dbModel sqlc.Model) 
 
 // resolveFallbackModelID converts a fallback_model_id value to a pgtype.UUID.
 // It accepts either a UUID string (internal ID) or a model_id string (e.g. "gpt-4o-mini").
-func (s *Service) resolveFallbackModelID(ctx context.Context, raw string) (pgtype.UUID, error) {
+// selfModelID is the model_id of the model being created/updated — used to
+// prevent circular self-references.
+func (s *Service) resolveFallbackModelID(ctx context.Context, raw string, selfModelID string) (pgtype.UUID, error) {
 	if raw == "" {
 		return pgtype.UUID{}, nil
 	}
+
+	// Prevent direct self-reference (A → A).
+	if raw == selfModelID {
+		return pgtype.UUID{}, fmt.Errorf("fallback model cannot reference itself")
+	}
+
 	// Try parsing as UUID first.
 	if parsed, err := db.ParseUUID(raw); err == nil {
+		// Also check: does the resolved UUID's model have a fallback pointing
+		// back to selfModelID? (A → B → A)
+		if fbModel, lookupErr := s.queries.GetModelByID(ctx, parsed); lookupErr == nil {
+			if fbModel.ModelID == selfModelID {
+				return pgtype.UUID{}, fmt.Errorf("circular fallback: %s → %s → %s", selfModelID, raw, selfModelID)
+			}
+		}
 		return parsed, nil
 	}
+
 	// Treat as model_id — look up the internal UUID.
 	dbModel, err := s.queries.GetModelByModelID(ctx, raw)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("fallback model %q not found: %w", raw, err)
 	}
+
+	// Check one level: does the fallback model's own fallback point back?
+	if dbModel.FallbackModelID.Valid {
+		if fbOfFb, lookupErr := s.queries.GetModelByID(ctx, dbModel.FallbackModelID); lookupErr == nil {
+			if fbOfFb.ModelID == selfModelID {
+				return pgtype.UUID{}, fmt.Errorf("circular fallback: %s → %s → %s", selfModelID, raw, selfModelID)
+			}
+		}
+	}
+
 	return dbModel.ID, nil
 }
 

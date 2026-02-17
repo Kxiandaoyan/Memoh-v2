@@ -839,16 +839,28 @@ func (h *ContainerdHandler) RestoreSnapshot(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "prepare snapshot: "+err.Error())
 	}
 
+	// cleanupSnapshot removes the prepared snapshot if a subsequent step fails.
+	cleanupSnapshot := func() {
+		if rmErr := h.service.RemoveSnapshot(ctx, info.Snapshotter, activeSnapshotID); rmErr != nil {
+			slog.Warn("failed to clean up prepared snapshot after restore failure",
+				slog.String("snapshot", activeSnapshotID),
+				slog.Any("error", rmErr),
+			)
+		}
+	}
+
 	// Delete the old container (keep snapshots intact).
 	if err := h.service.DeleteContainer(ctx, containerID, &ctr.DeleteContainerOptions{
 		CleanupSnapshot: false,
 	}); err != nil && !errdefs.IsNotFound(err) {
+		cleanupSnapshot()
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete container: "+err.Error())
 	}
 
 	// Recreate the container from the restored snapshot with the same mounts.
 	dataDir, err := h.ensureBotDataRoot(botID)
 	if err != nil {
+		cleanupSnapshot()
 		return echo.NewHTTPError(http.StatusInternalServerError, "data dir: "+err.Error())
 	}
 	dataMount := strings.TrimSpace(h.cfg.DataMount)
@@ -857,10 +869,12 @@ func (h *ContainerdHandler) RestoreSnapshot(c echo.Context) error {
 	}
 	resolvPath, err := ctr.ResolveConfSource(dataDir)
 	if err != nil {
+		cleanupSnapshot()
 		return echo.NewHTTPError(http.StatusInternalServerError, "resolv.conf: "+err.Error())
 	}
 	sharedDir, err := h.ensureSharedDir()
 	if err != nil {
+		cleanupSnapshot()
 		return echo.NewHTTPError(http.StatusInternalServerError, "shared dir: "+err.Error())
 	}
 	specOpts := []oci.SpecOpts{
@@ -880,6 +894,7 @@ func (h *ContainerdHandler) RestoreSnapshot(c echo.Context) error {
 		SpecOpts:    specOpts,
 	})
 	if err != nil {
+		cleanupSnapshot()
 		return echo.NewHTTPError(http.StatusInternalServerError, "recreate container: "+err.Error())
 	}
 

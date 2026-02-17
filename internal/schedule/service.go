@@ -225,13 +225,6 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 	if s.triggerer == nil {
 		return fmt.Errorf("schedule triggerer not configured")
 	}
-	updated, err := s.queries.IncrementScheduleCalls(ctx, toUUID(schedule.ID))
-	if err != nil {
-		return err
-	}
-	if !updated.Enabled {
-		s.pool.Remove(schedule.ID)
-	}
 
 	ownerUserID, err := automation.ResolveBotOwner(ctx, s.queries, schedule.BotID)
 	if err != nil {
@@ -254,6 +247,18 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 	}, token)
 	if err != nil {
 		return err
+	}
+
+	// Increment call count only after successful execution to avoid
+	// consuming max_calls quota on failed attempts.
+	updated, err := s.queries.IncrementScheduleCalls(ctx, toUUID(schedule.ID))
+	if err != nil {
+		s.logger.Warn("failed to increment schedule calls after execution",
+			slog.String("schedule_id", schedule.ID),
+			slog.Any("error", err),
+		)
+	} else if !updated.Enabled {
+		s.pool.Remove(schedule.ID)
 	}
 
 	// Publish schedule_completed event so heartbeats with this trigger can fire.

@@ -1582,7 +1582,7 @@ func (r *Resolver) asyncSummarize(
 			r.logger.Warn("summarize: invalid client type", slog.Any("error", err))
 			return
 		}
-		summary, err := r.postSummarize(ctx, gatewayModelConfig{
+		summary, usage, err := r.postSummarize(ctx, gatewayModelConfig{
 			ModelID:    chatModel.ModelID,
 			ClientType: clientType,
 			Input:      chatModel.Input,
@@ -1595,6 +1595,7 @@ func (r *Resolver) asyncSummarize(
 			r.logger.Warn("summarize request failed", slog.String("bot_id", botID), slog.Any("error", err))
 			return
 		}
+		r.recordTokenUsage(ctx, botID, usage, chatModel.ModelID, "summarize")
 		if strings.TrimSpace(summary) == "" {
 			return
 		}
@@ -1619,20 +1620,21 @@ type summarizeRequest struct {
 }
 
 type summarizeResponse struct {
-	Summary string `json:"summary"`
+	Summary string        `json:"summary"`
+	Usage   *gatewayUsage `json:"usage,omitempty"`
 }
 
 // postSummarize calls the Agent Gateway /chat/summarize endpoint.
-func (r *Resolver) postSummarize(ctx context.Context, model gatewayModelConfig, messages []conversation.ModelMessage, token string) (string, error) {
+func (r *Resolver) postSummarize(ctx context.Context, model gatewayModelConfig, messages []conversation.ModelMessage, token string) (string, *gatewayUsage, error) {
 	payload := summarizeRequest{Model: model, Messages: messages}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	url := r.gatewayBaseURL + "/chat/summarize"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(token) != "" {
@@ -1640,21 +1642,21 @@ func (r *Resolver) postSummarize(ctx context.Context, model gatewayModelConfig, 
 	}
 	resp, err := r.httpClient.Do(httpReq)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("summarize gateway error %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+		return "", nil, fmt.Errorf("summarize gateway error %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}
 	var parsed summarizeResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("parse summarize response: %w", err)
+		return "", nil, fmt.Errorf("parse summarize response: %w", err)
 	}
-	return parsed.Summary, nil
+	return parsed.Summary, parsed.Usage, nil
 }
 
 // --- Token Usage ---

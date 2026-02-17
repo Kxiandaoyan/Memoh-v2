@@ -508,6 +508,13 @@ func (s *Service) enqueueCreateLifecycle(botID string) {
 					slog.String("bot_id", botID),
 					slog.Any("error", err),
 				)
+				if statusErr := s.updateStatus(ctx, botID, BotStatusFailed); statusErr != nil {
+					s.logger.Error("failed to update bot status to failed",
+						slog.String("bot_id", botID),
+						slog.Any("error", statusErr),
+					)
+				}
+				return
 			}
 		}
 

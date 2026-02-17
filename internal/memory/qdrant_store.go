@@ -545,22 +545,34 @@ func (s *QdrantStore) refreshCollectionSchema(ctx context.Context, vectors map[s
 				}
 				missing[name] = dim
 			}
-			if len(missing) > 0 {
-				// Qdrant does not support adding new named vectors to an existing
-				// collection. The only option is to recreate the collection.
-				names := make([]string, 0, len(missing))
-				for n := range missing {
-					names = append(names, n)
-				}
-				slog.Warn("qdrant: collection missing named vectors, recreating collection",
-					slog.String("collection", s.collection),
-					slog.Any("missing_vectors", names),
-				)
-				if err := s.client.DeleteCollection(ctx, s.collection); err != nil {
-					return fmt.Errorf("qdrant delete collection for rebuild: %w", err)
-				}
-				return s.createCollection(ctx, vectors)
+		if len(missing) > 0 {
+			// Qdrant does not support adding new named vectors to an existing
+			// collection. Only recreate if the collection is empty; otherwise
+			// refuse to avoid silent data loss.
+			names := make([]string, 0, len(missing))
+			for n := range missing {
+				names = append(names, n)
 			}
+			pointCount, countErr := s.client.Count(ctx, &qdrant.CountPoints{
+				CollectionName: s.collection,
+				Exact:          qdrant.PtrOf(true),
+			})
+			if countErr == nil && pointCount.GetCount() > 0 {
+				return fmt.Errorf(
+					"qdrant: collection %q has %d points but is missing named vectors %v; "+
+						"refusing to recreate to avoid data loss — please migrate or reset manually",
+					s.collection, pointCount.GetCount(), names,
+				)
+			}
+			slog.Warn("qdrant: empty collection missing named vectors, recreating",
+				slog.String("collection", s.collection),
+				slog.Any("missing_vectors", names),
+			)
+			if err := s.client.DeleteCollection(ctx, s.collection); err != nil {
+				return fmt.Errorf("qdrant delete collection for rebuild: %w", err)
+			}
+			return s.createCollection(ctx, vectors)
+		}
 		}
 	} else {
 		s.usesNamedVectors = false
