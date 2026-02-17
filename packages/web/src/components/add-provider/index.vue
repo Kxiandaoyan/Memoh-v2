@@ -39,40 +39,8 @@
                 </FormControl>
               </FormItem>
             </FormField>
-            <FormField
-              v-slot="{ componentField }"
-              name="api_key"
-            >
-              <FormItem>
-                <Label class="mb-2">
-                  {{ $t('provider.apiKey') }}
-                </Label>
-                <FormControl>
-                  <Input
-                    type="text"
-                    :placeholder="$t('provider.apiKeyPlaceholder')"
-                    v-bind="componentField"
-                  />
-                </FormControl>
-              </FormItem>
-            </FormField>
-            <FormField
-              v-slot="{ componentField }"
-              name="base_url"
-            >
-              <FormItem>
-                <Label class="mb-2">
-                  {{ $t('provider.url') }}
-                </Label>
-                <FormControl>
-                  <Input
-                    type="text"
-                    :placeholder="$t('provider.urlPlaceholder')"
-                    v-bind="componentField"
-                  />
-                </FormControl>
-              </FormItem>
-            </FormField>
+
+            <!-- Client Type: placed before base_url so auto-fill works naturally -->
             <FormField
               v-slot="{ componentField }"
               name="client_type"
@@ -98,6 +66,48 @@
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <FormField
+              v-slot="{ componentField }"
+              name="base_url"
+            >
+              <FormItem>
+                <Label class="mb-2">
+                  {{ $t('provider.url') }}
+                </Label>
+                <p
+                  v-if="form.values.client_type"
+                  class="text-xs text-muted-foreground"
+                >
+                  {{ $t('provider.urlAutoFilled') || 'Auto-filled from provider type. You can override if needed.' }}
+                </p>
+                <FormControl>
+                  <Input
+                    type="text"
+                    :placeholder="$t('provider.urlPlaceholder')"
+                    v-bind="componentField"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <FormField
+              v-slot="{ componentField }"
+              name="api_key"
+            >
+              <FormItem>
+                <Label class="mb-2">
+                  {{ $t('provider.apiKey') }}
+                </Label>
+                <FormControl>
+                  <Input
+                    type="text"
+                    :placeholder="$t('provider.apiKeyPlaceholder')"
+                    v-bind="componentField"
+                  />
                 </FormControl>
               </FormItem>
             </FormField>
@@ -187,7 +197,7 @@ const form = useForm({
 watch(() => form.values.client_type, (newType) => {
   if (newType) {
     const defaultUrl = getProviderDefaultBaseUrl(newType)
-    if (defaultUrl && !form.values.base_url) {
+    if (defaultUrl) {
       form.setFieldValue('base_url', defaultUrl)
     }
   }

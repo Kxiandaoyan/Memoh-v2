@@ -90,6 +90,9 @@ export const chatModule = new Elysia({ prefix: '/chat' })
         message,
       }))
     }
+    // Send a final done marker so the Go SSE scanner sees a clean termination
+    // before the HTTP chunked stream closes.
+    yield sse('[DONE]')
   }, {
     body: AgentModel.extend({
       query: z.string(),

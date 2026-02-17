@@ -125,6 +125,21 @@ export const useChatStore = defineStore('chat', () => {
 
   // ---- Message adapter: convert server Message to ChatMessage ----
 
+  function extractTokenUsageFromMetadata(raw: Message): TokenUsage | undefined {
+    const meta = raw.metadata
+    if (!meta || typeof meta !== 'object') return undefined
+    const tu = meta.token_usage
+    if (!tu || typeof tu !== 'object') return undefined
+    const u = tu as Record<string, unknown>
+    const total = Number(u.total_tokens ?? 0)
+    if (total <= 0) return undefined
+    return {
+      promptTokens: Number(u.prompt_tokens ?? 0),
+      completionTokens: Number(u.completion_tokens ?? 0),
+      totalTokens: total,
+    }
+  }
+
   function messageToChat(raw: Message): ChatMessage | null {
     if (raw.role !== 'user' && raw.role !== 'assistant') return null
 
@@ -135,6 +150,7 @@ export const useChatStore = defineStore('chat', () => {
     const timestamp = Number.isNaN(createdAt.getTime()) ? new Date() : createdAt
     const platform = (raw.platform ?? '').trim().toLowerCase()
     const channelTag = platform && platform !== 'web' ? platform : undefined
+    const tokenUsage = raw.role === 'assistant' ? extractTokenUsageFromMetadata(raw) : undefined
 
     if (raw.role === 'user') {
       const isSelf = resolveIsSelf(raw)
@@ -159,6 +175,7 @@ export const useChatStore = defineStore('chat', () => {
       timestamp,
       streaming: false,
       ...(channelTag && { platform: channelTag }),
+      ...(tokenUsage && { tokenUsage }),
     }
   }
 
@@ -232,6 +249,9 @@ export const useChatStore = defineStore('chat', () => {
         // Assistant message without tool_calls
         if (pendingAssistant && text) {
           pendingAssistant.blocks.push({ type: 'text', content: text })
+          // Attach token usage from the final assistant message to the merged message.
+          const tu = extractTokenUsageFromMetadata(raw)
+          if (tu) pendingAssistant.tokenUsage = tu
           flushPending()
           continue
         }
@@ -324,6 +344,10 @@ export const useChatStore = defineStore('chat', () => {
     if (platform === 'web') return
     const mid = String(raw.id ?? '').trim()
     if (mid && hasMessageWithId(mid)) return
+    // Skip intermediate assistant messages that contain tool calls — these are
+    // multi-step agent steps (e.g. "reading files...") and would appear as
+    // duplicates alongside the final text response.
+    if (raw.role === 'assistant' && extractToolCalls(raw).length > 0) return
     const item = messageToChat(raw)
     if (!item) return
     messages.push(item)

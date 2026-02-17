@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -366,7 +367,7 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 			return conversation.ChatResponse{}, err
 		}
 	}
-	if err := r.storeRound(ctx, req, resp.Messages); err != nil {
+	if err := r.storeRound(ctx, req, resp.Messages, resp.Usage); err != nil {
 		return conversation.ChatResponse{}, err
 	}
 	r.recordTokenUsage(ctx, req.BotID, resp.Usage, rc.model.ModelID, "chat")
@@ -425,7 +426,7 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 	}
 	r.recordTokenUsage(ctx, p.botID, resp.Usage, rc.model.ModelID, p.usageType)
 	r.completeEvolutionLogFromResponse(ctx, p.evolutionLogID, resp)
-	return r.storeRound(ctx, req, resp.Messages)
+	return r.storeRound(ctx, req, resp.Messages, resp.Usage)
 }
 
 // TriggerSchedule executes a scheduled command through the agent gateway trigger-schedule endpoint.
@@ -730,6 +731,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 
 	currentEvent := ""
 	stored := false
+	receivedChunks := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -746,6 +748,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		if data == "" || data == "[DONE]" {
 			continue
 		}
+		receivedChunks++
 		chunkCh <- conversation.StreamChunk([]byte(data))
 
 		if stored {
@@ -757,14 +760,32 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 			stored = true
 		}
 	}
-	return scanner.Err()
+	scanErr := scanner.Err()
+	if scanErr != nil && stored {
+		// The round was already persisted (agent_end received). The trailing
+		// EOF/unexpected-EOF is harmless — the gateway may close the connection
+		// right after the last SSE frame without a clean termination.
+		r.logger.Warn("gateway stream scanner error after store (ignored)",
+			slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
+		return nil
+	}
+	if scanErr != nil && (errors.Is(scanErr, io.ErrUnexpectedEOF) || errors.Is(scanErr, io.EOF)) {
+		if receivedChunks > 0 {
+			r.logger.Warn("gateway stream ended with EOF after receiving data",
+				slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
+			return fmt.Errorf("agent gateway stream interrupted — the model may have returned a partial response")
+		}
+		r.logger.Error("gateway stream EOF with no data", slog.Any("error", scanErr))
+		return fmt.Errorf("agent gateway connection lost before any response was received")
+	}
+	return scanErr
 }
 
 // tryStoreStream attempts to extract final messages from a stream event and persist them.
 func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequest, eventType, data, modelID string) (bool, error) {
 	storeAndRecord := func(resp gatewayResponse) error {
 		r.recordTokenUsage(ctx, req.BotID, resp.Usage, modelID, "chat")
-		return r.storeRound(ctx, req, resp.Messages)
+		return r.storeRound(ctx, req, resp.Messages, resp.Usage)
 	}
 
 	// event: done + data: {messages: [...]}
@@ -786,7 +807,7 @@ func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequ
 	if err := json.Unmarshal([]byte(data), &envelope); err == nil {
 		if (envelope.Type == "agent_end" || envelope.Type == "done") && len(envelope.Messages) > 0 {
 			r.recordTokenUsage(ctx, req.BotID, envelope.Usage, modelID, "chat")
-			return true, r.storeRound(ctx, req, envelope.Messages)
+			return true, r.storeRound(ctx, req, envelope.Messages, envelope.Usage)
 		}
 		if envelope.Type == "done" && len(envelope.Data) > 0 {
 			var resp gatewayResponse
@@ -968,7 +989,7 @@ func (r *Resolver) persistUserMessage(ctx context.Context, req conversation.Chat
 	return err
 }
 
-func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest, messages []conversation.ModelMessage) error {
+func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest, messages []conversation.ModelMessage, usage ...*gatewayUsage) error {
 	// Sanitize before storing so non-standard items (e.g. item_reference) are never persisted.
 	messages = sanitizeMessages(messages)
 	// Add user query as the first message if not already present in the round.
@@ -998,14 +1019,18 @@ func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest,
 		return nil
 	}
 
-	r.storeMessages(ctx, req, fullRound)
+	var usagePtr *gatewayUsage
+	if len(usage) > 0 {
+		usagePtr = usage[0]
+	}
+	r.storeMessages(ctx, req, fullRound, usagePtr)
 	// Run memory extraction in the background so that the SSE stream can
 	// finish immediately after messages are persisted.
 	go r.storeMemory(context.WithoutCancel(ctx), req.BotID, fullRound)
 	return nil
 }
 
-func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatRequest, messages []conversation.ModelMessage) {
+func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatRequest, messages []conversation.ModelMessage, usage *gatewayUsage) {
 	if r.messageService == nil {
 		return
 	}
@@ -1013,8 +1038,20 @@ func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatReque
 		return
 	}
 	meta := buildRouteMetadata(req)
+
+	// Find the index of the last assistant message to attach token usage.
+	lastAssistantIdx := -1
+	if usage != nil && usage.TotalTokens > 0 {
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "assistant" {
+				lastAssistantIdx = i
+				break
+			}
+		}
+	}
+
 	senderChannelIdentityID, senderUserID := r.resolvePersistSenderIDs(ctx, req)
-	for _, msg := range messages {
+	for i, msg := range messages {
 		content, err := json.Marshal(msg)
 		if err != nil {
 			r.logger.Warn("storeMessages: marshal failed", slog.Any("error", err))
@@ -1032,6 +1069,18 @@ func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatReque
 			// Assistant/tool/system outputs are linked to the inbound source message for cross-channel reply threading.
 			sourceReplyToMessageID = req.ExternalMessageID
 		}
+
+		// Build per-message metadata; embed token usage on the last assistant message.
+		msgMeta := meta
+		if i == lastAssistantIdx {
+			msgMeta = copyMap(meta)
+			msgMeta["token_usage"] = map[string]any{
+				"prompt_tokens":     usage.PromptTokens,
+				"completion_tokens": usage.CompletionTokens,
+				"total_tokens":      usage.TotalTokens,
+			}
+		}
+
 		if _, err := r.messageService.Persist(ctx, messagepkg.PersistInput{
 			BotID:                   req.BotID,
 			RouteID:                 req.RouteID,
@@ -1042,11 +1091,23 @@ func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatReque
 			SourceReplyToMessageID:  sourceReplyToMessageID,
 			Role:                    msg.Role,
 			Content:                 content,
-			Metadata:                meta,
+			Metadata:                msgMeta,
 		}); err != nil {
 			r.logger.Warn("persist message failed", slog.Any("error", err))
 		}
 	}
+}
+
+// copyMap returns a shallow copy of the input map (nil-safe).
+func copyMap(m map[string]any) map[string]any {
+	if m == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 func buildRouteMetadata(req conversation.ChatRequest) map[string]any {

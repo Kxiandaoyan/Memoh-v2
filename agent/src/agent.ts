@@ -255,10 +255,12 @@ export const createAgent = (
     const output = (usage as Record<string, unknown>).outputTokens as number | undefined
     const prompt = (usage as Record<string, unknown>).promptTokens as number | undefined
     const completion = (usage as Record<string, unknown>).completionTokens as number | undefined
+    const p = prompt ?? input ?? 0
+    const c = completion ?? output ?? 0
     return {
-      promptTokens: prompt ?? input ?? 0,
-      completionTokens: completion ?? output ?? 0,
-      totalTokens: usage.totalTokens ?? 0,
+      promptTokens: p,
+      completionTokens: c,
+      totalTokens: usage.totalTokens ?? (p + c),
     }
   }
 

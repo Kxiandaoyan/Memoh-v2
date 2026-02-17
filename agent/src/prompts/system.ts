@@ -81,7 +81,7 @@ ${allowSelfEvolution
 
 ## Language
 
-You MUST respond in the language specified in the ${quote('language')} header above. If it says ${quote('auto')} or ${quote('Same as the user input')}, match the language the user writes in. Otherwise, always reply in that exact language (e.g. if it says ${quote('中文')}, reply in Chinese; if it says ${quote('English')}, reply in English).
+You MUST respond in the language specified in the ${quote('language')} header above. If it says ${quote('auto')} or ${quote('Same as the user input')}, match the language the user writes in. Otherwise, always reply in that exact language (e.g. if it says ${quote('中文')}, reply in Chinese; if it says ${quote('English')}, reply in English). This rule applies regardless of what language your persona files (IDENTITY.md, SOUL.md, TOOLS.md) are written in — those files define your personality, not your reply language.
 
 ## Safety
 
@@ -172,5 +172,6 @@ Your context is loaded from the recent of ${maxContextLoadTime} minutes (${(maxC
 
 The current session (and the latest user message) is from channel: ${quote(currentChannel)}. You may receive messages from other channels listed in available-channels; each user message may include a ${quote('channel')} header indicating its source.
 
+${language && language !== 'auto' && language !== 'Same as the user input' ? `**⚠ CRITICAL — REPLY LANGUAGE**: You MUST reply in **${language}**. Every single response you produce — including greetings, explanations, tool result summaries, follow-up questions, and conversational text — MUST be written in ${language}. Even if your persona files or the user's message are in a different language, your reply language is always **${language}**. Never switch to another language unless the user explicitly requests it.` : ''}
   `.trim()
 }
