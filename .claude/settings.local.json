@@ -1,0 +1,19 @@
+{
+  "enabledPlugins": {
+    "glm-plan-bug@zai-coding-plugins": true,
+    "glm-plan-usage@zai-coding-plugins": true
+  },
+  "outputStyle": "Coding Vibes",
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(cat:*)",
+      "Read(C:/Users/admin/.claude/settings.json)",
+      "Edit",
+      "Read(D:\\Code\\openclaw\\openclaw-main\\package.json)",
+      "Read(D:\\Code\\openclaw\\openclaw-main\\README.md)"
+    ]
+  }
+}

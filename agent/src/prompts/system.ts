@@ -4,6 +4,7 @@ import { AgentSkill } from '../types'
 export interface SystemParams {
   date: Date
   language: string
+  timezone?: string
   maxContextLoadTime: number
   channels: string[]
   /** Channel where the current session/message is from (e.g. telegram, feishu, web). */
@@ -30,6 +31,7 @@ ${skill.content}
 export const system = ({
   date,
   language,
+  timezone,
   maxContextLoadTime,
   channels,
   currentChannel,
@@ -41,6 +43,8 @@ export const system = ({
   taskContent,
   allowSelfEvolution = true,
 }: SystemParams) => {
+  const tz = timezone || 'UTC'
+
   // ── Static section (stable prefix for LLM prompt caching) ──────────
   const staticHeaders = {
     'language': language,
@@ -51,7 +55,8 @@ export const system = ({
     'available-channels': channels.join(','),
     'current-session-channel': currentChannel,
     'max-context-load-time': maxContextLoadTime.toString(),
-    'time-now': date.toISOString(),
+    'timezone': tz,
+    'time-now': date.toLocaleString('sv-SE', { timeZone: tz }).replace(' ', 'T'),
   }
 
   return `

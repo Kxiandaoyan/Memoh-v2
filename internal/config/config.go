@@ -43,7 +43,8 @@ type LogConfig struct {
 }
 
 type ServerConfig struct {
-	Addr string `toml:"addr"`
+	Addr     string `toml:"addr"`
+	Timezone string `toml:"timezone"`
 }
 
 type AdminConfig struct {

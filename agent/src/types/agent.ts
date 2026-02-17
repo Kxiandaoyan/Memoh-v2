@@ -41,6 +41,7 @@ export const allActions = Object.values(AgentAction)
 export interface AgentParams {
   model: ModelConfig
   language?: string
+  timezone?: string
   activeContextTime?: number
   allowedActions?: AgentAction[]
   mcpConnections?: MCPConnection[]

@@ -6,6 +6,9 @@ format = "text"
 [server]
 # HTTP listen address
 addr = ":8080"
+# Global timezone (IANA format, e.g. "Asia/Shanghai", "America/New_York").
+# Used for cron scheduling and bot time awareness. Defaults to "UTC".
+timezone = "UTC"
 
 ## Admin
 [admin]

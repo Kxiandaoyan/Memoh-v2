@@ -63,6 +63,7 @@ type Resolver struct {
 	settingsService *settings.Service
 	skillLoader     SkillLoader
 	gatewayBaseURL  string
+	timezone        string
 	timeout         time.Duration
 	logger          *slog.Logger
 	httpClient      *http.Client
@@ -108,6 +109,11 @@ func (r *Resolver) SetSkillLoader(sl SkillLoader) {
 	r.skillLoader = sl
 }
 
+// SetTimezone sets the IANA timezone name used in gateway requests.
+func (r *Resolver) SetTimezone(tz string) {
+	r.timezone = tz
+}
+
 // --- gateway payload ---
 
 type gatewayModelConfig struct {
@@ -142,6 +148,7 @@ type gatewayRequest struct {
 	Model              gatewayModelConfig          `json:"model"`
 	ActiveContextTime  int                         `json:"activeContextTime"`
 	Language           string                      `json:"language,omitempty"`
+	Timezone           string                      `json:"timezone,omitempty"`
 	Channels           []string                    `json:"channels"`
 	CurrentChannel     string                      `json:"currentChannel"`
 	AllowedActions     []string                    `json:"allowedActions,omitempty"`
@@ -315,6 +322,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		},
 		ActiveContextTime:  maxCtx,
 		Language:            botSettings.Language,
+		Timezone:           r.timezone,
 		Channels:           nonNilStrings(req.Channels),
 		CurrentChannel:     req.CurrentChannel,
 		AllowedActions:     req.AllowedActions,

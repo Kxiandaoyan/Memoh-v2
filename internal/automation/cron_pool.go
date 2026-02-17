@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 )
@@ -22,16 +23,21 @@ type CronPool struct {
 }
 
 // NewCronPool creates an idle CronPool. Call Start() to begin scheduling.
-func NewCronPool(log *slog.Logger) *CronPool {
+// The loc parameter sets the timezone for cron pattern interpretation.
+// If loc is nil, time.UTC is used.
+func NewCronPool(log *slog.Logger, loc *time.Location) *CronPool {
+	if loc == nil {
+		loc = time.UTC
+	}
 	parser := cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour |
 			cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)
-	c := cron.New(cron.WithParser(parser))
+	c := cron.New(cron.WithParser(parser), cron.WithLocation(loc))
 	return &CronPool{
 		cron:   c,
 		parser: parser,
-		logger: log.With(slog.String("component", "cron_pool")),
+		logger: log.With(slog.String("component", "cron_pool"), slog.String("timezone", loc.String())),
 		jobs:   make(map[string]cron.EntryID),
 		locks:  make(map[string]*sync.Mutex),
 	}

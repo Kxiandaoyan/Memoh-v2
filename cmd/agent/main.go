@@ -36,6 +36,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/db"
 	dbsqlc "github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/embeddings"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/globalsettings"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/handlers"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/logger"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/mcp"
@@ -103,6 +104,9 @@ func main() {
 			bind.NewService,
 			event.NewHub,
 
+			// global settings (timezone, etc.)
+			provideGlobalSettings,
+
 			// services requiring provide functions
 			provideRouteService,
 			provideMessageService,
@@ -115,7 +119,7 @@ func main() {
 			provideChannelManager,
 
 			// shared cron pool for schedule + heartbeat
-			automation.NewCronPool,
+			provideCronPool,
 
 			// conversation flow
 			provideChatResolver,
@@ -147,6 +151,7 @@ func main() {
 			provideServerHandler(handlers.NewSubagentHandler),
 			provideServerHandler(handlers.NewTokenUsageHandler),
 			provideServerHandler(handlers.NewDiagnosticsHandler),
+			provideServerHandler(handlers.NewGlobalSettingsHandler),
 			provideServerHandler(handlers.NewChannelHandler),
 			provideServerHandler(provideUsersHandler),
 			provideServerHandler(handlers.NewMCPHandler),
@@ -330,9 +335,14 @@ func provideHeartbeatTriggerer(resolver *flow.Resolver) heartbeat.Triggerer {
 // conversation flow
 // ---------------------------------------------------------------------------
 
-func provideChatResolver(log *slog.Logger, cfg config.Config, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, containerdHandler *handlers.ContainerdHandler) *flow.Resolver {
+func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, containerdHandler *handlers.ContainerdHandler) *flow.Resolver {
 	resolver := flow.NewResolver(log, modelsService, queries, memoryService, chatService, msgService, settingsService, cfg.AgentGateway.BaseURL(), 120*time.Second)
 	resolver.SetSkillLoader(&skillLoaderAdapter{handler: containerdHandler})
+	tz, _ := gs.GetTimezone()
+	resolver.SetTimezone(tz)
+	gs.OnTimezoneChange(func(tz string, _ *time.Location) {
+		resolver.SetTimezone(tz)
+	})
 	return resolver
 }
 
@@ -472,6 +482,19 @@ func startMemoryWarmup(lc fx.Lifecycle, memoryService *memory.Service, logger *s
 			return nil
 		},
 	})
+}
+
+func provideGlobalSettings(log *slog.Logger, queries *dbsqlc.Queries, cfg config.Config) *globalsettings.Service {
+	svc := globalsettings.NewService(log, queries, cfg)
+	if err := svc.Init(context.Background()); err != nil {
+		log.Warn("global settings init failed, using defaults", slog.Any("error", err))
+	}
+	return svc
+}
+
+func provideCronPool(log *slog.Logger, gs *globalsettings.Service) *automation.CronPool {
+	_, loc := gs.GetTimezone()
+	return automation.NewCronPool(log, loc)
 }
 
 func startCronPool(lc fx.Lifecycle, pool *automation.CronPool) {

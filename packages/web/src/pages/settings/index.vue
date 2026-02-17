@@ -299,6 +299,29 @@
               </SelectContent>
             </Select>
           </div>
+          <Separator />
+          <div class="flex items-center justify-between">
+            <Label>{{ $t('settings.timezone') }}</Label>
+            <Select
+              :model-value="serverTimezone"
+              @update:model-value="(v) => v && onTimezoneChange(v)"
+            >
+              <SelectTrigger class="w-56">
+                <SelectValue :placeholder="$t('settings.timezonePlaceholder')" />
+              </SelectTrigger>
+              <SelectContent class="max-h-60">
+                <SelectGroup>
+                  <SelectItem
+                    v-for="tz in timezoneOptions"
+                    :key="tz.value"
+                    :value="tz.value"
+                  >
+                    {{ tz.label }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </section>
 
@@ -443,6 +466,33 @@ const settingsStore = useSettingsStore()
 const { language, theme } = storeToRefs(settingsStore)
 const { setLanguage, setTheme } = settingsStore
 
+// ---- Server timezone ----
+const serverTimezone = ref('')
+const savingTimezone = ref(false)
+
+const timezoneOptions = [
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST, UTC+8)' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST, UTC+9)' },
+  { value: 'Asia/Seoul', label: 'Asia/Seoul (KST, UTC+9)' },
+  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT, UTC+8)' },
+  { value: 'Asia/Hong_Kong', label: 'Asia/Hong_Kong (HKT, UTC+8)' },
+  { value: 'Asia/Taipei', label: 'Asia/Taipei (CST, UTC+8)' },
+  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST, UTC+5:30)' },
+  { value: 'Asia/Dubai', label: 'Asia/Dubai (GST, UTC+4)' },
+  { value: 'Europe/London', label: 'Europe/London (GMT, UTC+0)' },
+  { value: 'Europe/Paris', label: 'Europe/Paris (CET, UTC+1)' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET, UTC+1)' },
+  { value: 'Europe/Moscow', label: 'Europe/Moscow (MSK, UTC+3)' },
+  { value: 'America/New_York', label: 'America/New_York (EST, UTC-5)' },
+  { value: 'America/Chicago', label: 'America/Chicago (CST, UTC-6)' },
+  { value: 'America/Denver', label: 'America/Denver (MST, UTC-7)' },
+  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST, UTC-8)' },
+  { value: 'America/Sao_Paulo', label: 'America/Sao_Paulo (BRT, UTC-3)' },
+  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEST, UTC+10)' },
+  { value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST, UTC+12)' },
+]
+
 // ---- User data ----
 const account = ref<UserAccount | null>(null)
 const identities = ref<ChannelIdentity[]>([])
@@ -532,10 +582,36 @@ onMounted(() => {
   void loadPageData()
 })
 
+async function loadGlobalSettings() {
+  try {
+    const { data } = await client.get({ url: '/settings/global', throwOnError: true }) as { data: { timezone: string } }
+    serverTimezone.value = data.timezone || 'UTC'
+  } catch {
+    serverTimezone.value = 'UTC'
+  }
+}
+
+async function onTimezoneChange(tz: string) {
+  savingTimezone.value = true
+  try {
+    await client.put({
+      url: '/settings/global',
+      body: { timezone: tz },
+      throwOnError: true,
+    })
+    serverTimezone.value = tz
+    toast.success(t('settings.timezoneSaved'))
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, t('settings.timezoneSaveFailed')))
+  } finally {
+    savingTimezone.value = false
+  }
+}
+
 async function loadPageData() {
   loadingInitial.value = true
   try {
-    await Promise.all([loadMyAccount(), loadMyIdentities()])
+    await Promise.all([loadMyAccount(), loadMyIdentities(), loadGlobalSettings()])
   } catch {
     toast.error(t('settings.loadUserFailed'))
   } finally {

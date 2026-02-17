@@ -60,8 +60,8 @@
             >
               <!-- Enable/Disable switch -->
               <Switch
-                :checked="schedule.enabled"
-                @update:checked="(val: boolean) => toggleSchedule(group.bot.id!, schedule, val)"
+                :model-value="!!schedule.enabled"
+                @update:model-value="(val) => toggleSchedule(group.bot.id!, schedule, !!val)"
               />
 
               <!-- Info -->
@@ -85,6 +85,10 @@
                       class="size-3"
                     />
                     {{ schedule.pattern }}
+                    <span
+                      v-if="serverTimezone"
+                      class="text-muted-foreground/70"
+                    >({{ serverTimezone }})</span>
                   </span>
                   <span class="flex items-center gap-1">
                     <FontAwesomeIcon
@@ -161,6 +165,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
 import { getBots, getBotsByBotIdSchedule, deleteBotsByBotIdScheduleById, putBotsByBotIdScheduleById } from '@memoh/sdk'
+import { client } from '@memoh/sdk/client'
 import type { BotsBot, ScheduleSchedule } from '@memoh/sdk/types.gen'
 
 const { t } = useI18n()
@@ -172,15 +177,28 @@ interface BotScheduleGroup {
 
 const allGroups = ref<BotScheduleGroup[]>([])
 const isLoading = ref(true)
+const serverTimezone = ref('')
 
 const groupedSchedules = computed(() =>
   allGroups.value.filter(g => g.schedules.length > 0),
 )
 
+async function loadGlobalSettings() {
+  try {
+    const { data } = await client.get({ url: '/settings/global', throwOnError: true }) as { data: { timezone: string } }
+    serverTimezone.value = data.timezone || 'UTC'
+  } catch {
+    serverTimezone.value = 'UTC'
+  }
+}
+
 async function loadData() {
   isLoading.value = true
   try {
-    const { data: botData } = await getBots({ throwOnError: true })
+    const [{ data: botData }] = await Promise.all([
+      getBots({ throwOnError: true }),
+      loadGlobalSettings(),
+    ])
     const bots = botData?.items ?? []
 
     const groups: BotScheduleGroup[] = []

@@ -416,3 +416,10 @@ CREATE TABLE IF NOT EXISTS evolution_logs (
 CREATE INDEX IF NOT EXISTS idx_evolution_logs_bot_id ON evolution_logs(bot_id);
 CREATE INDEX IF NOT EXISTS idx_evolution_logs_bot_id_created_at ON evolution_logs(bot_id, created_at DESC);
 
+-- global_settings: system-wide key-value configuration (e.g. timezone)
+CREATE TABLE IF NOT EXISTS global_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+

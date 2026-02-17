@@ -2,13 +2,16 @@ export interface SubagentParams {
   date: Date
   name: string
   description?: string
+  timezone?: string
 }
 
-export const subagentSystem = ({ date, name, description }: SubagentParams) => {
+export const subagentSystem = ({ date, name, description, timezone }: SubagentParams) => {
+  const tz = timezone || 'UTC'
   const headers = {
     'name': name,
     'description': description,
-    'time-now': date.toISOString(),
+    'timezone': tz,
+    'time-now': date.toLocaleString('sv-SE', { timeZone: tz }).replace(' ', 'T'),
   }
   return `
 ---

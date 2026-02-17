@@ -44,6 +44,7 @@ export const createAgent = (
     model: modelConfig,
     activeContextTime = 24 * 60,
     language = 'Same as the user input',
+    timezone = 'UTC',
     allowedActions = allActions,
     channels = [],
     skills = [],
@@ -146,6 +147,7 @@ export const createAgent = (
     return system({
       date: new Date(),
       language,
+      timezone,
       maxContextLoadTime: activeContextTime,
       channels,
       currentChannel,
@@ -315,6 +317,7 @@ export const createAgent = (
         date: new Date(),
         name: params.name,
         description: params.description,
+        timezone,
       })
     }
     const messages = [...params.messages, userPrompt]
@@ -349,7 +352,7 @@ export const createAgent = (
       content: [
         {
           type: 'text',
-          text: schedule({ schedule: params.schedule, date: new Date() }),
+          text: schedule({ schedule: params.schedule, date: new Date(), timezone }),
         },
       ],
     }
