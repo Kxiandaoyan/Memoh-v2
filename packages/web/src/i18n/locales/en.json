@@ -37,7 +37,8 @@
     "none": "None",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "create": "Create"
+    "create": "Create",
+    "error": "An error occurred"
   },
   "auth": {
     "welcome": "Welcome Back",
@@ -556,7 +557,9 @@
       "takeaway": "Takeaway",
       "personaFiles": "Persona Files",
       "selectFile": "Select a file to view its contents",
-      "fileNotFound": "File not found or not yet created"
+      "fileNotFound": "File not found or not yet created",
+      "goToEvolutionTab": "View details in Evolution tab →",
+      "heartbeatPending": "Evolution heartbeat is being set up. If the button stays grey, try toggling the switch off and on."
     },
     "capabilities": {
       "title": "Container Capabilities",
@@ -570,6 +573,12 @@
       "seeFile": "See {file}"
     },
     "settings": {
+      "sectionModels": "Models & Providers",
+      "sectionModelsHint": "Choose which AI models the bot uses for different tasks",
+      "sectionBehavior": "Behavior & Context",
+      "sectionBehaviorHint": "Control how the bot responds and manages conversation context",
+      "sectionFeatures": "Features",
+      "sectionFeaturesHint": "Enable or disable optional capabilities",
       "chatModel": "Chat Model",
       "chatModelHint": "The AI model used for conversations",
       "memoryModel": "Memory Model",

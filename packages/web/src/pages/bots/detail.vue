@@ -233,7 +233,7 @@
             </ul>
           </div>
 
-          <!-- Self-Evolution Status Card -->
+          <!-- Quick Evolution Summary (links to Evolution tab) -->
           <div class="rounded-md border p-4 mt-4">
             <div class="flex items-center justify-between gap-2">
               <div>
@@ -252,47 +252,14 @@
                 {{ allowSelfEvolution ? $t('common.enabled') : $t('common.disabled') }}
               </Badge>
             </div>
-            <div class="mt-3 space-y-2 text-sm">
-              <template v-if="allowSelfEvolution">
-                <p class="text-muted-foreground">
-                  {{ $t('bots.evolution.enabledHint') }}
-                </p>
-                <div
-                  v-if="evolutionCount !== null"
-                  class="flex items-center gap-2"
-                >
-                  <Badge variant="outline" class="text-xs">
-                    {{ $t('bots.evolution.experimentCount', { count: evolutionCount }) }}
-                  </Badge>
-                  <button
-                    type="button"
-                    class="text-xs text-primary hover:underline"
-                    @click="openFileTab('EXPERIMENTS.md')"
-                  >
-                    {{ $t('bots.evolution.viewExperiments') }}
-                  </button>
-                </div>
-                <button
-                  v-if="hasNotesFile"
-                  type="button"
-                  class="text-xs text-primary hover:underline block"
-                  @click="openFileTab('NOTES.md')"
-                >
-                  {{ $t('bots.evolution.viewNotes') }}
-                </button>
-              </template>
-              <template v-else>
-                <p class="text-muted-foreground">
-                  {{ $t('bots.evolution.disabledHint') }}
-                </p>
-                <button
-                  type="button"
-                  class="text-xs text-primary hover:underline"
-                  @click="activeTab = 'settings'"
-                >
-                  {{ $t('bots.evolution.goToSettings') }}
-                </button>
-              </template>
+            <div class="mt-3">
+              <button
+                type="button"
+                class="text-xs text-primary hover:underline"
+                @click="activeTab = 'evolution'"
+              >
+                {{ $t('bots.evolution.goToEvolutionTab') }}
+              </button>
             </div>
           </div>
 
@@ -956,8 +923,6 @@ watch(botId, () => {
 })
 
 // Self-Evolution & Prompts
-const evolutionCount = ref<number | null>(null)
-const hasNotesFile = ref(false)
 const allowSelfEvolution = ref(false)
 const enableOpenviking = ref(false)
 
@@ -1015,7 +980,6 @@ const containerCapabilities = computed(() => [
 ])
 
 async function loadEvolutionStatus() {
-  // Fetch prompts to get allow_self_evolution and enable_openviking
   try {
     const { data } = await client.get({
       url: '/bots/{bot_id}/prompts',
@@ -1026,30 +990,6 @@ async function loadEvolutionStatus() {
   } catch {
     allowSelfEvolution.value = false
     enableOpenviking.value = false
-  }
-
-  // Fetch EXPERIMENTS.md to count experiments
-  try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/files/{filename}',
-      path: { bot_id: botId.value, filename: 'EXPERIMENTS.md' },
-    }) as { data: { content: string } }
-    const content = data.content ?? ''
-    const headingMatches = content.match(/^###\s+/gm)
-    evolutionCount.value = headingMatches ? headingMatches.length : 0
-  } catch {
-    evolutionCount.value = null
-  }
-
-  // Check if NOTES.md exists
-  try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/files',
-      path: { bot_id: botId.value },
-    }) as { data: { files: { name: string }[] } }
-    hasNotesFile.value = (data.files ?? []).some((f) => f.name === 'NOTES.md')
-  } catch {
-    hasNotesFile.value = false
   }
 }
 

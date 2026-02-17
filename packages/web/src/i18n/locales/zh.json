@@ -37,7 +37,8 @@
     "none": "无",
     "enabled": "已启用",
     "disabled": "已禁用",
-    "create": "创建"
+    "create": "创建",
+    "error": "操作失败"
   },
   "auth": {
     "welcome": "欢迎回来",
@@ -552,7 +553,9 @@
       "takeaway": "总结",
       "personaFiles": "人设文件",
       "selectFile": "选择一个文件查看其内容",
-      "fileNotFound": "文件未找到或尚未创建"
+      "fileNotFound": "文件未找到或尚未创建",
+      "goToEvolutionTab": "查看进化详情 →",
+      "heartbeatPending": "进化心跳正在配置中，如果按钮持续灰色，可尝试关闭后重新开启开关。"
     },
     "capabilities": {
       "title": "容器能力",
@@ -566,6 +569,12 @@
       "seeFile": "查看 {file}"
     },
     "settings": {
+      "sectionModels": "模型与服务商",
+      "sectionModelsHint": "选择 Bot 在不同任务中使用的 AI 模型",
+      "sectionBehavior": "行为与上下文",
+      "sectionBehaviorHint": "控制 Bot 的回复方式和上下文管理策略",
+      "sectionFeatures": "功能开关",
+      "sectionFeaturesHint": "启用或关闭可选的高级功能",
       "chatModel": "对话模型",
       "chatModelHint": "Bot 对话时使用的 AI 模型",
       "memoryModel": "记忆模型",

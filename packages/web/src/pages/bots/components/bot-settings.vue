@@ -1,161 +1,180 @@
 <template>
-  <div class="max-w-2xl mx-auto space-y-6">
-    <!-- Chat Model -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.chatModel') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.chatModelHint') }}</p>
-      <ModelSelect
-        v-model="form.chat_model_id"
-        :models="models"
-        :providers="providers"
-        model-type="chat"
-        :placeholder="$t('bots.settings.chatModel')"
-      />
-    </div>
-
-    <!-- Memory Model -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.memoryModel') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.memoryModelHint') }}</p>
-      <ModelSelect
-        v-model="form.memory_model_id"
-        :models="models"
-        :providers="providers"
-        model-type="chat"
-        :placeholder="$t('bots.settings.memoryModel')"
-      />
-    </div>
-
-    <!-- Embedding Model -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.embeddingModel') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.embeddingModelHint') }}</p>
-      <ModelSelect
-        v-model="form.embedding_model_id"
-        :models="models"
-        :providers="providers"
-        model-type="embedding"
-        :placeholder="$t('bots.settings.embeddingModel')"
-      />
-    </div>
-
-    <!-- VLM Model -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.vlmModel') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.vlmModelHint') }}</p>
-      <ModelSelect
-        v-model="form.vlm_model_id"
-        :models="models"
-        :providers="providers"
-        model-type="chat"
-        :placeholder="$t('bots.settings.vlmModel')"
-      />
-    </div>
-
-    <!-- Search Provider -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.searchProvider') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.searchProviderHint') }}</p>
-      <SearchProviderSelect
-        v-model="form.search_provider_id"
-        :providers="searchProviders"
-        :placeholder="$t('bots.settings.searchProviderPlaceholder')"
-      />
-    </div>
-
-    <Separator />
-
-    <!-- Max Context Load Time -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.maxContextLoadTime') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.maxContextLoadTimeHint') }}</p>
-      <Input
-        v-model.number="form.max_context_load_time"
-        type="number"
-        :min="0"
-      />
-    </div>
-
-    <!-- Language -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.language') }}</Label>
-      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.languageHint') }}</p>
-      <Input
-        v-model="form.language"
-        type="text"
-      />
-    </div>
-
-    <!-- Task -->
-    <div class="space-y-2">
-      <Label>{{ $t('bots.settings.task') }}</Label>
-      <p class="text-sm text-muted-foreground">
-        {{ $t('bots.settings.taskDescription') }}
-      </p>
-      <Textarea
-        v-model="promptsForm.task"
-        :placeholder="$t('bots.settings.taskPlaceholder')"
-        rows="4"
-      />
-    </div>
-
-    <Separator />
-
-    <!-- Allow Self Evolution -->
-    <div class="flex items-center justify-between">
-      <div class="space-y-0.5">
-        <Label>{{ $t('bots.settings.allowSelfEvolution') }}</Label>
-        <p class="text-sm text-muted-foreground">
-          {{ $t('bots.settings.allowSelfEvolutionDescription') }}
-        </p>
+  <div class="max-w-2xl mx-auto space-y-8">
+    <!-- ═══ Section: Model Configuration ═══ -->
+    <section class="space-y-5">
+      <div>
+        <h3 class="text-sm font-semibold">{{ $t('bots.settings.sectionModels') }}</h3>
+        <p class="text-xs text-muted-foreground mt-0.5">{{ $t('bots.settings.sectionModelsHint') }}</p>
       </div>
-      <Switch
-        :model-value="promptsForm.allow_self_evolution"
-        @update:model-value="(val) => promptsForm.allow_self_evolution = !!val"
-      />
-    </div>
 
-    <!-- Enable OpenViking -->
-    <div class="flex items-center justify-between">
-      <div class="space-y-0.5">
-        <Label>{{ $t('bots.settings.enableOpenviking') }}</Label>
-        <p class="text-sm text-muted-foreground">
-          {{ $t('bots.settings.enableOpenvikingDescription') }}
-        </p>
-      </div>
-      <Switch
-        :model-value="promptsForm.enable_openviking"
-        @update:model-value="(val) => promptsForm.enable_openviking = !!val"
-      />
-    </div>
-
-    <!-- Privileged Bot -->
-    <div class="flex items-center justify-between">
-      <div class="space-y-0.5">
-        <Label>{{ $t('bots.settings.isPrivileged') }}</Label>
-        <p class="text-sm text-muted-foreground">
-          {{ $t('bots.settings.isPrivilegedDescription') }}
-        </p>
-      </div>
-      <Switch
-        :model-value="promptsForm.is_privileged"
-        @update:model-value="(val) => promptsForm.is_privileged = !!val"
-      />
-    </div>
-
-    <!-- Allow Guest: only for public bot -->
-    <template v-if="isPublicBot">
-      <div class="flex items-center justify-between">
-        <div class="space-y-0.5">
-          <Label>{{ $t('bots.settings.allowGuest') }}</Label>
-          <p class="text-sm text-muted-foreground">{{ $t('bots.settings.allowGuestHint') }}</p>
-        </div>
-        <Switch
-          :model-value="form.allow_guest"
-          @update:model-value="(val) => form.allow_guest = !!val"
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.chatModel') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.chatModelHint') }}</p>
+        <ModelSelect
+          v-model="form.chat_model_id"
+          :models="models"
+          :providers="providers"
+          model-type="chat"
+          :placeholder="$t('bots.settings.chatModel')"
         />
       </div>
-    </template>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.memoryModel') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.memoryModelHint') }}</p>
+        <ModelSelect
+          v-model="form.memory_model_id"
+          :models="models"
+          :providers="providers"
+          model-type="chat"
+          :placeholder="$t('bots.settings.memoryModel')"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.embeddingModel') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.embeddingModelHint') }}</p>
+        <ModelSelect
+          v-model="form.embedding_model_id"
+          :models="models"
+          :providers="providers"
+          model-type="embedding"
+          :placeholder="$t('bots.settings.embeddingModel')"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.vlmModel') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.vlmModelHint') }}</p>
+        <ModelSelect
+          v-model="form.vlm_model_id"
+          :models="models"
+          :providers="providers"
+          model-type="chat"
+          :placeholder="$t('bots.settings.vlmModel')"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.searchProvider') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.searchProviderHint') }}</p>
+        <SearchProviderSelect
+          v-model="form.search_provider_id"
+          :providers="searchProviders"
+          :placeholder="$t('bots.settings.searchProviderPlaceholder')"
+        />
+      </div>
+    </section>
+
+    <Separator />
+
+    <!-- ═══ Section: Behavior ═══ -->
+    <section class="space-y-5">
+      <div>
+        <h3 class="text-sm font-semibold">{{ $t('bots.settings.sectionBehavior') }}</h3>
+        <p class="text-xs text-muted-foreground mt-0.5">{{ $t('bots.settings.sectionBehaviorHint') }}</p>
+      </div>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.language') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.languageHint') }}</p>
+        <Input
+          v-model="form.language"
+          type="text"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.task') }}</Label>
+        <p class="text-xs text-muted-foreground">
+          {{ $t('bots.settings.taskDescription') }}
+        </p>
+        <Textarea
+          v-model="promptsForm.task"
+          :placeholder="$t('bots.settings.taskPlaceholder')"
+          rows="4"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label>{{ $t('bots.settings.maxContextLoadTime') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.maxContextLoadTimeHint') }}</p>
+        <Input
+          v-model.number="form.max_context_load_time"
+          type="number"
+          :min="0"
+        />
+      </div>
+    </section>
+
+    <Separator />
+
+    <!-- ═══ Section: Features ═══ -->
+    <section class="space-y-4">
+      <div>
+        <h3 class="text-sm font-semibold">{{ $t('bots.settings.sectionFeatures') }}</h3>
+        <p class="text-xs text-muted-foreground mt-0.5">{{ $t('bots.settings.sectionFeaturesHint') }}</p>
+      </div>
+
+      <div class="rounded-md border divide-y">
+        <!-- Allow Self Evolution -->
+        <div class="flex items-center justify-between p-4">
+          <div class="space-y-0.5 pr-4">
+            <Label>{{ $t('bots.settings.allowSelfEvolution') }}</Label>
+            <p class="text-xs text-muted-foreground">
+              {{ $t('bots.settings.allowSelfEvolutionDescription') }}
+            </p>
+          </div>
+          <Switch
+            :model-value="promptsForm.allow_self_evolution"
+            @update:model-value="(val) => promptsForm.allow_self_evolution = !!val"
+          />
+        </div>
+
+        <!-- Enable OpenViking -->
+        <div class="flex items-center justify-between p-4">
+          <div class="space-y-0.5 pr-4">
+            <Label>{{ $t('bots.settings.enableOpenviking') }}</Label>
+            <p class="text-xs text-muted-foreground">
+              {{ $t('bots.settings.enableOpenvikingDescription') }}
+            </p>
+          </div>
+          <Switch
+            :model-value="promptsForm.enable_openviking"
+            @update:model-value="(val) => promptsForm.enable_openviking = !!val"
+          />
+        </div>
+
+        <!-- Privileged Bot -->
+        <div class="flex items-center justify-between p-4">
+          <div class="space-y-0.5 pr-4">
+            <Label>{{ $t('bots.settings.isPrivileged') }}</Label>
+            <p class="text-xs text-muted-foreground">
+              {{ $t('bots.settings.isPrivilegedDescription') }}
+            </p>
+          </div>
+          <Switch
+            :model-value="promptsForm.is_privileged"
+            @update:model-value="(val) => promptsForm.is_privileged = !!val"
+          />
+        </div>
+
+        <!-- Allow Guest: only for public bot -->
+        <div
+          v-if="isPublicBot"
+          class="flex items-center justify-between p-4"
+        >
+          <div class="space-y-0.5 pr-4">
+            <Label>{{ $t('bots.settings.allowGuest') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.settings.allowGuestHint') }}</p>
+          </div>
+          <Switch
+            :model-value="form.allow_guest"
+            @update:model-value="(val) => form.allow_guest = !!val"
+          />
+        </div>
+      </div>
+    </section>
 
     <Separator />
 
@@ -172,14 +191,14 @@
 
     <Separator />
 
-    <!-- Danger Zone -->
+    <!-- ═══ Danger Zone ═══ -->
     <div
       class="rounded-lg border border-destructive/50 bg-destructive/5 p-4 space-y-3"
     >
       <h3 class="text-sm font-semibold text-destructive">
         {{ $t('bots.settings.dangerZone') }}
       </h3>
-      <p class="text-sm text-muted-foreground">
+      <p class="text-xs text-muted-foreground">
         {{ $t('bots.settings.deleteBotDescription') }}
       </p>
       <div class="flex items-center justify-end">
@@ -234,6 +253,7 @@ interface BotPrompts {
   task: string
   allow_self_evolution: boolean
   enable_openviking: boolean
+  is_privileged: boolean
 }
 
 const props = defineProps<{
@@ -406,18 +426,25 @@ async function handleSave() {
       promises.push(updateSettings({ ...form }))
     }
     if (hasPromptsChanges.value) {
+      const promptsBody: Record<string, unknown> = {}
+      const p = prompts.value
+      if (promptsForm.task !== (p?.task ?? '')) {
+        promptsBody.task = promptsForm.task
+      }
+      if (promptsForm.allow_self_evolution !== (p?.allow_self_evolution ?? true)) {
+        promptsBody.allow_self_evolution = promptsForm.allow_self_evolution
+      }
+      if (promptsForm.enable_openviking !== (p?.enable_openviking ?? false)) {
+        promptsBody.enable_openviking = promptsForm.enable_openviking
+      }
+      if (promptsForm.is_privileged !== (p?.is_privileged ?? false)) {
+        promptsBody.is_privileged = promptsForm.is_privileged
+      }
       promises.push(
         client.put({
           url: '/bots/{bot_id}/prompts',
           path: { bot_id: botIdRef.value },
-          body: {
-            identity: '',
-            soul: '',
-            task: promptsForm.task,
-            allow_self_evolution: promptsForm.allow_self_evolution,
-            enable_openviking: promptsForm.enable_openviking,
-            is_privileged: promptsForm.is_privileged,
-          },
+          body: promptsBody,
         }).then(() => {
           queryCache.invalidateQueries({ key: ['bot-prompts', botIdRef.value] })
         }),

@@ -185,7 +185,13 @@ import {
 import { ref, reactive, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { useI18n } from 'vue-i18n'
-import { client } from '@memoh/sdk/client'
+import {
+  getBotsByBotIdSubagents,
+  postBotsByBotIdSubagents,
+  putBotsByBotIdSubagentsById,
+  putBotsByBotIdSubagentsByIdSkills,
+  deleteBotsByBotIdSubagentsById,
+} from '@memoh/sdk'
 
 interface SubagentItem {
   id: string
@@ -225,11 +231,10 @@ watch(() => props.botId, () => {
 async function loadList() {
   loading.value = true
   try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/subagents',
+    const { data } = await getBotsByBotIdSubagents({
       path: { bot_id: props.botId },
-    }) as { data: { items: SubagentItem[] } }
-    items.value = data.items ?? []
+    })
+    items.value = (data as { items?: SubagentItem[] })?.items ?? []
   } catch {
     toast.error(t('bots.subagents.loadFailed'))
   } finally {
@@ -262,8 +267,7 @@ async function handleSave() {
     .filter(Boolean)
   try {
     if (editingId.value) {
-      await client.put({
-        url: '/bots/{bot_id}/subagents/{id}',
+      await putBotsByBotIdSubagentsById({
         path: { bot_id: props.botId, id: editingId.value },
         body: {
           name: form.name.trim(),
@@ -271,15 +275,13 @@ async function handleSave() {
         },
       })
       if (skills.length > 0) {
-        await client.put({
-          url: '/bots/{bot_id}/subagents/{id}/skills',
+        await putBotsByBotIdSubagentsByIdSkills({
           path: { bot_id: props.botId, id: editingId.value },
           body: { skills },
         })
       }
     } else {
-      await client.post({
-        url: '/bots/{bot_id}/subagents',
+      await postBotsByBotIdSubagents({
         path: { bot_id: props.botId },
         body: {
           name: form.name.trim(),
@@ -301,8 +303,7 @@ async function handleSave() {
 async function handleDelete(id: string) {
   deletingId.value = id
   try {
-    await client.delete({
-      url: '/bots/{bot_id}/subagents/{id}',
+    await deleteBotsByBotIdSubagentsById({
       path: { bot_id: props.botId, id },
     })
     toast.success(t('bots.subagents.deleteSuccess'))

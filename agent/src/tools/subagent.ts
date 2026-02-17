@@ -141,9 +141,17 @@ export const getSubagentTools = ({
             abortSignal: abortController.signal,
           })
           const updatedMessages = [...contextMessages, ...result.messages]
-          await saveContext(target.id, updatedMessages).catch(() => {})
-          const lastContent = result.messages[result.messages.length - 1]?.content
-          registry.complete(runId, typeof lastContent === 'string' ? lastContent : JSON.stringify(lastContent))
+          try {
+            await saveContext(target.id, updatedMessages)
+          } catch (saveErr) {
+            console.error(`[subagent:${runId}] failed to save context`, saveErr)
+          }
+          const lastMessage = result.messages[result.messages.length - 1]
+          const lastContent = lastMessage?.content
+          const summary = typeof lastContent === 'string'
+            ? lastContent
+            : lastContent != null ? JSON.stringify(lastContent) : '(no output)'
+          registry.complete(runId, summary)
         } catch (err: unknown) {
           if (abortController.signal.aborted) return
           const message = err instanceof Error ? err.message : String(err)
@@ -251,9 +259,17 @@ export const getSubagentTools = ({
             abortSignal: abortController.signal,
           })
           const updatedMessages = [...contextMessages, ...result.messages]
-          await saveContext(target.id, updatedMessages).catch(() => {})
-          const lastContent = result.messages[result.messages.length - 1]?.content
-          registry.complete(newRunId, typeof lastContent === 'string' ? lastContent : JSON.stringify(lastContent))
+          try {
+            await saveContext(target.id, updatedMessages)
+          } catch (saveErr) {
+            console.error(`[subagent:${newRunId}] failed to save context`, saveErr)
+          }
+          const lastMessage = result.messages[result.messages.length - 1]
+          const lastContent = lastMessage?.content
+          const summary = typeof lastContent === 'string'
+            ? lastContent
+            : lastContent != null ? JSON.stringify(lastContent) : '(no output)'
+          registry.complete(newRunId, summary)
         } catch (err: unknown) {
           if (abortController.signal.aborted) return
           const message = err instanceof Error ? err.message : String(err)

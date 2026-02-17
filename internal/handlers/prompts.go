@@ -191,7 +191,7 @@ func (h *PromptsHandler) ensureOVConf(ctx context.Context, botID string) {
 	}
 	data = append(data, '\n')
 
-	if err := os.WriteFile(confPath, data, 0o644); err != nil {
+	if err := os.WriteFile(confPath, data, 0o600); err != nil {
 		h.logger.Warn("ov.conf: failed to write", slog.Any("error", err))
 		return
 	}

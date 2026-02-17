@@ -221,7 +221,7 @@ Bot 的"个性"由两个来源定义，**数据库优先，文件兜底**：
 
 ### OpenViking 分层上下文数据库
 
-[OpenViking](https://github.com/openviking) 是集成在 Memoh 中的分层上下文数据库，为 Bot 提供超越普通向量检索的结构化长期记忆能力。
+[OpenViking](https://github.com/volcengine/OpenViking) 是集成在 Memoh 中的分层上下文数据库，为 Bot 提供超越普通向量检索的结构化长期记忆能力。
 
 **为什么需要 OpenViking？**
 

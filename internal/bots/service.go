@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,10 @@ type Service struct {
 	containerLifecycle ContainerLifecycle
 	heartbeatSeeder    HeartbeatSeeder
 	checkers           []RuntimeChecker
+
+	lifecycleCtx    context.Context
+	lifecycleCancel context.CancelFunc
+	lifecycleWg     sync.WaitGroup
 }
 
 const (
@@ -48,10 +53,19 @@ func NewService(log *slog.Logger, queries *sqlc.Queries) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		queries: queries,
-		logger:  log.With(slog.String("service", "bots")),
+		queries:         queries,
+		logger:          log.With(slog.String("service", "bots")),
+		lifecycleCtx:    ctx,
+		lifecycleCancel: cancel,
 	}
+}
+
+// Shutdown cancels all in-flight lifecycle goroutines and waits for them to finish.
+func (s *Service) Shutdown() {
+	s.lifecycleCancel()
+	s.lifecycleWg.Wait()
 }
 
 // SetContainerLifecycle registers a container lifecycle handler for bot operations.
@@ -481,8 +495,11 @@ func (s *Service) ListChecks(ctx context.Context, botID string) ([]BotCheck, err
 }
 
 func (s *Service) enqueueCreateLifecycle(botID string) {
+	s.lifecycleWg.Add(1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), botLifecycleOperationTimeout)
+		defer s.lifecycleWg.Done()
+
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, botLifecycleOperationTimeout)
 		defer cancel()
 
 		if s.containerLifecycle != nil {
@@ -514,8 +531,11 @@ func (s *Service) enqueueCreateLifecycle(botID string) {
 }
 
 func (s *Service) enqueueDeleteLifecycle(botID string) {
+	s.lifecycleWg.Add(1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), botLifecycleOperationTimeout)
+		defer s.lifecycleWg.Done()
+
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, botLifecycleOperationTimeout)
 		defer cancel()
 
 		if s.containerLifecycle != nil {

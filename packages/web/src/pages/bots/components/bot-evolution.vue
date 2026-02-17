@@ -20,8 +20,8 @@
             {{ evolutionEnabled ? $t('common.enabled') : $t('common.disabled') }}
           </Badge>
           <Switch
-            :checked="evolutionEnabled"
-            @update:checked="handleToggleEvolution"
+            :model-value="evolutionEnabled"
+            @update:model-value="handleToggleEvolution"
           />
         </div>
       </div>
@@ -52,6 +52,12 @@
           {{ $t('bots.evolution.triggerNow') }}
         </Button>
       </div>
+      <p
+        v-if="evolutionEnabled && !evolutionHeartbeatId && !loadingStatus"
+        class="mt-2 text-xs text-muted-foreground"
+      >
+        {{ $t('bots.evolution.heartbeatPending') }}
+      </p>
     </div>
 
     <!-- Experiments Timeline -->
@@ -160,7 +166,13 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge, Button, Spinner, Switch } from '@memoh/ui'
-import { client } from '@memoh/sdk/client'
+import {
+  getBotsByBotIdPrompts,
+  putBotsByBotIdPrompts,
+  getBotsByBotIdHeartbeat,
+  postBotsByBotIdHeartbeatByIdTrigger,
+  getBotsByBotIdFilesByFilename,
+} from '@memoh/sdk'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
@@ -174,6 +186,7 @@ const evolutionInterval = ref(86400)
 const evolutionHeartbeatId = ref<string | null>(null)
 const triggering = ref(false)
 const loadingExperiments = ref(false)
+const loadingStatus = ref(false)
 
 interface Experiment {
   title: string
@@ -191,26 +204,32 @@ const activeFileContent = ref<string | null>(null)
 const loadingFile = ref(false)
 
 async function loadEvolutionStatus() {
+  loadingStatus.value = true
   try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/prompts',
+    const { data } = await getBotsByBotIdPrompts({
       path: { bot_id: props.botId },
-    }) as { data: { allow_self_evolution?: boolean } }
-    evolutionEnabled.value = data.allow_self_evolution ?? false
+    })
+    evolutionEnabled.value = (data as { allow_self_evolution?: boolean })?.allow_self_evolution ?? false
   } catch {
     evolutionEnabled.value = false
   }
 
+  await loadHeartbeatConfig()
+  loadingStatus.value = false
+}
+
+async function loadHeartbeatConfig() {
   try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/heartbeat',
+    const { data } = await getBotsByBotIdHeartbeat({
       path: { bot_id: props.botId },
-    }) as { data: { items?: { id: string; prompt: string; interval_seconds: number; enabled: boolean }[] } }
-    const items = data.items ?? []
+    })
+    const items = (data as { items?: { id: string; prompt: string; interval_seconds: number; enabled: boolean }[] })?.items ?? []
     const evoConfig = items.find(h => h.prompt.includes('[evolution-reflection]'))
     if (evoConfig) {
       evolutionHeartbeatId.value = evoConfig.id
       evolutionInterval.value = evoConfig.interval_seconds
+    } else {
+      evolutionHeartbeatId.value = null
     }
   } catch {
     // ignore
@@ -220,11 +239,10 @@ async function loadEvolutionStatus() {
 async function loadExperiments() {
   loadingExperiments.value = true
   try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/files/{filename}',
+    const { data } = await getBotsByBotIdFilesByFilename({
       path: { bot_id: props.botId, filename: 'EXPERIMENTS.md' },
-    }) as { data: { content: string } }
-    const content = data.content ?? ''
+    })
+    const content = (data as { content?: string })?.content ?? ''
     experiments.value = parseExperiments(content)
   } catch {
     experiments.value = []
@@ -239,7 +257,6 @@ function parseExperiments(content: string): Experiment[] {
     const lines = section.split('\n')
     const title = lines[0]?.trim() || 'Untitled'
     const goal = extractField(section, 'Goal')
-    const method = extractField(section, 'Method')
     const result = extractField(section, 'Result')
     const takeaway = extractField(section, 'Takeaway')
 
@@ -268,14 +285,23 @@ function extractField(text: string, field: string): string {
 
 async function handleToggleEvolution(checked: boolean) {
   try {
-    await client.put({
-      url: '/bots/{bot_id}/prompts',
+    await putBotsByBotIdPrompts({
       path: { bot_id: props.botId },
       body: { allow_self_evolution: checked },
     })
     evolutionEnabled.value = checked
     toast.success(checked ? t('bots.evolution.enabled') : t('bots.evolution.disabled'))
-    await loadEvolutionStatus()
+
+    if (checked) {
+      // Backend seeds heartbeat asynchronously; retry a few times to pick it up.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise(r => setTimeout(r, 1500))
+        await loadHeartbeatConfig()
+        if (evolutionHeartbeatId.value) break
+      }
+    } else {
+      await loadHeartbeatConfig()
+    }
   } catch {
     toast.error(t('common.error'))
   }
@@ -285,8 +311,7 @@ async function handleTriggerNow() {
   if (!evolutionHeartbeatId.value) return
   triggering.value = true
   try {
-    await client.post({
-      url: '/bots/{bot_id}/heartbeat/{id}/trigger',
+    await postBotsByBotIdHeartbeatByIdTrigger({
       path: { bot_id: props.botId, id: evolutionHeartbeatId.value },
     })
     toast.success(t('bots.evolution.triggered'))
@@ -301,11 +326,10 @@ async function selectFile(filename: string) {
   activeFile.value = filename
   loadingFile.value = true
   try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/files/{filename}',
+    const { data } = await getBotsByBotIdFilesByFilename({
       path: { bot_id: props.botId, filename },
-    }) as { data: { content: string } }
-    activeFileContent.value = data.content ?? ''
+    })
+    activeFileContent.value = (data as { content?: string })?.content ?? ''
   } catch {
     activeFileContent.value = t('bots.evolution.fileNotFound')
   } finally {

@@ -77,6 +77,11 @@ export interface AgentEndAction extends BaseAction {
   usage: NormalizedUsage
 }
 
+export interface ErrorAction extends BaseAction {
+  type: 'error'
+  message: string
+}
+
 export type AgentAction = 
   | AgentStartAction
   | ReasoningStartAction
@@ -90,3 +95,4 @@ export type AgentAction =
   | ToolCallStartAction
   | ToolCallEndAction
   | AgentEndAction
+  | ErrorAction

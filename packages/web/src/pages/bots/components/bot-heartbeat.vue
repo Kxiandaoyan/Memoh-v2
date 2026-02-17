@@ -213,7 +213,12 @@ import {
 import { ref, reactive, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { useI18n } from 'vue-i18n'
-import { client } from '@memoh/sdk/client'
+import {
+  getBotsByBotIdHeartbeat,
+  postBotsByBotIdHeartbeat,
+  putBotsByBotIdHeartbeatById,
+  deleteBotsByBotIdHeartbeatById,
+} from '@memoh/sdk'
 
 interface HeartbeatConfig {
   id: string
@@ -254,11 +259,10 @@ watch(() => props.botId, () => {
 async function loadList() {
   loading.value = true
   try {
-    const { data } = await client.get({
-      url: '/bots/{bot_id}/heartbeat',
+    const { data } = await getBotsByBotIdHeartbeat({
       path: { bot_id: props.botId },
-    }) as { data: { items: HeartbeatConfig[] } }
-    items.value = data.items ?? []
+    })
+    items.value = (data as { items?: HeartbeatConfig[] })?.items ?? []
   } catch {
     toast.error(t('bots.heartbeat.loadFailed'))
   } finally {
@@ -304,14 +308,12 @@ async function handleSave() {
       event_triggers: form.event_triggers,
     }
     if (editingId.value) {
-      await client.put({
-        url: '/bots/{bot_id}/heartbeat/{id}',
+      await putBotsByBotIdHeartbeatById({
         path: { bot_id: props.botId, id: editingId.value },
         body,
       })
     } else {
-      await client.post({
-        url: '/bots/{bot_id}/heartbeat',
+      await postBotsByBotIdHeartbeat({
         path: { bot_id: props.botId },
         body,
       })
@@ -329,8 +331,7 @@ async function handleSave() {
 async function handleDelete(id: string) {
   deletingId.value = id
   try {
-    await client.delete({
-      url: '/bots/{bot_id}/heartbeat/{id}',
+    await deleteBotsByBotIdHeartbeatById({
       path: { bot_id: props.botId, id },
     })
     toast.success(t('bots.heartbeat.deleteSuccess'))
