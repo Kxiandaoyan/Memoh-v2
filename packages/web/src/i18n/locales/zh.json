@@ -475,7 +475,34 @@
       "saveSuccess": "心跳配置已保存",
       "saveFailed": "保存心跳配置失败",
       "deleteSuccess": "心跳配置已删除",
-      "deleteFailed": "删除心跳配置失败"
+      "deleteFailed": "删除心跳配置失败",
+      "overviewTitle": "心跳",
+      "overviewSubtitle": "心跳赋予 Bot 主动行动的能力 — 它可以自主思考、维护和进化，无需等待用户发起对话。",
+      "overviewCount": "{enabled} 个启用 / 共 {total} 个",
+      "overviewNone": "尚未配置心跳",
+      "goToHeartbeatTab": "管理心跳 →",
+      "typeEvolution": "自我进化",
+      "typeMaintenance": "日常维护",
+      "typeCustom": "自定义",
+      "humanInterval": {
+        "seconds": "{n}秒",
+        "minutes": "{n}分钟",
+        "hours": "{n}小时",
+        "days": "{n}天"
+      },
+      "triggerModes": "触发方式",
+      "triggerTimer": "定时：按固定间隔触发",
+      "triggerEvent": "事件：特定事件发生时也会触发",
+      "triggerLabels": {
+        "message_created": "收到新消息",
+        "schedule_completed": "定时任务执行完成"
+      },
+      "infoBanner": "什么是心跳？",
+      "infoBannerDesc": "心跳是 Bot 的自主脉搏 — 它会定时或在事件发生时触发，让 Bot 可以执行日常维护（检查任务、整理笔记）、自我进化（反思对话并改进）或你定义的任何自定义逻辑。没有心跳，Bot 只会在用户主动对话时才响应。",
+      "infoTriggerTitle": "三种触发方式：",
+      "infoTriggerPeriodic": "定时触发 — 按固定间隔执行（如每小时一次）",
+      "infoTriggerEvent": "事件触发 — 特定事件发生时执行（如定时任务完成后）",
+      "infoTriggerManual": "手动触发 — 通过管理 API 按需触发"
     },
     "history": {
       "title": "消息历史",

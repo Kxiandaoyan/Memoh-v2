@@ -479,7 +479,34 @@
       "saveSuccess": "Heartbeat config saved",
       "saveFailed": "Failed to save heartbeat config",
       "deleteSuccess": "Heartbeat config deleted",
-      "deleteFailed": "Failed to delete heartbeat config"
+      "deleteFailed": "Failed to delete heartbeat config",
+      "overviewTitle": "Heartbeat",
+      "overviewSubtitle": "Heartbeats give the bot the ability to act proactively — it can think, maintain, and evolve on its own without user prompts.",
+      "overviewCount": "{enabled} active / {total} total",
+      "overviewNone": "No heartbeats configured yet",
+      "goToHeartbeatTab": "Manage heartbeats →",
+      "typeEvolution": "Self-Evolution",
+      "typeMaintenance": "Maintenance",
+      "typeCustom": "Custom",
+      "humanInterval": {
+        "seconds": "{n}s",
+        "minutes": "{n}min",
+        "hours": "{n}h",
+        "days": "{n}d"
+      },
+      "triggerModes": "Trigger modes",
+      "triggerTimer": "Timer: fires at fixed intervals",
+      "triggerEvent": "Event: also fires when specific events occur",
+      "triggerLabels": {
+        "message_created": "New message received",
+        "schedule_completed": "Scheduled task completed"
+      },
+      "infoBanner": "What is a Heartbeat?",
+      "infoBannerDesc": "A heartbeat is the bot's autonomous pulse — it fires periodically or on events, allowing the bot to perform maintenance (check tasks, organize notes), self-evolve (reflect on conversations and improve), or run any custom logic you define. Without heartbeats, the bot only responds when users talk to it.",
+      "infoTriggerTitle": "Three trigger modes:",
+      "infoTriggerPeriodic": "Periodic — fires at a fixed interval (e.g., every hour)",
+      "infoTriggerEvent": "Event-driven — fires when something happens (e.g., after a scheduled task completes)",
+      "infoTriggerManual": "Manual — triggered via the management API on demand"
     },
     "history": {
       "title": "Message History",

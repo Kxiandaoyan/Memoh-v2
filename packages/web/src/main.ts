@@ -54,6 +54,10 @@ import {
   faFlask,
   faBookOpen,
   faShieldHalved,
+  faHeartPulse,
+  faCircleInfo,
+  faXmark,
+  faBolt,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   faRectangleList,
@@ -101,6 +105,10 @@ library.add(
   faFlask,
   faBookOpen,
   faShieldHalved,
+  faHeartPulse,
+  faCircleInfo,
+  faXmark,
+  faBolt,
   faRectangleList,
   faTrashCan,
   faComments,

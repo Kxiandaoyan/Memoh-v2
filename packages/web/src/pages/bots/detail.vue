@@ -263,6 +263,36 @@
             </div>
           </div>
 
+          <!-- Quick Heartbeat Summary (links to Heartbeat tab) -->
+          <div class="rounded-md border p-4 mt-4">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <p class="text-sm font-medium">
+                  <FontAwesomeIcon :icon="['fas', 'heart-pulse']" class="mr-1.5 text-rose-500" />
+                  {{ $t('bots.heartbeat.overviewTitle') }}
+                </p>
+                <p class="text-sm text-muted-foreground">
+                  {{ $t('bots.heartbeat.overviewSubtitle') }}
+                </p>
+              </div>
+              <Badge
+                :variant="heartbeatEnabledCount > 0 ? 'default' : 'secondary'"
+                class="text-xs shrink-0"
+              >
+                {{ heartbeatSummaryText }}
+              </Badge>
+            </div>
+            <div class="mt-3">
+              <button
+                type="button"
+                class="text-xs text-primary hover:underline"
+                @click="activeTab = 'heartbeat'"
+              >
+                {{ $t('bots.heartbeat.goToHeartbeatTab') }}
+              </button>
+            </div>
+          </div>
+
           <!-- Container Capabilities Card -->
           <div class="rounded-md border p-4 mt-4">
             <p class="text-sm font-medium mb-1">
@@ -695,6 +725,7 @@ import {
   getBotsByBotIdContainerSnapshots, postBotsByBotIdContainerSnapshots,
   deleteBotsByBotIdContainerSnapshotsBySnapshotName,
   postBotsByBotIdContainerSnapshotsBySnapshotNameRestore,
+  getBotsByBotIdHeartbeat,
 } from '@memoh/sdk'
 import { client } from '@memoh/sdk/client'
 import type {
@@ -922,6 +953,31 @@ watch(botId, () => {
   botNameDraft.value = ''
 })
 
+// Heartbeat summary for overview tab
+const heartbeatTotal = ref(0)
+const heartbeatEnabledCount = ref(0)
+const heartbeatSummaryText = computed(() => {
+  if (heartbeatTotal.value === 0) return t('bots.heartbeat.overviewNone')
+  return t('bots.heartbeat.overviewCount', {
+    enabled: heartbeatEnabledCount.value,
+    total: heartbeatTotal.value,
+  })
+})
+
+async function loadHeartbeatSummary() {
+  try {
+    const { data } = await getBotsByBotIdHeartbeat({
+      path: { bot_id: botId.value },
+    })
+    const items = (data as { items?: { enabled?: boolean }[] })?.items ?? []
+    heartbeatTotal.value = items.length
+    heartbeatEnabledCount.value = items.filter((h) => h.enabled).length
+  } catch {
+    heartbeatTotal.value = 0
+    heartbeatEnabledCount.value = 0
+  }
+}
+
 // Self-Evolution & Prompts
 const allowSelfEvolution = ref(false)
 const enableOpenviking = ref(false)
@@ -1004,6 +1060,7 @@ watch([activeTab, botId], ([tab]) => {
   if (tab === 'overview') {
     void loadChecks(true)
     void loadEvolutionStatus()
+    void loadHeartbeatSummary()
   }
   // Evolution tab data loading is handled by the BotEvolution component's onMounted
 }, { immediate: true })

@@ -31,6 +31,33 @@
       </div>
     </div>
 
+    <!-- Info Banner -->
+    <div
+      v-if="showInfoBanner"
+      class="rounded-md border border-blue-200/60 bg-blue-50/50 dark:border-blue-800/40 dark:bg-blue-950/20 p-4 relative"
+    >
+      <button
+        type="button"
+        class="absolute top-2 right-2 text-muted-foreground hover:text-foreground transition-colors p-1"
+        @click="showInfoBanner = false"
+      >
+        <FontAwesomeIcon :icon="['fas', 'xmark']" class="size-3.5" />
+      </button>
+      <p class="text-sm font-medium mb-1.5">
+        <FontAwesomeIcon :icon="['fas', 'circle-info']" class="mr-1.5 text-blue-500" />
+        {{ $t('bots.heartbeat.infoBanner') }}
+      </p>
+      <p class="text-sm text-muted-foreground mb-2.5">
+        {{ $t('bots.heartbeat.infoBannerDesc') }}
+      </p>
+      <p class="text-xs font-medium text-muted-foreground mb-1">{{ $t('bots.heartbeat.infoTriggerTitle') }}</p>
+      <ul class="text-xs text-muted-foreground space-y-0.5 ml-3 list-disc">
+        <li>{{ $t('bots.heartbeat.infoTriggerPeriodic') }}</li>
+        <li>{{ $t('bots.heartbeat.infoTriggerEvent') }}</li>
+        <li>{{ $t('bots.heartbeat.infoTriggerManual') }}</li>
+      </ul>
+    </div>
+
     <!-- Loading -->
     <div
       v-if="loading && items.length === 0"
@@ -59,15 +86,22 @@
         class="rounded-md border p-4 space-y-3"
       >
         <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2 min-w-0">
+          <div class="flex items-center gap-2 min-w-0 flex-wrap">
             <Badge
               :variant="item.enabled ? 'default' : 'secondary'"
               class="text-xs"
             >
               {{ item.enabled ? $t('bots.heartbeat.enabled') : $t('bots.heartbeat.disabled') }}
             </Badge>
+            <Badge
+              variant="outline"
+              class="text-xs"
+              :class="heartbeatTypeColor(item)"
+            >
+              {{ heartbeatTypeLabel(item) }}
+            </Badge>
             <span class="text-sm text-muted-foreground">
-              {{ $t('bots.heartbeat.interval', { seconds: item.interval_seconds }) }}
+              {{ humanReadableInterval(item.interval_seconds) }}
             </span>
           </div>
           <div class="flex gap-2 shrink-0">
@@ -92,10 +126,30 @@
             </Button>
           </div>
         </div>
+
+        <!-- Trigger modes -->
+        <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span class="font-medium">{{ $t('bots.heartbeat.triggerModes') }}:</span>
+          <span class="flex items-center gap-1">
+            <FontAwesomeIcon :icon="['fas', 'clock']" class="size-3 text-blue-400" />
+            {{ $t('bots.heartbeat.triggerTimer') }}
+          </span>
+          <template v-if="item.event_triggers && item.event_triggers.length > 0">
+            <span class="text-muted-foreground/50">|</span>
+            <span class="flex items-center gap-1">
+              <FontAwesomeIcon :icon="['fas', 'bolt']" class="size-3 text-amber-400" />
+              {{ $t('bots.heartbeat.triggerEvent') }}
+            </span>
+          </template>
+        </div>
+
+        <!-- Prompt -->
         <div class="text-sm">
           <p class="font-medium text-xs text-muted-foreground mb-1">{{ $t('bots.heartbeat.prompt') }}</p>
-          <p class="whitespace-pre-wrap">{{ item.prompt || '-' }}</p>
+          <p class="whitespace-pre-wrap text-sm bg-muted/30 rounded-md p-3 max-h-40 overflow-y-auto">{{ item.prompt || '-' }}</p>
         </div>
+
+        <!-- Event triggers with labels -->
         <div
           v-if="item.event_triggers && item.event_triggers.length > 0"
           class="flex flex-wrap gap-1.5"
@@ -106,7 +160,8 @@
             variant="outline"
             class="text-xs"
           >
-            {{ trigger }}
+            <FontAwesomeIcon :icon="['fas', 'bolt']" class="mr-1 size-2.5 text-amber-400" />
+            {{ triggerLabel(trigger) }}
           </Badge>
         </div>
       </div>
@@ -162,7 +217,8 @@
                   :for="`trigger-${trigger}`"
                   class="font-normal text-sm"
                 >
-                  {{ trigger }}
+                  {{ triggerLabel(trigger) }}
+                  <span class="text-muted-foreground ml-1">({{ trigger }})</span>
                 </Label>
               </div>
             </div>
@@ -210,6 +266,7 @@ import {
   Switch,
   Textarea,
 } from '@memoh/ui'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { ref, reactive, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { useI18n } from 'vue-i18n'
@@ -244,6 +301,7 @@ const saving = ref(false)
 const deletingId = ref('')
 const dialogOpen = ref(false)
 const editingId = ref('')
+const showInfoBanner = ref(true)
 
 const form = reactive({
   enabled: true,
@@ -251,6 +309,51 @@ const form = reactive({
   prompt: '',
   event_triggers: [] as string[],
 })
+
+function heartbeatType(item: HeartbeatConfig): 'evolution' | 'maintenance' | 'custom' {
+  if (item.prompt && item.prompt.includes('[evolution-reflection]')) return 'evolution'
+  if (item.prompt && (
+    item.prompt.includes('daily maintenance') ||
+    item.prompt.includes('日常维护') ||
+    item.prompt.includes('check schedule') ||
+    item.prompt.includes('distill') ||
+    item.prompt.includes('self-heal')
+  )) return 'maintenance'
+  return 'custom'
+}
+
+function heartbeatTypeLabel(item: HeartbeatConfig): string {
+  const type = heartbeatType(item)
+  if (type === 'evolution') return t('bots.heartbeat.typeEvolution')
+  if (type === 'maintenance') return t('bots.heartbeat.typeMaintenance')
+  return t('bots.heartbeat.typeCustom')
+}
+
+function heartbeatTypeColor(item: HeartbeatConfig): string {
+  const type = heartbeatType(item)
+  if (type === 'evolution') return 'border-purple-300 text-purple-600 dark:border-purple-700 dark:text-purple-400'
+  if (type === 'maintenance') return 'border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400'
+  return ''
+}
+
+function humanReadableInterval(seconds: number): string {
+  if (seconds >= 86400 && seconds % 86400 === 0) {
+    return t('bots.heartbeat.humanInterval.days', { n: seconds / 86400 })
+  }
+  if (seconds >= 3600 && seconds % 3600 === 0) {
+    return t('bots.heartbeat.humanInterval.hours', { n: seconds / 3600 })
+  }
+  if (seconds >= 60 && seconds % 60 === 0) {
+    return t('bots.heartbeat.humanInterval.minutes', { n: seconds / 60 })
+  }
+  return t('bots.heartbeat.humanInterval.seconds', { n: seconds })
+}
+
+function triggerLabel(trigger: string): string {
+  const key = `bots.heartbeat.triggerLabels.${trigger}`
+  const translated = t(key)
+  return translated !== key ? translated : trigger
+}
 
 watch(() => props.botId, () => {
   loadList()
