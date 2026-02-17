@@ -628,10 +628,12 @@ func (h *ContainerdHandler) CreateSnapshot(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	snapshotName := strings.TrimSpace(req.SnapshotName)
-	if snapshotName == "" {
-		snapshotName = containerID + "-" + time.Now().Format("20060102150405")
+	rawName := strings.TrimSpace(req.SnapshotName)
+	if rawName == "" {
+		rawName = time.Now().Format("20060102150405")
 	}
+	// Always prefix with containerID so ListSnapshots can match by prefix.
+	snapshotName := containerID + "-" + rawName
 	if err := h.service.CommitSnapshot(ctx, info.Snapshotter, snapshotName, info.SnapshotKey); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -668,7 +670,21 @@ func (h *ContainerdHandler) ListSnapshots(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "container not found for bot")
 	}
+	// Resolve the snapshotter from the container itself so it always matches
+	// the one used by CreateSnapshot (which reads from container.Info).
 	snapshotter := strings.TrimSpace(c.QueryParam("snapshotter"))
+	if snapshotter == "" {
+		container, getErr := h.service.GetContainer(ctx, containerID)
+		if getErr == nil {
+			infoCtx := ctx
+			if strings.TrimSpace(h.namespace) != "" {
+				infoCtx = namespaces.WithNamespace(ctx, h.namespace)
+			}
+			if cInfo, infoErr := container.Info(infoCtx); infoErr == nil {
+				snapshotter = strings.TrimSpace(cInfo.Snapshotter)
+			}
+		}
+	}
 	if snapshotter == "" {
 		snapshotter = strings.TrimSpace(h.cfg.Snapshotter)
 	}
