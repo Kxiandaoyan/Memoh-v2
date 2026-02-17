@@ -682,6 +682,163 @@ func (h *ContainerdHandler) ListSnapshots(c echo.Context) error {
 	})
 }
 
+// DeleteSnapshot godoc
+// @Summary Delete a snapshot
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param snapshot_name path string true "Snapshot name"
+// @Success 200 {object} DeleteSnapshotResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/container/snapshots/{snapshot_name} [delete]
+func (h *ContainerdHandler) DeleteSnapshot(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+	snapshotName := strings.TrimSpace(c.Param("snapshot_name"))
+	if snapshotName == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "snapshot_name is required")
+	}
+	ctx := c.Request().Context()
+	containerID, err := h.botContainerID(ctx, botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "container not found for bot")
+	}
+	// Only allow deleting snapshots that belong to this bot.
+	if !strings.HasPrefix(snapshotName, containerID+"-") {
+		return echo.NewHTTPError(http.StatusForbidden, "snapshot does not belong to this bot")
+	}
+	container, err := h.service.GetContainer(ctx, containerID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "container not found")
+	}
+	infoCtx := ctx
+	if strings.TrimSpace(h.namespace) != "" {
+		infoCtx = namespaces.WithNamespace(ctx, h.namespace)
+	}
+	info, err := container.Info(infoCtx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := h.service.RemoveSnapshot(ctx, info.Snapshotter, snapshotName); err != nil {
+		if errdefs.IsNotFound(err) {
+			return echo.NewHTTPError(http.StatusNotFound, "snapshot not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if h.queries != nil {
+		_ = h.queries.DeleteSnapshot(ctx, snapshotName)
+	}
+	return c.JSON(http.StatusOK, DeleteSnapshotResponse{
+		SnapshotName: snapshotName,
+	})
+}
+
+// RestoreSnapshot godoc
+// @Summary Restore container from a snapshot
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param snapshot_name path string true "Snapshot name to restore"
+// @Success 200 {object} RestoreSnapshotResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/container/snapshots/{snapshot_name}/restore [post]
+func (h *ContainerdHandler) RestoreSnapshot(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+	snapshotName := strings.TrimSpace(c.Param("snapshot_name"))
+	if snapshotName == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "snapshot_name is required")
+	}
+	ctx := c.Request().Context()
+	containerID, err := h.botContainerID(ctx, botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "container not found for bot")
+	}
+	if !strings.HasPrefix(snapshotName, containerID+"-") {
+		return echo.NewHTTPError(http.StatusForbidden, "snapshot does not belong to this bot")
+	}
+
+	container, err := h.service.GetContainer(ctx, containerID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "container not found")
+	}
+	infoCtx := ctx
+	if strings.TrimSpace(h.namespace) != "" {
+		infoCtx = namespaces.WithNamespace(ctx, h.namespace)
+	}
+	info, err := container.Info(infoCtx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	// Stop the running task if any.
+	_ = h.service.StopTask(ctx, containerID, &ctr.StopTaskOptions{
+		Timeout: 10 * time.Second,
+		Force:   true,
+	})
+
+	// Prepare a new active snapshot from the target committed snapshot.
+	activeSnapshotID := fmt.Sprintf("%s-restore-%d", containerID, time.Now().UnixNano())
+	if err := h.service.PrepareSnapshot(ctx, info.Snapshotter, activeSnapshotID, snapshotName); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "prepare snapshot: "+err.Error())
+	}
+
+	// Delete the old container (keep snapshots intact).
+	if err := h.service.DeleteContainer(ctx, containerID, &ctr.DeleteContainerOptions{
+		CleanupSnapshot: false,
+	}); err != nil && !errdefs.IsNotFound(err) {
+		return echo.NewHTTPError(http.StatusInternalServerError, "delete container: "+err.Error())
+	}
+
+	// Recreate the container from the restored snapshot with the same mounts.
+	dataDir, err := h.ensureBotDataRoot(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "data dir: "+err.Error())
+	}
+	dataMount := strings.TrimSpace(h.cfg.DataMount)
+	if dataMount == "" {
+		dataMount = config.DefaultDataMount
+	}
+	resolvPath, err := ctr.ResolveConfSource(dataDir)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "resolv.conf: "+err.Error())
+	}
+	sharedDir, err := h.ensureSharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "shared dir: "+err.Error())
+	}
+	specOpts := []oci.SpecOpts{
+		oci.WithMounts([]specs.Mount{
+			{Destination: dataMount, Type: "bind", Source: dataDir, Options: []string{"rbind", "rw"}},
+			{Destination: "/shared", Type: "bind", Source: sharedDir, Options: []string{"rbind", "rw"}},
+			{Destination: "/etc/resolv.conf", Type: "bind", Source: resolvPath, Options: []string{"rbind", "ro"}},
+		}),
+	}
+
+	_, err = h.service.CreateContainerFromSnapshot(ctx, ctr.CreateContainerRequest{
+		ID:          containerID,
+		ImageRef:    info.Image,
+		SnapshotID:  activeSnapshotID,
+		Snapshotter: info.Snapshotter,
+		Labels:      info.Labels,
+		SpecOpts:    specOpts,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "recreate container: "+err.Error())
+	}
+
+	return c.JSON(http.StatusOK, RestoreSnapshotResponse{
+		ContainerID:  containerID,
+		SnapshotName: snapshotName,
+	})
+}
+
 // ---------- auth helpers ----------
 
 func (h *ContainerdHandler) mcpImageRef() string {

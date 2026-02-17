@@ -437,6 +437,7 @@
                       <th class="px-3 py-2 font-medium">{{ $t('bots.container.snapshotColumns.kind') }}</th>
                       <th class="px-3 py-2 font-medium">{{ $t('bots.container.snapshotColumns.parent') }}</th>
                       <th class="px-3 py-2 font-medium">{{ $t('bots.container.snapshotColumns.createdAt') }}</th>
+                      <th class="px-3 py-2 font-medium text-right">{{ $t('bots.container.snapshotColumns.actions') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -449,6 +450,30 @@
                       <td class="px-3 py-2">{{ item.kind }}</td>
                       <td class="px-3 py-2 break-all">{{ item.parent || '-' }}</td>
                       <td class="px-3 py-2">{{ formatDate(item.created_at) }}</td>
+                      <td class="px-3 py-2 text-right whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          :disabled="containerBusy || snapshotsLoading || botLifecyclePending"
+                          @click="handleRestoreSnapshot(item.name ?? '')"
+                        >
+                          {{ $t('bots.container.snapshotActions.restore') }}
+                        </Button>
+                        <ConfirmPopover
+                          :title="$t('bots.container.snapshotActions.deleteConfirmTitle')"
+                          :description="$t('bots.container.snapshotActions.deleteConfirmDesc')"
+                          @confirm="handleDeleteSnapshot(item.name ?? '')"
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            class="text-destructive hover:text-destructive"
+                            :disabled="containerBusy || snapshotsLoading || botLifecyclePending"
+                          >
+                            {{ $t('bots.container.snapshotActions.delete') }}
+                          </Button>
+                        </ConfirmPopover>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -583,6 +608,8 @@ import {
   getBotsByBotIdContainer, postBotsByBotIdContainer, deleteBotsByBotIdContainer,
   postBotsByBotIdContainerStart, postBotsByBotIdContainerStop,
   getBotsByBotIdContainerSnapshots, postBotsByBotIdContainerSnapshots,
+  deleteBotsByBotIdContainerSnapshotsBySnapshotName,
+  postBotsByBotIdContainerSnapshotsBySnapshotNameRestore,
 } from '@memoh/sdk'
 import { client } from '@memoh/sdk/client'
 import type {
@@ -1102,6 +1129,36 @@ async function handleCreateSnapshot() {
       await loadSnapshots()
     },
     t('bots.container.snapshotSuccess'),
+  )
+}
+
+async function handleDeleteSnapshot(snapshotName: string) {
+  if (!snapshotName || botLifecyclePending.value || !containerInfo.value) return
+  await runContainerAction(
+    'snapshot',
+    async () => {
+      await deleteBotsByBotIdContainerSnapshotsBySnapshotName({
+        path: { bot_id: botId.value, snapshot_name: snapshotName },
+        throwOnError: true,
+      })
+      await loadSnapshots()
+    },
+    t('bots.container.snapshotDeleteSuccess'),
+  )
+}
+
+async function handleRestoreSnapshot(snapshotName: string) {
+  if (!snapshotName || botLifecyclePending.value || !containerInfo.value) return
+  await runContainerAction(
+    'snapshot',
+    async () => {
+      await postBotsByBotIdContainerSnapshotsBySnapshotNameRestore({
+        path: { bot_id: botId.value, snapshot_name: snapshotName },
+        throwOnError: true,
+      })
+      await loadContainer(false)
+    },
+    t('bots.container.snapshotRestoreSuccess'),
   )
 }
 </script>

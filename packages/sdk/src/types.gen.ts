@@ -367,6 +367,15 @@ export type HandlersCreateSnapshotResponse = {
     snapshotter?: string;
 };
 
+export type HandlersDeleteSnapshotResponse = {
+    snapshot_name?: string;
+};
+
+export type HandlersRestoreSnapshotResponse = {
+    container_id?: string;
+    snapshot_name?: string;
+};
+
 export type HandlersEmbeddingsInput = {
     image_url?: string;
     text?: string;
@@ -1335,6 +1344,54 @@ export type PostBotsByBotIdContainerSnapshotsResponses = {
 };
 
 export type PostBotsByBotIdContainerSnapshotsResponse = PostBotsByBotIdContainerSnapshotsResponses[keyof PostBotsByBotIdContainerSnapshotsResponses];
+
+export type DeleteBotsByBotIdContainerSnapshotsBySnapshotNameData = {
+    body?: never;
+    path: {
+        bot_id: string;
+        snapshot_name: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/container/snapshots/{snapshot_name}';
+};
+
+export type DeleteBotsByBotIdContainerSnapshotsBySnapshotNameErrors = {
+    400: HandlersErrorResponse;
+    404: HandlersErrorResponse;
+    500: HandlersErrorResponse;
+};
+
+export type DeleteBotsByBotIdContainerSnapshotsBySnapshotNameError = DeleteBotsByBotIdContainerSnapshotsBySnapshotNameErrors[keyof DeleteBotsByBotIdContainerSnapshotsBySnapshotNameErrors];
+
+export type DeleteBotsByBotIdContainerSnapshotsBySnapshotNameResponses = {
+    200: HandlersDeleteSnapshotResponse;
+};
+
+export type DeleteBotsByBotIdContainerSnapshotsBySnapshotNameResponse = DeleteBotsByBotIdContainerSnapshotsBySnapshotNameResponses[keyof DeleteBotsByBotIdContainerSnapshotsBySnapshotNameResponses];
+
+export type PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreData = {
+    body?: never;
+    path: {
+        bot_id: string;
+        snapshot_name: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/container/snapshots/{snapshot_name}/restore';
+};
+
+export type PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreErrors = {
+    400: HandlersErrorResponse;
+    404: HandlersErrorResponse;
+    500: HandlersErrorResponse;
+};
+
+export type PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreError = PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreErrors[keyof PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreErrors];
+
+export type PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreResponses = {
+    200: HandlersRestoreSnapshotResponse;
+};
+
+export type PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreResponse = PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreResponses[keyof PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreResponses];
 
 export type PostBotsByBotIdContainerStartData = {
     body?: never;

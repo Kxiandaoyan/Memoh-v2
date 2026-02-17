@@ -413,6 +413,8 @@
       "stopSuccess": "容器停止成功",
       "deleteSuccess": "容器删除成功",
       "snapshotSuccess": "快照创建成功",
+      "snapshotDeleteSuccess": "快照删除成功",
+      "snapshotRestoreSuccess": "已从快照恢复容器",
       "snapshotEmpty": "暂无快照",
       "snapshotLoadFailed": "加载快照失败",
       "snapshotNamePlaceholder": "快照名称（可选）",
@@ -431,7 +433,14 @@
         "name": "名称",
         "kind": "类型",
         "parent": "父级",
-        "createdAt": "创建时间"
+        "createdAt": "创建时间",
+        "actions": "操作"
+      },
+      "snapshotActions": {
+        "restore": "恢复",
+        "delete": "删除",
+        "deleteConfirmTitle": "删除快照",
+        "deleteConfirmDesc": "此快照将被永久删除，此操作不可撤销。"
       },
       "actions": {
         "create": "创建容器",

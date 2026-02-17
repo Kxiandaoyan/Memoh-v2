@@ -417,6 +417,8 @@
       "stopSuccess": "Container stopped",
       "deleteSuccess": "Container deleted",
       "snapshotSuccess": "Snapshot created",
+      "snapshotDeleteSuccess": "Snapshot deleted",
+      "snapshotRestoreSuccess": "Container restored from snapshot",
       "snapshotEmpty": "No snapshots found",
       "snapshotLoadFailed": "Failed to load snapshots",
       "snapshotNamePlaceholder": "Snapshot name (optional)",
@@ -435,7 +437,14 @@
         "name": "Name",
         "kind": "Kind",
         "parent": "Parent",
-        "createdAt": "Created At"
+        "createdAt": "Created At",
+        "actions": "Actions"
+      },
+      "snapshotActions": {
+        "restore": "Restore",
+        "delete": "Delete",
+        "deleteConfirmTitle": "Delete Snapshot",
+        "deleteConfirmDesc": "This snapshot will be permanently deleted. This action cannot be undone."
       },
       "actions": {
         "create": "Create Container",
