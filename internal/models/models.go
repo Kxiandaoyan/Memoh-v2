@@ -63,11 +63,11 @@ func (s *Service) Create(ctx context.Context, req AddRequest) (AddResponse, erro
 	}
 
 	if model.FallbackModelID != "" {
-		fbUUID, err := db.ParseUUID(model.FallbackModelID)
+		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID)
 		if err != nil {
-			return AddResponse{}, fmt.Errorf("invalid fallback model ID: %w", err)
+			return AddResponse{}, err
 		}
-		params.FallbackModelID = pgtype.UUID{Bytes: fbUUID.Bytes, Valid: true}
+		params.FallbackModelID = fbUUID
 	}
 
 	created, err := s.queries.CreateModel(ctx, params)
@@ -103,7 +103,7 @@ func (s *Service) GetByID(ctx context.Context, id string) (GetResponse, error) {
 		return GetResponse{}, fmt.Errorf("failed to get model: %w", err)
 	}
 
-	return convertToGetResponse(dbModel), nil
+	return s.convertToGetResponse(ctx, dbModel), nil
 }
 
 // GetByModelID retrieves a model by its model_id field
@@ -117,7 +117,7 @@ func (s *Service) GetByModelID(ctx context.Context, modelID string) (GetResponse
 		return GetResponse{}, fmt.Errorf("failed to get model: %w", err)
 	}
 
-	return convertToGetResponse(dbModel), nil
+	return s.convertToGetResponse(ctx, dbModel), nil
 }
 
 // List returns all models
@@ -127,7 +127,7 @@ func (s *Service) List(ctx context.Context) ([]GetResponse, error) {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 
-	return convertToGetResponseList(dbModels), nil
+	return s.convertToGetResponseList(ctx, dbModels), nil
 }
 
 // ListByType returns models filtered by type (chat or embedding)
@@ -141,7 +141,7 @@ func (s *Service) ListByType(ctx context.Context, modelType ModelType) ([]GetRes
 		return nil, fmt.Errorf("failed to list models by type: %w", err)
 	}
 
-	return convertToGetResponseList(dbModels), nil
+	return s.convertToGetResponseList(ctx, dbModels), nil
 }
 
 // ListByClientType returns models filtered by client type
@@ -155,7 +155,7 @@ func (s *Service) ListByClientType(ctx context.Context, clientType ClientType) (
 		return nil, fmt.Errorf("failed to list models by client type: %w", err)
 	}
 
-	return convertToGetResponseList(dbModels), nil
+	return s.convertToGetResponseList(ctx, dbModels), nil
 }
 
 // ListByProviderID returns models filtered by provider ID.
@@ -171,7 +171,7 @@ func (s *Service) ListByProviderID(ctx context.Context, providerID string) ([]Ge
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models by provider: %w", err)
 	}
-	return convertToGetResponseList(dbModels), nil
+	return s.convertToGetResponseList(ctx, dbModels), nil
 }
 
 // ListByProviderIDAndType returns models filtered by provider ID and type.
@@ -193,7 +193,7 @@ func (s *Service) ListByProviderIDAndType(ctx context.Context, providerID string
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models by provider and type: %w", err)
 	}
-	return convertToGetResponseList(dbModels), nil
+	return s.convertToGetResponseList(ctx, dbModels), nil
 }
 
 // UpdateByID updates a model by its internal UUID
@@ -235,11 +235,11 @@ func (s *Service) UpdateByID(ctx context.Context, id string, req UpdateRequest) 
 	}
 
 	if model.FallbackModelID != "" {
-		fbUUID, err := db.ParseUUID(model.FallbackModelID)
+		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID)
 		if err != nil {
-			return GetResponse{}, fmt.Errorf("invalid fallback model ID: %w", err)
+			return GetResponse{}, err
 		}
-		params.FallbackModelID = pgtype.UUID{Bytes: fbUUID.Bytes, Valid: true}
+		params.FallbackModelID = fbUUID
 	}
 
 	updated, err := s.queries.UpdateModel(ctx, params)
@@ -247,7 +247,7 @@ func (s *Service) UpdateByID(ctx context.Context, id string, req UpdateRequest) 
 		return GetResponse{}, fmt.Errorf("failed to update model: %w", err)
 	}
 
-	return convertToGetResponse(updated), nil
+	return s.convertToGetResponse(ctx, updated), nil
 }
 
 // UpdateByModelID updates a model by its model_id field
@@ -289,11 +289,11 @@ func (s *Service) UpdateByModelID(ctx context.Context, modelID string, req Updat
 	}
 
 	if model.FallbackModelID != "" {
-		fbUUID, err := db.ParseUUID(model.FallbackModelID)
+		fbUUID, err := s.resolveFallbackModelID(ctx, model.FallbackModelID)
 		if err != nil {
-			return GetResponse{}, fmt.Errorf("invalid fallback model ID: %w", err)
+			return GetResponse{}, err
 		}
-		params.FallbackModelID = pgtype.UUID{Bytes: fbUUID.Bytes, Valid: true}
+		params.FallbackModelID = fbUUID
 	}
 
 	updated, err := s.queries.UpdateModelByModelID(ctx, params)
@@ -301,7 +301,7 @@ func (s *Service) UpdateByModelID(ctx context.Context, modelID string, req Updat
 		return GetResponse{}, fmt.Errorf("failed to update model: %w", err)
 	}
 
-	return convertToGetResponse(updated), nil
+	return s.convertToGetResponse(ctx, updated), nil
 }
 
 // DeleteByID deletes a model by its internal UUID
@@ -355,7 +355,7 @@ func (s *Service) CountByType(ctx context.Context, modelType ModelType) (int64, 
 
 // Helper functions
 
-func convertToGetResponse(dbModel sqlc.Model) GetResponse {
+func (s *Service) convertToGetResponse(ctx context.Context, dbModel sqlc.Model) GetResponse {
 	resp := GetResponse{
 		ModelID: dbModel.ModelID,
 		Model: Model{
@@ -380,16 +380,40 @@ func convertToGetResponse(dbModel sqlc.Model) GetResponse {
 	}
 
 	if dbModel.FallbackModelID.Valid {
-		resp.Model.FallbackModelID = dbModel.FallbackModelID.String()
+		// Resolve the internal UUID to the human-readable model_id so the
+		// frontend dropdown can match it directly.
+		if fbModel, err := s.queries.GetModelByID(ctx, dbModel.FallbackModelID); err == nil {
+			resp.Model.FallbackModelID = fbModel.ModelID
+		} else {
+			resp.Model.FallbackModelID = dbModel.FallbackModelID.String()
+		}
 	}
 
 	return resp
 }
 
-func convertToGetResponseList(dbModels []sqlc.Model) []GetResponse {
+// resolveFallbackModelID converts a fallback_model_id value to a pgtype.UUID.
+// It accepts either a UUID string (internal ID) or a model_id string (e.g. "gpt-4o-mini").
+func (s *Service) resolveFallbackModelID(ctx context.Context, raw string) (pgtype.UUID, error) {
+	if raw == "" {
+		return pgtype.UUID{}, nil
+	}
+	// Try parsing as UUID first.
+	if parsed, err := db.ParseUUID(raw); err == nil {
+		return parsed, nil
+	}
+	// Treat as model_id — look up the internal UUID.
+	dbModel, err := s.queries.GetModelByModelID(ctx, raw)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("fallback model %q not found: %w", raw, err)
+	}
+	return dbModel.ID, nil
+}
+
+func (s *Service) convertToGetResponseList(ctx context.Context, dbModels []sqlc.Model) []GetResponse {
 	responses := make([]GetResponse, 0, len(dbModels))
 	for _, dbModel := range dbModels {
-		responses = append(responses, convertToGetResponse(dbModel))
+		responses = append(responses, s.convertToGetResponse(ctx, dbModel))
 	}
 	return responses
 }

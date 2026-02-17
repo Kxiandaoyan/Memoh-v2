@@ -50,7 +50,9 @@ timeout_seconds = 10
 [agent_gateway]
 host = "127.0.0.1"
 port = 8081
-server_addr = ":8080"
+# public_host overrides host when the server connects to the agent gateway.
+# In Docker, set this to the container DNS name (e.g. "memoh-agent").
+# public_host = "memoh-agent"
 
 ## Web
 [web]

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -102,11 +104,13 @@ func (h *DiagnosticsHandler) checkPostgreSQL(ctx context.Context) DiagnosticChec
 
 func (h *DiagnosticsHandler) checkQdrant(ctx context.Context) DiagnosticCheck {
 	start := time.Now()
-	url := h.cfg.Qdrant.BaseURL
-	if url == "" {
-		url = config.DefaultQdrantURL
+	baseURL := h.cfg.Qdrant.BaseURL
+	if baseURL == "" {
+		baseURL = config.DefaultQdrantURL
 	}
-	healthURL := url + "/healthz"
+	// base_url points to the gRPC port (default 6334).
+	// Qdrant REST API (and /healthz) lives on gRPC port - 1 (default 6333).
+	healthURL := qdrantHTTPHealthURL(baseURL)
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
@@ -140,9 +144,27 @@ func (h *DiagnosticsHandler) checkQdrant(ctx context.Context) DiagnosticCheck {
 	return DiagnosticCheck{
 		Name:    "Qdrant",
 		Status:  "ok",
-		Message: fmt.Sprintf("Healthy at %s", url),
+		Message: fmt.Sprintf("Healthy at %s", baseURL),
 		Latency: latency,
 	}
+}
+
+// qdrantHTTPHealthURL derives the Qdrant REST health endpoint from a gRPC base_url.
+// Qdrant serves REST on (gRPC port - 1), e.g. gRPC=6334 → REST=6333.
+func qdrantHTTPHealthURL(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return baseURL + "/healthz"
+	}
+	grpcPort := 6334
+	if p := parsed.Port(); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			grpcPort = v
+		}
+	}
+	restPort := grpcPort - 1
+	parsed.Host = parsed.Hostname() + ":" + strconv.Itoa(restPort)
+	return parsed.String() + "/healthz"
 }
 
 func (h *DiagnosticsHandler) checkAgentGateway(ctx context.Context) DiagnosticCheck {

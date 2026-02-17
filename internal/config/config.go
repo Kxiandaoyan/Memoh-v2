@@ -88,11 +88,19 @@ type QdrantConfig struct {
 type AgentGatewayConfig struct {
 	Host string `toml:"host"`
 	Port int    `toml:"port"`
+	// PublicHost is the hostname other services use to reach the Agent Gateway.
+	// In Docker this is the service DNS name (e.g. "memoh-agent").
+	// When empty, falls back to Host (with 0.0.0.0 replaced by 127.0.0.1).
+	PublicHost string `toml:"public_host"`
 }
 
+// BaseURL returns the HTTP URL that the Server should use to connect to the Agent Gateway.
 func (c AgentGatewayConfig) BaseURL() string {
-	host := c.Host
+	host := c.PublicHost
 	if host == "" {
+		host = c.Host
+	}
+	if host == "" || host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
 	port := c.Port
