@@ -103,7 +103,8 @@ type ModelMessage struct {
 
 // TextContent extracts the plain text from the message content.
 // If content is a string, it returns it directly.
-// If content is an array of parts, it joins all text-type parts.
+// If content is an array of parts, it joins all text-type parts,
+// skipping reasoning/thinking parts to avoid leaking internal thoughts.
 func (m ModelMessage) TextContent() string {
 	if len(m.Content) == 0 {
 		return ""
@@ -116,6 +117,9 @@ func (m ModelMessage) TextContent() string {
 	if err := json.Unmarshal(m.Content, &parts); err == nil {
 		texts := make([]string, 0, len(parts))
 		for _, p := range parts {
+			if isReasoningPartType(p.Type) {
+				continue
+			}
 			if strings.TrimSpace(p.Text) != "" {
 				texts = append(texts, p.Text)
 			}
@@ -125,14 +129,36 @@ func (m ModelMessage) TextContent() string {
 	return ""
 }
 
+// isReasoningPartType returns true for content part types that represent
+// internal LLM reasoning/thinking and should be excluded from user-facing output.
+func isReasoningPartType(partType string) bool {
+	switch strings.ToLower(strings.TrimSpace(partType)) {
+	case "reasoning", "thinking":
+		return true
+	default:
+		return false
+	}
+}
+
 // ContentParts parses the content as an array of ContentPart.
 // Returns nil if the content is a plain string or not parseable.
+// Reasoning/thinking parts are excluded from the result.
 func (m ModelMessage) ContentParts() []ContentPart {
 	if len(m.Content) == 0 {
 		return nil
 	}
-	var parts []ContentPart
-	if err := json.Unmarshal(m.Content, &parts); err != nil {
+	var raw []ContentPart
+	if err := json.Unmarshal(m.Content, &raw); err != nil {
+		return nil
+	}
+	parts := make([]ContentPart, 0, len(raw))
+	for _, p := range raw {
+		if isReasoningPartType(p.Type) {
+			continue
+		}
+		parts = append(parts, p)
+	}
+	if len(parts) == 0 {
 		return nil
 	}
 	return parts

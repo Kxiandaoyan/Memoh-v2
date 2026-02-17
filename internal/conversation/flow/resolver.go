@@ -722,7 +722,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 
 	currentEvent := ""
 	stored := false

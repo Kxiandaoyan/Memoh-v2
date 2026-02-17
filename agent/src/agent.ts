@@ -32,6 +32,12 @@ import { getMCPTools } from './tools/mcp'
 import { getTools } from './tools'
 import { buildIdentityHeaders } from './utils/headers'
 import { normalizeBaseUrl } from './utils/url'
+import {
+  truncateToolResult,
+  sanitizeToolChunkMetadata,
+  truncateMessagesForTransport,
+  stripReasoningFromMessages,
+} from './utils/sse'
 
 export const createAgent = (
   {
@@ -276,12 +282,13 @@ export const createAgent = (
       extractAttachmentsFromText(text)
     const { messages: strippedMessages, attachments: messageAttachments } =
       stripAttachmentsFromMessages(response.messages)
+    const cleanedMessages = stripReasoningFromMessages(strippedMessages)
     const allAttachments = dedupeAttachments([
       ...textAttachments,
       ...messageAttachments,
     ])
     return {
-      messages: strippedMessages,
+      messages: cleanedMessages,
       reasoning: reasoning.map((part) => part.text),
       usage: normalizeUsage(usage),
       text: cleanedText,
@@ -322,7 +329,7 @@ export const createAgent = (
       abortSignal: params.abortSignal,
     })
     return {
-      messages: [userPrompt, ...response.messages],
+      messages: stripReasoningFromMessages([userPrompt, ...response.messages]),
       reasoning: reasoning.map((part) => part.text),
       usage: normalizeUsage(usage),
       text,
@@ -358,7 +365,7 @@ export const createAgent = (
       tools,
     })
     return {
-      messages: [scheduleMessage, ...response.messages],
+      messages: stripReasoningFromMessages([scheduleMessage, ...response.messages]),
       reasoning: reasoning.map((part) => part.text),
       usage: normalizeUsage(usage),
       text,
@@ -512,8 +519,10 @@ export const createAgent = (
               toolName: chunk.toolName,
               toolCallId: chunk.toolCallId,
               input: chunk.input,
-              result: chunk.output,
-              metadata: chunk,
+              result: truncateToolResult(chunk.output),
+              metadata: sanitizeToolChunkMetadata(
+                chunk as unknown as Record<string, unknown>,
+              ),
             }
             break
           case 'file':
@@ -531,9 +540,12 @@ export const createAgent = (
     const { messages: strippedMessages } = stripAttachmentsFromMessages(
       result.messages,
     )
+    const cleanedMessages = stripReasoningFromMessages(
+      truncateMessagesForTransport(strippedMessages),
+    ) as ModelMessage[]
     yield {
       type: 'agent_end',
-      messages: strippedMessages,
+      messages: cleanedMessages,
       reasoning: result.reasoning,
       usage: normalizeUsage(result.usage),
       skills: getEnabledSkills(),
