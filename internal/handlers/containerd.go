@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	tasktypes "github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
@@ -205,6 +207,8 @@ func (h *ContainerdHandler) CreateContainer(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+
+	h.ensureBotSharedOutputDir(ctx, sharedDir, botID)
 
 	specOpts := []oci.SpecOpts{
 		oci.WithMounts([]specs.Mount{
@@ -1279,4 +1283,62 @@ func (h *ContainerdHandler) ensureSharedDir() (string, error) {
 		return "", err
 	}
 	return shared, nil
+}
+
+// ensureBotSharedOutputDir creates a per-bot output folder inside /shared.
+// The folder name is derived from the bot's display name (slugified for safety)
+// with a fallback to the bot ID prefix.
+func (h *ContainerdHandler) ensureBotSharedOutputDir(ctx context.Context, sharedDir, botID string) {
+	if h.queries == nil {
+		return
+	}
+	pgBotID, err := db.ParseUUID(botID)
+	if err != nil {
+		return
+	}
+	bot, err := h.queries.GetBotByID(ctx, pgBotID)
+	if err != nil {
+		h.logger.Warn("ensureBotSharedOutputDir: failed to get bot", slog.String("bot_id", botID), slog.Any("error", err))
+		return
+	}
+	name := ""
+	if bot.DisplayName.Valid {
+		name = strings.TrimSpace(bot.DisplayName.String)
+	}
+	slug := slugifyBotName(name, botID)
+	dir := filepath.Join(sharedDir, slug)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		h.logger.Warn("ensureBotSharedOutputDir: failed to create dir", slog.String("dir", dir), slog.Any("error", err))
+	}
+}
+
+var nonAlnumRegex = regexp.MustCompile(`[^\p{L}\p{N}\-_]+`)
+
+// slugifyBotName converts a bot display name to a filesystem-safe slug.
+// Keeps letters (including CJK), digits, hyphens and underscores.
+// Falls back to a bot ID prefix if the result is empty.
+func slugifyBotName(name, botID string) string {
+	s := strings.TrimSpace(name)
+	s = strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' {
+			return '-'
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			return r
+		}
+		return -1
+	}, s)
+	s = nonAlnumRegex.ReplaceAllString(s, "")
+	// collapse consecutive hyphens
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	s = strings.Trim(s, "-_")
+	if len(s) > 64 {
+		s = s[:64]
+	}
+	if s == "" && len(botID) >= 8 {
+		s = "bot-" + botID[:8]
+	}
+	return s
 }

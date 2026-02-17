@@ -4,33 +4,31 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Kxiandaoyan/Memoh-v2/internal/auth"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/automation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/boot"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/db"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
 	msgEvent "github.com/Kxiandaoyan/Memoh-v2/internal/message/event"
 )
 
-const heartbeatTokenTTL = 10 * time.Minute
-
 // Engine manages periodic and event-driven heartbeats for all bots.
 type Engine struct {
 	queries   *sqlc.Queries
 	triggerer Triggerer
 	hub       *msgEvent.Hub
+	pool      *automation.CronPool
 	jwtSecret string
 	logger    *slog.Logger
 
 	mu      sync.Mutex
-	timers  map[string]*time.Timer // config ID → periodic timer
-	cancels map[string]func()      // config ID → event subscription cancel
+	cancels map[string]func() // config ID → event subscription cancel
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
@@ -41,6 +39,7 @@ func NewEngine(
 	queries *sqlc.Queries,
 	triggerer Triggerer,
 	hub *msgEvent.Hub,
+	pool *automation.CronPool,
 	runtimeConfig *boot.RuntimeConfig,
 ) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -48,9 +47,9 @@ func NewEngine(
 		queries:   queries,
 		triggerer: triggerer,
 		hub:       hub,
+		pool:      pool,
 		jwtSecret: runtimeConfig.JwtSecret,
 		logger:    log.With(slog.String("service", "heartbeat")),
-		timers:    map[string]*time.Timer{},
 		cancels:   map[string]func(){},
 		ctx:       ctx,
 		cancel:    cancel,
@@ -74,15 +73,11 @@ func (e *Engine) Bootstrap(ctx context.Context) error {
 	return nil
 }
 
-// Stop shuts down all timers and event subscriptions.
+// Stop shuts down all periodic jobs and event subscriptions.
 func (e *Engine) Stop() {
 	e.cancel()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for id, timer := range e.timers {
-		timer.Stop()
-		delete(e.timers, id)
-	}
 	for id, cancelFn := range e.cancels {
 		cancelFn()
 		delete(e.cancels, id)
@@ -271,33 +266,39 @@ func (e *Engine) DisableEvolutionConfig(ctx context.Context, botID string) error
 // ── Internal lifecycle management ─────────────────────────────────────
 
 func (e *Engine) startConfig(cfg Config) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// Periodic timer
-	if cfg.IntervalSeconds > 0 {
-		interval := time.Duration(cfg.IntervalSeconds) * time.Second
-		timer := time.AfterFunc(interval, func() {
-			e.onPeriodicTick(cfg)
-		})
-		e.timers[cfg.ID] = timer
+	// Periodic scheduling via shared CronPool (@every Ns pattern).
+	if cfg.IntervalSeconds > 0 && e.pool != nil {
+		pattern := "@every " + strconv.Itoa(cfg.IntervalSeconds) + "s"
+		cfgCopy := cfg
+		if err := e.pool.Add(cfg.ID, pattern, func() {
+			e.onPeriodicTick(cfgCopy)
+		}); err != nil {
+			e.logger.Error("failed to register heartbeat cron job",
+				slog.String("config_id", cfg.ID),
+				slog.String("pattern", pattern),
+				slog.Any("error", err),
+			)
+		}
 	}
 
 	// Event subscriptions
 	if len(cfg.EventTriggers) > 0 && e.hub != nil {
 		_, ch, cancelSub := e.hub.Subscribe(cfg.BotID, msgEvent.DefaultBufferSize)
+		e.mu.Lock()
 		e.cancels[cfg.ID] = cancelSub
+		e.mu.Unlock()
 		go e.eventLoop(cfg, ch)
 	}
 }
 
 func (e *Engine) stopConfig(id string) {
+	// Remove periodic job from shared CronPool.
+	if e.pool != nil {
+		e.pool.Remove(id)
+	}
+	// Cancel event subscription.
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if timer, ok := e.timers[id]; ok {
-		timer.Stop()
-		delete(e.timers, id)
-	}
 	if cancelFn, ok := e.cancels[id]; ok {
 		cancelFn()
 		delete(e.cancels, id)
@@ -311,7 +312,7 @@ func (e *Engine) restartConfig(cfg Config) {
 	}
 }
 
-// onPeriodicTick fires when the periodic timer elapses.
+// onPeriodicTick fires when the cron scheduler triggers the heartbeat interval.
 func (e *Engine) onPeriodicTick(cfg Config) {
 	select {
 	case <-e.ctx.Done():
@@ -330,16 +331,7 @@ func (e *Engine) onPeriodicTick(cfg Config) {
 			slog.Any("error", err),
 		)
 	}
-
-	// Reschedule the next tick (one-shot timer pattern for consistent intervals).
-	e.mu.Lock()
-	if _, ok := e.timers[cfg.ID]; ok {
-		interval := time.Duration(cfg.IntervalSeconds) * time.Second
-		e.timers[cfg.ID] = time.AfterFunc(interval, func() {
-			e.onPeriodicTick(cfg)
-		})
-	}
-	e.mu.Unlock()
+	// No manual reschedule needed — CronPool repeats automatically.
 }
 
 // eventLoop listens for events from the message hub and fires heartbeats.
@@ -381,11 +373,11 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 	if e.triggerer == nil {
 		return fmt.Errorf("heartbeat triggerer not configured")
 	}
-	ownerUserID, err := e.resolveBotOwner(ctx, cfg.BotID)
+	ownerUserID, err := automation.ResolveBotOwner(ctx, e.queries, cfg.BotID)
 	if err != nil {
 		return fmt.Errorf("resolve bot owner: %w", err)
 	}
-	token, err := e.generateToken(ownerUserID)
+	token, err := automation.GenerateTriggerToken(ownerUserID, e.jwtSecret, automation.DefaultTriggerTokenTTL)
 	if err != nil {
 		return fmt.Errorf("generate token: %w", err)
 	}
@@ -419,32 +411,6 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 	return e.triggerer.TriggerHeartbeat(ctx, cfg.BotID, payload, token)
 }
 
-func (e *Engine) resolveBotOwner(ctx context.Context, botID string) (string, error) {
-	pgBotID, err := db.ParseUUID(botID)
-	if err != nil {
-		return "", err
-	}
-	bot, err := e.queries.GetBotByID(ctx, pgBotID)
-	if err != nil {
-		return "", fmt.Errorf("get bot: %w", err)
-	}
-	ownerID := bot.OwnerUserID.String()
-	if ownerID == "" {
-		return "", fmt.Errorf("bot owner not found")
-	}
-	return ownerID, nil
-}
-
-func (e *Engine) generateToken(userID string) (string, error) {
-	if strings.TrimSpace(e.jwtSecret) == "" {
-		return "", fmt.Errorf("jwt secret not configured")
-	}
-	signed, _, err := auth.GenerateToken(userID, e.jwtSecret, heartbeatTokenTTL)
-	if err != nil {
-		return "", err
-	}
-	return "Bearer " + signed, nil
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────
 

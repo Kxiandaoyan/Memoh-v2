@@ -19,6 +19,8 @@ type EventType string
 const (
 	// EventTypeMessageCreated is emitted after a message is persisted successfully.
 	EventTypeMessageCreated EventType = "message_created"
+	// EventTypeScheduleCompleted is emitted after a scheduled task finishes execution.
+	EventTypeScheduleCompleted EventType = "schedule_completed"
 )
 
 // Event is the normalized payload emitted by the in-process message event hub.

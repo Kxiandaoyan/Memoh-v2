@@ -6,49 +6,35 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/robfig/cron/v3"
 
-	"github.com/Kxiandaoyan/Memoh-v2/internal/auth"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/automation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/boot"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/db"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
+	msgEvent "github.com/Kxiandaoyan/Memoh-v2/internal/message/event"
 )
 
 type Service struct {
 	queries   *sqlc.Queries
-	cron      *cron.Cron
-	parser    cron.Parser
+	pool      *automation.CronPool
 	triggerer Triggerer
+	hub       *msgEvent.Hub
 	jwtSecret string
 	logger    *slog.Logger
-	mu        sync.Mutex
-	jobs      map[string]cron.EntryID
 }
 
-func NewService(log *slog.Logger, queries *sqlc.Queries, triggerer Triggerer, runtimeConfig *boot.RuntimeConfig) *Service {
-	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	c := cron.New(cron.WithParser(parser))
-	service := &Service{
+func NewService(log *slog.Logger, queries *sqlc.Queries, triggerer Triggerer, pool *automation.CronPool, hub *msgEvent.Hub, runtimeConfig *boot.RuntimeConfig) *Service {
+	return &Service{
 		queries:   queries,
-		cron:      c,
-		parser:    parser,
+		pool:      pool,
 		triggerer: triggerer,
+		hub:       hub,
 		jwtSecret: runtimeConfig.JwtSecret,
 		logger:    log.With(slog.String("service", "schedule")),
-		jobs:      map[string]cron.EntryID{},
 	}
-	c.Start()
-	return service
-}
-
-// Stop gracefully shuts down the cron scheduler, waiting for running jobs to finish.
-func (s *Service) Stop() context.Context {
-	return s.cron.Stop()
 }
 
 func (s *Service) Bootstrap(ctx context.Context) error {
@@ -85,7 +71,7 @@ func (s *Service) Create(ctx context.Context, botID string, req CreateRequest) (
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Description) == "" || strings.TrimSpace(req.Pattern) == "" || strings.TrimSpace(req.Command) == "" {
 		return Schedule{}, fmt.Errorf("name, description, pattern, command are required")
 	}
-	if _, err := s.parser.Parse(req.Pattern); err != nil {
+	if err := s.pool.ValidatePattern(req.Pattern); err != nil {
 		return Schedule{}, fmt.Errorf("invalid cron pattern: %w", err)
 	}
 	pgBotID, err := db.ParseUUID(botID)
@@ -170,7 +156,7 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Sch
 	}
 	pattern := existing.Pattern
 	if req.Pattern != nil {
-		if _, err := s.parser.Parse(*req.Pattern); err != nil {
+		if err := s.pool.ValidatePattern(*req.Pattern); err != nil {
 			return Schedule{}, fmt.Errorf("invalid cron pattern: %w", err)
 		}
 		pattern = *req.Pattern
@@ -217,7 +203,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err := s.queries.DeleteSchedule(ctx, pgID); err != nil {
 		return err
 	}
-	s.removeJob(id)
+	s.pool.Remove(id)
 	return nil
 }
 
@@ -235,8 +221,6 @@ func (s *Service) Trigger(ctx context.Context, scheduleID string) error {
 	return s.runSchedule(ctx, schedule)
 }
 
-const scheduleTokenTTL = 10 * time.Minute
-
 func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 	if s.triggerer == nil {
 		return fmt.Errorf("schedule triggerer not configured")
@@ -246,20 +230,20 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 		return err
 	}
 	if !updated.Enabled {
-		s.removeJob(schedule.ID)
+		s.pool.Remove(schedule.ID)
 	}
 
-	ownerUserID, err := s.resolveBotOwner(ctx, schedule.BotID)
+	ownerUserID, err := automation.ResolveBotOwner(ctx, s.queries, schedule.BotID)
 	if err != nil {
 		return fmt.Errorf("resolve bot owner: %w", err)
 	}
 
-	token, err := s.generateTriggerToken(ownerUserID)
+	token, err := automation.GenerateTriggerToken(ownerUserID, s.jwtSecret, automation.DefaultTriggerTokenTTL)
 	if err != nil {
 		return fmt.Errorf("generate trigger token: %w", err)
 	}
 
-	return s.triggerer.TriggerSchedule(ctx, schedule.BotID, TriggerPayload{
+	err = s.triggerer.TriggerSchedule(ctx, schedule.BotID, TriggerPayload{
 		ID:          schedule.ID,
 		Name:        schedule.Name,
 		Description: schedule.Description,
@@ -268,35 +252,18 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 		Command:     schedule.Command,
 		OwnerUserID: ownerUserID,
 	}, token)
-}
+	if err != nil {
+		return err
+	}
 
-// resolveBotOwner returns the owner user ID for the given bot.
-func (s *Service) resolveBotOwner(ctx context.Context, botID string) (string, error) {
-	pgBotID, err := db.ParseUUID(botID)
-	if err != nil {
-		return "", err
+	// Publish schedule_completed event so heartbeats with this trigger can fire.
+	if s.hub != nil {
+		s.hub.Publish(msgEvent.Event{
+			Type:  msgEvent.EventTypeScheduleCompleted,
+			BotID: schedule.BotID,
+		})
 	}
-	bot, err := s.queries.GetBotByID(ctx, pgBotID)
-	if err != nil {
-		return "", fmt.Errorf("get bot: %w", err)
-	}
-	ownerID := bot.OwnerUserID.String()
-	if ownerID == "" {
-		return "", fmt.Errorf("bot owner not found")
-	}
-	return ownerID, nil
-}
-
-// generateTriggerToken creates a short-lived JWT for schedule trigger callbacks.
-func (s *Service) generateTriggerToken(userID string) (string, error) {
-	if strings.TrimSpace(s.jwtSecret) == "" {
-		return "", fmt.Errorf("jwt secret not configured")
-	}
-	signed, _, err := auth.GenerateToken(userID, s.jwtSecret, scheduleTokenTTL)
-	if err != nil {
-		return "", err
-	}
-	return "Bearer " + signed, nil
+	return nil
 }
 
 func (s *Service) scheduleJob(schedule sqlc.Schedule) error {
@@ -309,14 +276,7 @@ func (s *Service) scheduleJob(schedule sqlc.Schedule) error {
 			s.logger.Error("scheduled job failed", slog.String("schedule_id", schedule.ID.String()), slog.Any("error", err))
 		}
 	}
-	entryID, err := s.cron.AddFunc(schedule.Pattern, job)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	s.jobs[id] = entryID
-	s.mu.Unlock()
-	return nil
+	return s.pool.Add(id, schedule.Pattern, job)
 }
 
 func (s *Service) rescheduleJob(schedule sqlc.Schedule) error {
@@ -324,21 +284,11 @@ func (s *Service) rescheduleJob(schedule sqlc.Schedule) error {
 	if id == "" {
 		return nil
 	}
-	s.removeJob(id)
-	if schedule.Enabled {
-		return s.scheduleJob(schedule)
+	if !schedule.Enabled {
+		s.pool.Remove(id)
+		return nil
 	}
-	return nil
-}
-
-func (s *Service) removeJob(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entryID, ok := s.jobs[id]
-	if ok {
-		s.cron.Remove(entryID)
-		delete(s.jobs, id)
-	}
+	return s.scheduleJob(schedule)
 }
 
 func toSchedule(row sqlc.Schedule) Schedule {

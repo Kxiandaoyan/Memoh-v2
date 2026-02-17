@@ -2,12 +2,13 @@ package schedule
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/Kxiandaoyan/Memoh-v2/internal/automation"
 )
 
 type mockTriggerer struct {
@@ -27,15 +28,11 @@ func (m *mockTriggerer) TriggerSchedule(_ context.Context, botID string, payload
 
 func TestGenerateTriggerToken(t *testing.T) {
 	secret := "test-secret-key-for-schedule"
-	svc := &Service{
-		jwtSecret: secret,
-		logger:    slog.Default(),
-	}
 	userID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
-	tok, err := svc.generateTriggerToken(userID)
+	tok, err := automation.GenerateTriggerToken(userID, secret, automation.DefaultTriggerTokenTTL)
 	if err != nil {
-		t.Fatalf("generateTriggerToken returned error: %v", err)
+		t.Fatalf("GenerateTriggerToken returned error: %v", err)
 	}
 	if !strings.HasPrefix(tok, "Bearer ") {
 		t.Fatalf("expected Bearer prefix, got: %s", tok)
@@ -69,22 +66,14 @@ func TestGenerateTriggerToken(t *testing.T) {
 }
 
 func TestGenerateTriggerToken_EmptySecret(t *testing.T) {
-	svc := &Service{
-		jwtSecret: "",
-		logger:    slog.Default(),
-	}
-	_, err := svc.generateTriggerToken("user-123")
+	_, err := automation.GenerateTriggerToken("user-123", "", automation.DefaultTriggerTokenTTL)
 	if err == nil {
 		t.Fatal("expected error for empty secret")
 	}
 }
 
 func TestGenerateTriggerToken_EmptyUserID(t *testing.T) {
-	svc := &Service{
-		jwtSecret: "some-secret",
-		logger:    slog.Default(),
-	}
-	_, err := svc.generateTriggerToken("")
+	_, err := automation.GenerateTriggerToken("", "some-secret", automation.DefaultTriggerTokenTTL)
 	if err == nil {
 		t.Fatal("expected error for empty user ID")
 	}

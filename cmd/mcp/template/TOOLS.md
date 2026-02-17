@@ -21,6 +21,23 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
+## File Storage Convention
+
+You have two storage locations:
+
+| Path | Scope | Purpose |
+|------|-------|---------|
+| `/data/` | Private — only you | System files (IDENTITY.md, SOUL.md, TOOLS.md, EXPERIMENTS.md, NOTES.md), skills, config |
+| `/shared/{your_name}/` | Shared — all bots can read | Your output documents, reports, analysis, notes for others |
+
+**Rules:**
+- **System files** (identity, soul, tools, experiments, notes) stay in `/data/`. Never move them.
+- **Output documents** (reports, analysis, drafts, exported data) go to `/shared/{your_name}/`.
+- Other bots' output is at `/shared/{their_name}/` — you can read but should not modify.
+- Use `/shared/` root only for cross-bot coordination files that don't belong to any single bot.
+
+---
+
 ## Skill Marketplaces — ClawHub & OPC Skills
 
 You have access to two skill registries:

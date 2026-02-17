@@ -307,23 +307,25 @@
       "blankDescription": "Start from scratch with an empty persona",
       "categories": {
         "all": "All",
-        "productivity": "Productivity",
+        "business": "Business",
         "development": "Development",
-        "creative": "Creative",
-        "education": "Education",
-        "personal": "Personal"
+        "design": "Design",
+        "productivity": "Productivity"
       },
       "names": {
+        "ceo-bezos": "CEO Strategist",
+        "cto-vogels": "CTO Architect",
+        "fullstack-dhh": "Full Stack Dev",
+        "interaction-cooper": "Interaction Design",
+        "marketing-godin": "Marketing Strategy",
+        "operations-pg": "Growth Operations",
+        "product-norman": "Product Design",
+        "qa-bach": "Quality Assurance",
+        "sales-ross": "Sales Strategy",
+        "ui-duarte": "UI Design",
         "research-analyst": "Research Analyst",
-        "code-architect": "Code Architect",
-        "writing-editor": "Writing Editor",
         "daily-secretary": "Daily Secretary",
-        "data-wrangler": "Data Wrangler",
-        "knowledge-curator": "Knowledge Curator",
-        "language-tutor": "Language Tutor",
-        "creative-muse": "Creative Muse",
-        "ops-monitor": "Ops Monitor",
-        "life-strategist": "Life Strategist"
+        "knowledge-curator": "Knowledge Curator"
       }
     },
     "step": "Step {current} of {total}",

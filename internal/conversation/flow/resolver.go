@@ -375,7 +375,54 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 	}, nil
 }
 
-// --- TriggerSchedule ---
+// --- TriggerSchedule / TriggerHeartbeat ---
+
+// triggerParams holds the unified parameters for executeTrigger.
+type triggerParams struct {
+	botID          string
+	query          string
+	ownerUserID    string
+	displayName    string          // "Scheduler" or "Heartbeat"
+	schedule       gatewaySchedule // gateway schedule metadata
+	usageType      string          // "schedule" or "heartbeat"
+	evolutionLogID string          // non-empty only for evolution heartbeats
+}
+
+// executeTrigger is the shared execution path for both schedule and heartbeat triggers.
+// It resolves the conversation context, posts to the agent gateway, records token usage,
+// and stores the conversation round.
+func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token string) error {
+	req := conversation.ChatRequest{
+		BotID:  p.botID,
+		ChatID: p.botID,
+		Query:  p.query,
+		UserID: p.ownerUserID,
+		Token:  token,
+	}
+	rc, err := r.resolve(ctx, req)
+	if err != nil {
+		r.completeEvolutionLogOnError(ctx, p.evolutionLogID, err)
+		return err
+	}
+
+	gwPayload := rc.payload
+	gwPayload.Identity.ChannelIdentityID = strings.TrimSpace(p.ownerUserID)
+	gwPayload.Identity.DisplayName = p.displayName
+
+	triggerReq := triggerScheduleRequest{
+		gatewayRequest: gwPayload,
+		Schedule:       p.schedule,
+	}
+
+	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
+	if err != nil {
+		r.completeEvolutionLogOnError(ctx, p.evolutionLogID, err)
+		return err
+	}
+	r.recordTokenUsage(ctx, p.botID, resp.Usage, rc.model.ModelID, p.usageType)
+	r.completeEvolutionLogFromResponse(ctx, p.evolutionLogID, resp)
+	return r.storeRound(ctx, req, resp.Messages)
+}
 
 // TriggerSchedule executes a scheduled command through the agent gateway trigger-schedule endpoint.
 func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload schedule.TriggerPayload, token string) error {
@@ -385,26 +432,12 @@ func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload sc
 	if strings.TrimSpace(payload.Command) == "" {
 		return fmt.Errorf("schedule command is required")
 	}
-
-	req := conversation.ChatRequest{
-		BotID:  botID,
-		ChatID: botID,
-		Query:  payload.Command,
-		UserID: payload.OwnerUserID,
-		Token:  token,
-	}
-	rc, err := r.resolve(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	schedulePayload := rc.payload
-	schedulePayload.Identity.ChannelIdentityID = strings.TrimSpace(payload.OwnerUserID)
-	schedulePayload.Identity.DisplayName = "Scheduler"
-
-	triggerReq := triggerScheduleRequest{
-		gatewayRequest: schedulePayload,
-		Schedule: gatewaySchedule{
+	return r.executeTrigger(ctx, triggerParams{
+		botID:       botID,
+		query:       payload.Command,
+		ownerUserID: payload.OwnerUserID,
+		displayName: "Scheduler",
+		schedule: gatewaySchedule{
 			ID:          payload.ID,
 			Name:        payload.Name,
 			Description: payload.Description,
@@ -412,17 +445,9 @@ func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload sc
 			MaxCalls:    payload.MaxCalls,
 			Command:     payload.Command,
 		},
-	}
-
-	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
-	if err != nil {
-		return err
-	}
-	r.recordTokenUsage(ctx, botID, resp.Usage, rc.model.ModelID, "schedule")
-	return r.storeRound(ctx, req, resp.Messages)
+		usageType: "schedule",
+	}, token)
 }
-
-// --- TriggerHeartbeat ---
 
 // TriggerHeartbeat executes a heartbeat command through the agent gateway trigger-schedule endpoint.
 // It reuses the schedule trigger pathway since a heartbeat is functionally identical to a scheduled command.
@@ -433,45 +458,20 @@ func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload h
 	if strings.TrimSpace(payload.Prompt) == "" {
 		return fmt.Errorf("heartbeat prompt is required")
 	}
-
-	req := conversation.ChatRequest{
-		BotID:  botID,
-		ChatID: botID,
-		Query:  payload.Prompt,
-		UserID: payload.OwnerUserID,
-		Token:  token,
-	}
-	rc, err := r.resolve(ctx, req)
-	if err != nil {
-		r.completeEvolutionLogOnError(ctx, payload.EvolutionLogID, err)
-		return err
-	}
-
-	schedulePayload := rc.payload
-	schedulePayload.Identity.ChannelIdentityID = strings.TrimSpace(payload.OwnerUserID)
-	schedulePayload.Identity.DisplayName = "Heartbeat"
-
-	triggerReq := triggerScheduleRequest{
-		gatewayRequest: schedulePayload,
-		Schedule: gatewaySchedule{
+	return r.executeTrigger(ctx, triggerParams{
+		botID:       botID,
+		query:       payload.Prompt,
+		ownerUserID: payload.OwnerUserID,
+		displayName: "Heartbeat",
+		schedule: gatewaySchedule{
 			ID:          payload.HeartbeatID,
 			Name:        "heartbeat",
 			Description: fmt.Sprintf("Heartbeat trigger (reason: %s)", payload.Reason),
 			Command:     payload.Prompt,
 		},
-	}
-
-	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
-	if err != nil {
-		r.completeEvolutionLogOnError(ctx, payload.EvolutionLogID, err)
-		return err
-	}
-	r.recordTokenUsage(ctx, botID, resp.Usage, rc.model.ModelID, "heartbeat")
-
-	// Complete evolution log if this was an evolution heartbeat.
-	r.completeEvolutionLogFromResponse(ctx, payload.EvolutionLogID, resp)
-
-	return r.storeRound(ctx, req, resp.Messages)
+		usageType:      "heartbeat",
+		evolutionLogID: payload.EvolutionLogID,
+	}, token)
 }
 
 // completeEvolutionLogFromResponse parses the agent response and completes the evolution log.

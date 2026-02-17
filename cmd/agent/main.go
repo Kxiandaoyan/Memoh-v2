@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/accounts"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/automation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bind"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/boot"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
@@ -113,6 +114,9 @@ func main() {
 			provideChannelRouter,
 			provideChannelManager,
 
+			// shared cron pool for schedule + heartbeat
+			automation.NewCronPool,
+
 			// conversation flow
 			provideChatResolver,
 			provideScheduleTriggerer,
@@ -155,6 +159,7 @@ func main() {
 		),
 		fx.Invoke(
 			startMemoryWarmup,
+			startCronPool,
 			startScheduleService,
 			startHeartbeatEngine,
 			startChannelManager,
@@ -469,14 +474,23 @@ func startMemoryWarmup(lc fx.Lifecycle, memoryService *memory.Service, logger *s
 	})
 }
 
+func startCronPool(lc fx.Lifecycle, pool *automation.CronPool) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			pool.Start()
+			return nil
+		},
+		OnStop: func(_ context.Context) error {
+			<-pool.Stop().Done()
+			return nil
+		},
+	})
+}
+
 func startScheduleService(lc fx.Lifecycle, scheduleService *schedule.Service) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			return scheduleService.Bootstrap(ctx)
-		},
-		OnStop: func(_ context.Context) error {
-			<-scheduleService.Stop().Done()
-			return nil
 		},
 	})
 }

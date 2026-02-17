@@ -303,23 +303,25 @@
       "blankDescription": "从零开始，不使用任何预设人格",
       "categories": {
         "all": "全部",
-        "productivity": "效率",
+        "business": "商业",
         "development": "开发",
-        "creative": "创意",
-        "education": "教育",
-        "personal": "个人"
+        "design": "设计",
+        "productivity": "效率"
       },
       "names": {
+        "ceo-bezos": "CEO 战略顾问",
+        "cto-vogels": "CTO 架构师",
+        "fullstack-dhh": "全栈开发",
+        "interaction-cooper": "交互设计",
+        "marketing-godin": "营销策略",
+        "operations-pg": "运营增长",
+        "product-norman": "产品设计",
+        "qa-bach": "质量保证",
+        "sales-ross": "销售策略",
+        "ui-duarte": "UI 设计",
         "research-analyst": "研究分析师",
-        "code-architect": "代码架构师",
-        "writing-editor": "写作编辑",
         "daily-secretary": "日程秘书",
-        "data-wrangler": "数据分析师",
-        "knowledge-curator": "知识管理师",
-        "language-tutor": "语言导师",
-        "creative-muse": "创意缪斯",
-        "ops-monitor": "运维监控",
-        "life-strategist": "人生规划师"
+        "knowledge-curator": "知识管理师"
       }
     },
     "step": "步骤 {current}/{total}",
