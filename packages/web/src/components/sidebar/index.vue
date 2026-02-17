@@ -127,6 +127,11 @@ const sidebarInfo = computed(() => [
     icon: ['fas', 'robot'],
   },
   {
+    title: t('sidebar.sharedWorkspace'),
+    name: 'shared-workspace',
+    icon: ['fas', 'folder-open'],
+  },
+  {
     title: t('sidebar.schedules'),
     name: 'schedules',
     icon: ['fas', 'clock'],

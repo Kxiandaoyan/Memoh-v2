@@ -34,7 +34,10 @@
     "loadFailed": "加载失败",
     "saveFailed": "保存失败",
     "createdAt": "创建时间",
-    "none": "无"
+    "none": "无",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "create": "创建"
   },
   "auth": {
     "welcome": "欢迎回来",
@@ -56,6 +59,7 @@
     "searchProvider": "搜索提供方",
     "settings": "设置",
     "mcp": "MCP",
+    "sharedWorkspace": "共享工作区",
     "schedules": "定时任务",
     "tokenUsage": "Token 用量"
   },
@@ -243,6 +247,24 @@
     "importFailed": "导入 MCP 服务器失败",
     "exportFailed": "导出 MCP 服务器失败"
   },
+  "sharedWorkspace": {
+    "title": "共享工作区",
+    "subtitle": "跨 Bot 共享文件目录，所有 Bot 容器内 /shared 均指向此处。",
+    "empty": "共享工作区暂无文件。Bot 会在运行中自动创建文件。",
+    "selectHint": "从左侧选择一个文件来查看或编辑。",
+    "editorPlaceholder": "文件内容...",
+    "newFile": "新建文件",
+    "newFileHint": "文件将创建在 {path}",
+    "newFilePlaceholder": "文件名（例如 notes.md）",
+    "loadFailed": "加载共享工作区失败",
+    "readFailed": "读取文件失败",
+    "saveSuccess": "文件已保存",
+    "saveFailed": "保存文件失败",
+    "deleteSuccess": "文件已删除",
+    "deleteFailed": "删除文件失败",
+    "createSuccess": "文件已创建",
+    "createFailed": "创建文件失败"
+  },
   "bots": {
     "title": "Bots",
     "searchPlaceholder": "搜索 Bot…",
@@ -323,7 +345,15 @@
       "loadFailed": "加载文件列表失败",
       "readFailed": "读取文件失败",
       "saveSuccess": "文件已保存",
-      "saveFailed": "保存文件失败"
+      "saveFailed": "保存文件失败",
+      "desc": {
+        "soul": "Bot 灵魂与行为准则",
+        "identity": "Bot 身份定义",
+        "tools": "工具与能力配置",
+        "experiments": "自我进化实验记录",
+        "notes": "每日笔记与备忘",
+        "ovconf": "OpenViking 配置"
+      }
     },
     "skills": {
       "title": "技能",
@@ -470,6 +500,27 @@
         "delete": "删除",
         "snapshot": "创建快照"
       }
+    },
+    "evolution": {
+      "title": "自我进化",
+      "subtitle": "Bot 通过对话自动发展个性、记录实验和反思。",
+      "enabledHint": "自我进化已启用，Bot 会在 EXPERIMENTS.md 中记录进化历程。",
+      "disabledHint": "自我进化未启用。启用后 Bot 可以修改自身文件来发展个性。",
+      "experimentCount": "{count} 个实验记录",
+      "viewExperiments": "查看 EXPERIMENTS.md",
+      "viewNotes": "查看 NOTES.md",
+      "goToSettings": "前往设置启用"
+    },
+    "capabilities": {
+      "title": "容器能力",
+      "subtitle": "以下能力已预装在 Bot 容器镜像中，开箱即用。",
+      "agentBrowser": "无头浏览器自动化（Chromium + xvfb）",
+      "actionbook": "预编译的网站操作手册，加速网页交互",
+      "smartFetchName": "智能网页抓取",
+      "smartFetch": "三级降级策略：Markdown Header → Actionbook → curl",
+      "clawhub": "技能市场 CLI，一条命令安装社区技能",
+      "openviking": "分层上下文记忆数据库",
+      "seeFile": "查看 {file}"
     },
     "settings": {
       "chatModel": "对话模型",

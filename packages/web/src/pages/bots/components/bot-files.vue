@@ -60,6 +60,10 @@
           @click="selectFile(file.name)"
         >
           <span class="truncate block">{{ file.name }}</span>
+          <span
+            v-if="fileDescriptionKeys[file.name]"
+            class="text-[11px] opacity-50 truncate block"
+          >{{ $t(fileDescriptionKeys[file.name]) }}</span>
           <span class="text-xs opacity-60">{{ formatBytes(file.size) }}</span>
         </button>
       </div>
@@ -165,6 +169,15 @@ const originalContent = ref('')
 
 const hiddenFiles = new Set(['resolv.conf'])
 const visibleFiles = computed(() => files.value.filter((f) => !hiddenFiles.has(f.name)))
+
+const fileDescriptionKeys: Record<string, string> = {
+  'SOUL.md': 'bots.files.desc.soul',
+  'IDENTITY.md': 'bots.files.desc.identity',
+  'TOOLS.md': 'bots.files.desc.tools',
+  'EXPERIMENTS.md': 'bots.files.desc.experiments',
+  'NOTES.md': 'bots.files.desc.notes',
+  'ov.conf': 'bots.files.desc.ovconf',
+}
 
 const isDirty = computed(() => editContent.value !== originalContent.value)
 

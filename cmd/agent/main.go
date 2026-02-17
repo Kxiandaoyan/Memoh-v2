@@ -144,6 +144,7 @@ func main() {
 			provideServerHandler(handlers.NewChannelHandler),
 			provideServerHandler(provideUsersHandler),
 			provideServerHandler(handlers.NewMCPHandler),
+			provideServerHandler(provideSharedFilesHandler),
 			provideServerHandler(provideCLIHandler),
 			provideServerHandler(provideWebHandler),
 
@@ -410,6 +411,10 @@ func provideMessageHandler(log *slog.Logger, resolver *flow.Resolver, chatServic
 
 func provideUsersHandler(log *slog.Logger, accountService *accounts.Service, identityService *identities.Service, botService *bots.Service, routeService *route.DBService, channelService *channel.Service, channelManager *channel.Manager, registry *channel.Registry, heartbeatEngine *heartbeat.Engine) *handlers.UsersHandler {
 	return handlers.NewUsersHandler(log, accountService, identityService, botService, routeService, channelService, channelManager, registry, heartbeatEngine)
+}
+
+func provideSharedFilesHandler(cfg config.Config) *handlers.SharedFilesHandler {
+	return handlers.NewSharedFilesHandler(cfg.MCP)
 }
 
 func provideCLIHandler(channelManager *channel.Manager, channelService *channel.Service, chatService *conversation.Service, hub *local.RouteHub, botService *bots.Service, accountService *accounts.Service) *handlers.LocalChannelHandler {

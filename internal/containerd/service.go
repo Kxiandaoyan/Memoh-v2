@@ -225,6 +225,25 @@ func (s *DefaultService) CreateContainer(ctx context.Context, req CreateContaine
 			return nil, err
 		}
 	}
+
+	// Ensure the image is unpacked into the target snapshotter.
+	// Images imported via `ctr images import` are stored as metadata only;
+	// without unpacking, snapshot creation will fail with "not found".
+	snapshotter := req.Snapshotter
+	if snapshotter == "" {
+		snapshotter = "overlayfs"
+	}
+	unpacked, err := image.IsUnpacked(ctx, snapshotter)
+	if err != nil {
+		s.logger.Warn("failed to check image unpack status", slog.Any("error", err))
+	} else if !unpacked {
+		s.logger.Info("image not unpacked, unpacking now",
+			slog.String("image", req.ImageRef), slog.String("snapshotter", snapshotter))
+		if err := image.Unpack(ctx, snapshotter); err != nil {
+			return nil, fmt.Errorf("unpack image: %w", err)
+		}
+	}
+
 	snapshotID := req.SnapshotID
 	if snapshotID == "" {
 		snapshotID = req.ID

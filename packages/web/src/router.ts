@@ -44,6 +44,14 @@ const routes = [
         ],
       },
       {
+        name: 'shared-workspace',
+        path: '/shared-workspace',
+        component: () => import('@/pages/shared-workspace/index.vue'),
+        meta: {
+          breadcrumb: i18nRef('sidebar.sharedWorkspace'),
+        },
+      },
+      {
         name: 'schedules',
         path: '/schedules',
         component: () => import('@/pages/schedules/index.vue'),

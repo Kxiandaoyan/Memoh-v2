@@ -229,6 +229,113 @@
               </li>
             </ul>
           </div>
+
+          <!-- Self-Evolution Status Card -->
+          <div class="rounded-md border p-4 mt-4">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <p class="text-sm font-medium">
+                  <FontAwesomeIcon :icon="['fas', 'flask']" class="mr-1.5 text-purple-500" />
+                  {{ $t('bots.evolution.title') }}
+                </p>
+                <p class="text-sm text-muted-foreground">
+                  {{ $t('bots.evolution.subtitle') }}
+                </p>
+              </div>
+              <Badge
+                :variant="allowSelfEvolution ? 'default' : 'secondary'"
+                class="text-xs"
+              >
+                {{ allowSelfEvolution ? $t('common.enabled') : $t('common.disabled') }}
+              </Badge>
+            </div>
+            <div class="mt-3 space-y-2 text-sm">
+              <template v-if="allowSelfEvolution">
+                <p class="text-muted-foreground">
+                  {{ $t('bots.evolution.enabledHint') }}
+                </p>
+                <div
+                  v-if="evolutionCount !== null"
+                  class="flex items-center gap-2"
+                >
+                  <Badge variant="outline" class="text-xs">
+                    {{ $t('bots.evolution.experimentCount', { count: evolutionCount }) }}
+                  </Badge>
+                  <button
+                    type="button"
+                    class="text-xs text-primary hover:underline"
+                    @click="openFileTab('EXPERIMENTS.md')"
+                  >
+                    {{ $t('bots.evolution.viewExperiments') }}
+                  </button>
+                </div>
+                <button
+                  v-if="hasNotesFile"
+                  type="button"
+                  class="text-xs text-primary hover:underline block"
+                  @click="openFileTab('NOTES.md')"
+                >
+                  {{ $t('bots.evolution.viewNotes') }}
+                </button>
+              </template>
+              <template v-else>
+                <p class="text-muted-foreground">
+                  {{ $t('bots.evolution.disabledHint') }}
+                </p>
+                <button
+                  type="button"
+                  class="text-xs text-primary hover:underline"
+                  @click="activeTab = 'settings'"
+                >
+                  {{ $t('bots.evolution.goToSettings') }}
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- Container Capabilities Card -->
+          <div class="rounded-md border p-4 mt-4">
+            <p class="text-sm font-medium mb-1">
+              <FontAwesomeIcon :icon="['fas', 'cubes']" class="mr-1.5 text-blue-500" />
+              {{ $t('bots.capabilities.title') }}
+            </p>
+            <p class="text-sm text-muted-foreground mb-3">
+              {{ $t('bots.capabilities.subtitle') }}
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                v-for="cap in containerCapabilities"
+                :key="cap.key"
+                class="flex items-start gap-3 p-3 rounded-md border bg-muted/30"
+              >
+                <FontAwesomeIcon
+                  :icon="cap.icon"
+                  class="mt-0.5 text-sm"
+                  :class="cap.iconColor"
+                />
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium">{{ cap.name }}</span>
+                    <Badge
+                      :variant="cap.enabled ? 'default' : 'secondary'"
+                      class="text-[10px]"
+                    >
+                      {{ cap.enabled ? $t('common.enabled') : $t('common.disabled') }}
+                    </Badge>
+                  </div>
+                  <p class="text-xs text-muted-foreground mt-0.5">{{ cap.description }}</p>
+                  <button
+                    v-if="cap.fileLink"
+                    type="button"
+                    class="text-[11px] text-primary hover:underline mt-1"
+                    @click="openFileTab(cap.fileLink)"
+                  >
+                    {{ $t('bots.capabilities.seeFile', { file: cap.fileLink }) }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </TabsContent>
       <TabsContent
@@ -836,6 +943,104 @@ watch(botId, () => {
   botNameDraft.value = ''
 })
 
+// Self-Evolution & Prompts
+const evolutionCount = ref<number | null>(null)
+const hasNotesFile = ref(false)
+const allowSelfEvolution = ref(false)
+const enableOpenviking = ref(false)
+
+function openFileTab(_filename: string) {
+  activeTab.value = 'files'
+}
+
+// Container Capabilities
+const containerCapabilities = computed(() => [
+  {
+    key: 'agent-browser',
+    name: 'agent-browser',
+    description: t('bots.capabilities.agentBrowser'),
+    icon: ['fas', 'globe'],
+    iconColor: 'text-green-500',
+    enabled: true,
+    fileLink: 'TOOLS.md',
+  },
+  {
+    key: 'actionbook',
+    name: 'Actionbook',
+    description: t('bots.capabilities.actionbook'),
+    icon: ['fas', 'book-open'],
+    iconColor: 'text-orange-500',
+    enabled: true,
+    fileLink: 'TOOLS.md',
+  },
+  {
+    key: 'smart-web-fetch',
+    name: t('bots.capabilities.smartFetchName'),
+    description: t('bots.capabilities.smartFetch'),
+    icon: ['fas', 'wand-magic-sparkles'],
+    iconColor: 'text-purple-500',
+    enabled: true,
+    fileLink: 'TOOLS.md',
+  },
+  {
+    key: 'clawhub',
+    name: 'ClawHub',
+    description: t('bots.capabilities.clawhub'),
+    icon: ['fas', 'shield-halved'],
+    iconColor: 'text-cyan-500',
+    enabled: true,
+    fileLink: 'TOOLS.md',
+  },
+  {
+    key: 'openviking',
+    name: 'OpenViking',
+    description: t('bots.capabilities.openviking'),
+    icon: ['fas', 'brain'],
+    iconColor: 'text-pink-500',
+    enabled: enableOpenviking.value,
+    fileLink: 'ov.conf',
+  },
+])
+
+async function loadEvolutionStatus() {
+  // Fetch prompts to get allow_self_evolution and enable_openviking
+  try {
+    const { data } = await client.get({
+      url: '/bots/{bot_id}/prompts',
+      path: { bot_id: botId.value },
+    }) as { data: { allow_self_evolution?: boolean; enable_openviking?: boolean } }
+    allowSelfEvolution.value = data.allow_self_evolution ?? false
+    enableOpenviking.value = data.enable_openviking ?? false
+  } catch {
+    allowSelfEvolution.value = false
+    enableOpenviking.value = false
+  }
+
+  // Fetch EXPERIMENTS.md to count experiments
+  try {
+    const { data } = await client.get({
+      url: '/bots/{bot_id}/files/{filename}',
+      path: { bot_id: botId.value, filename: 'EXPERIMENTS.md' },
+    }) as { data: { content: string } }
+    const content = data.content ?? ''
+    const headingMatches = content.match(/^###\s+/gm)
+    evolutionCount.value = headingMatches ? headingMatches.length : 0
+  } catch {
+    evolutionCount.value = null
+  }
+
+  // Check if NOTES.md exists
+  try {
+    const { data } = await client.get({
+      url: '/bots/{bot_id}/files',
+      path: { bot_id: botId.value },
+    }) as { data: { files: { name: string }[] } }
+    hasNotesFile.value = (data.files ?? []).some((f) => f.name === 'NOTES.md')
+  } catch {
+    hasNotesFile.value = false
+  }
+}
+
 watch([activeTab, botId], ([tab]) => {
   if (!botId.value) {
     return
@@ -846,6 +1051,7 @@ watch([activeTab, botId], ([tab]) => {
   }
   if (tab === 'overview') {
     void loadChecks(true)
+    void loadEvolutionStatus()
   }
 }, { immediate: true })
 

@@ -34,7 +34,10 @@
     "loadFailed": "Failed to load",
     "saveFailed": "Failed to save",
     "createdAt": "Created at",
-    "none": "None"
+    "none": "None",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "create": "Create"
   },
   "auth": {
     "welcome": "Welcome Back",
@@ -56,6 +59,7 @@
     "searchProvider": "Search Providers",
     "settings": "Settings",
     "mcp": "MCP",
+    "sharedWorkspace": "Shared Workspace",
     "schedules": "Schedules",
     "tokenUsage": "Token Usage"
   },
@@ -247,6 +251,24 @@
     "importFailed": "Failed to import MCP servers",
     "exportFailed": "Failed to export MCP servers"
   },
+  "sharedWorkspace": {
+    "title": "Shared Workspace",
+    "subtitle": "Cross-bot shared file directory. All bot containers mount /shared here.",
+    "empty": "No files in the shared workspace yet. Bots will create files during runtime.",
+    "selectHint": "Select a file from the left to view or edit.",
+    "editorPlaceholder": "File content...",
+    "newFile": "New File",
+    "newFileHint": "File will be created in {path}",
+    "newFilePlaceholder": "File name (e.g. notes.md)",
+    "loadFailed": "Failed to load shared workspace",
+    "readFailed": "Failed to read file",
+    "saveSuccess": "File saved",
+    "saveFailed": "Failed to save file",
+    "deleteSuccess": "File deleted",
+    "deleteFailed": "Failed to delete file",
+    "createSuccess": "File created",
+    "createFailed": "Failed to create file"
+  },
   "bots": {
     "title": "Bots",
     "searchPlaceholder": "Search bots…",
@@ -327,7 +349,15 @@
       "loadFailed": "Failed to load file list",
       "readFailed": "Failed to read file",
       "saveSuccess": "File saved",
-      "saveFailed": "Failed to save file"
+      "saveFailed": "Failed to save file",
+      "desc": {
+        "soul": "Bot personality & behavior",
+        "identity": "Bot identity definition",
+        "tools": "Tools & capabilities config",
+        "experiments": "Self-evolution experiment log",
+        "notes": "Daily notes & scratchpad",
+        "ovconf": "OpenViking configuration"
+      }
     },
     "skills": {
       "title": "Skills",
@@ -474,6 +504,27 @@
         "delete": "Delete",
         "snapshot": "Create Snapshot"
       }
+    },
+    "evolution": {
+      "title": "Self-Evolution",
+      "subtitle": "The bot evolves its personality through conversations, logging experiments and reflections.",
+      "enabledHint": "Self-evolution is enabled. The bot records its evolution in EXPERIMENTS.md.",
+      "disabledHint": "Self-evolution is disabled. Enable it to let the bot modify its own files and evolve.",
+      "experimentCount": "{count} experiments logged",
+      "viewExperiments": "View EXPERIMENTS.md",
+      "viewNotes": "View NOTES.md",
+      "goToSettings": "Go to Settings to enable"
+    },
+    "capabilities": {
+      "title": "Container Capabilities",
+      "subtitle": "The following capabilities are pre-installed in the bot container image, ready to use.",
+      "agentBrowser": "Headless browser automation (Chromium + xvfb)",
+      "actionbook": "Pre-compiled website operation manuals for faster web interactions",
+      "smartFetchName": "Smart Web Fetching",
+      "smartFetch": "Three-level strategy: Markdown Header → Actionbook → curl",
+      "clawhub": "Skill marketplace CLI — install community skills with one command",
+      "openviking": "Tiered contextual memory database",
+      "seeFile": "See {file}"
     },
     "settings": {
       "chatModel": "Chat Model",
