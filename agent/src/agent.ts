@@ -210,9 +210,28 @@ export const createAgent = (
     return userMessage
   }
 
+  const sanitizeMessages = (messages: ModelMessage[]): ModelMessage[] => {
+    const supportedTypes = new Set(['text', 'image', 'file', 'tool-call', 'tool-result', 'reasoning'])
+    return messages.map((msg) => {
+      if (!Array.isArray(msg.content)) return msg
+      const original = msg.content as Array<Record<string, unknown>>
+      const filtered = original.filter((part) => {
+        if (!part || typeof part !== 'object') return true
+        const t = part.type
+        if (!t || typeof t !== 'string') return true
+        return supportedTypes.has(t)
+      })
+      if (filtered.length === original.length) return msg
+      if (filtered.length === 0) {
+        return { ...msg, content: [{ type: 'text', text: '' }] } as ModelMessage
+      }
+      return { ...msg, content: filtered } as ModelMessage
+    })
+  }
+
   const ask = async (input: AgentInput) => {
     const userPrompt = generateUserPrompt(input)
-    const messages = [...input.messages, userPrompt]
+    const messages = [...sanitizeMessages(input.messages), userPrompt]
     input.skills.forEach((skill) => enableSkill(skill))
     const systemPrompt = await generateSystemPrompt()
     const { tools, close } = await getAgentTools()
@@ -344,7 +363,7 @@ export const createAgent = (
 
   async function* stream(input: AgentInput): AsyncGenerator<AgentAction> {
     const userPrompt = generateUserPrompt(input)
-    const messages = [...input.messages, userPrompt]
+    const messages = [...sanitizeMessages(input.messages), userPrompt]
     input.skills.forEach((skill) => enableSkill(skill))
     const systemPrompt = await generateSystemPrompt()
     const attachmentsExtractor = new AttachmentsStreamExtractor()
