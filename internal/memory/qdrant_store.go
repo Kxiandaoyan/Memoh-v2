@@ -557,11 +557,11 @@ func (s *QdrantStore) refreshCollectionSchema(ctx context.Context, vectors map[s
 				CollectionName: s.collection,
 				Exact:          qdrant.PtrOf(true),
 			})
-			if countErr == nil && pointCount.GetCount() > 0 {
+			if countErr == nil && pointCount > 0 {
 				return fmt.Errorf(
 					"qdrant: collection %q has %d points but is missing named vectors %v; "+
 						"refusing to recreate to avoid data loss — please migrate or reset manually",
-					s.collection, pointCount.GetCount(), names,
+					s.collection, pointCount, names,
 				)
 			}
 			slog.Warn("qdrant: empty collection missing named vectors, recreating",
