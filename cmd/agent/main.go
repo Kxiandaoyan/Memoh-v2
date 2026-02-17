@@ -408,8 +408,8 @@ func provideMessageHandler(log *slog.Logger, resolver *flow.Resolver, chatServic
 	return handlers.NewMessageHandler(log, resolver, chatService, msgService, botService, accountService, identityService, hub)
 }
 
-func provideUsersHandler(log *slog.Logger, accountService *accounts.Service, identityService *identities.Service, botService *bots.Service, routeService *route.DBService, channelService *channel.Service, channelManager *channel.Manager, registry *channel.Registry) *handlers.UsersHandler {
-	return handlers.NewUsersHandler(log, accountService, identityService, botService, routeService, channelService, channelManager, registry)
+func provideUsersHandler(log *slog.Logger, accountService *accounts.Service, identityService *identities.Service, botService *bots.Service, routeService *route.DBService, channelService *channel.Service, channelManager *channel.Manager, registry *channel.Registry, heartbeatEngine *heartbeat.Engine) *handlers.UsersHandler {
+	return handlers.NewUsersHandler(log, accountService, identityService, botService, routeService, channelService, channelManager, registry, heartbeatEngine)
 }
 
 func provideCLIHandler(channelManager *channel.Manager, channelService *channel.Service, chatService *conversation.Service, hub *local.RouteHub, botService *bots.Service, accountService *accounts.Service) *handlers.LocalChannelHandler {
