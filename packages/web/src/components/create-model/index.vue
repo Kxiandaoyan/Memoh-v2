@@ -55,6 +55,7 @@
                 <Label class="mb-2">
                   {{ $t('models.model') }}
                 </Label>
+                <p class="text-xs text-muted-foreground">{{ $t('models.modelHint') }}</p>
                 <FormControl>
                   <Input
                     type="text"
@@ -74,6 +75,7 @@
                   {{ $t('models.displayName') }}
                   <span class="text-muted-foreground text-xs ml-1">({{ $t('common.optional') }})</span>
                 </Label>
+                <p class="text-xs text-muted-foreground">{{ $t('models.displayNameHint') }}</p>
                 <FormControl>
                   <Input
                     type="text"
@@ -95,6 +97,7 @@
                 <Label class="mb-2">
                   {{ $t('models.dimensions') }}
                 </Label>
+                <p class="text-xs text-muted-foreground">{{ $t('models.dimensionsHint') }}</p>
                 <FormControl>
                   <Input
                     type="number"
@@ -136,6 +139,7 @@
                   {{ $t('models.fallbackModel') }}
                   <span class="text-muted-foreground text-xs ml-1">({{ $t('common.optional') }})</span>
                 </Label>
+                <p class="text-xs text-muted-foreground">{{ $t('models.fallbackModelHint') }}</p>
                 <FormControl>
                   <Select
                     :model-value="form.values.fallback_model_id || ''"
@@ -170,9 +174,12 @@
               name="is_multimodal"
             >
               <FormItem class="flex items-center justify-between">
-                <Label>
-                  {{ $t('models.multimodal') }}
-                </Label>
+                <div>
+                  <Label>
+                    {{ $t('models.multimodal') }}
+                  </Label>
+                  <p class="text-xs text-muted-foreground">{{ $t('models.multimodalHint') }}</p>
+                </div>
                 <Switch
                   v-model="componentField.modelValue"
                   @update:model-value="componentField['onUpdate:modelValue']"

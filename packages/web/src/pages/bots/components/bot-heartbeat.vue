@@ -136,6 +136,7 @@
           </div>
           <div class="space-y-2">
             <Label>{{ $t('bots.heartbeat.promptLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.heartbeat.promptHint') }}</p>
             <Textarea
               v-model="form.prompt"
               :placeholder="$t('bots.heartbeat.promptPlaceholder')"
@@ -145,6 +146,7 @@
           </div>
           <div class="space-y-2">
             <Label>{{ $t('bots.heartbeat.eventTriggersLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.heartbeat.eventTriggersHint') }}</p>
             <div class="space-y-2">
               <div
                 v-for="trigger in allTriggers"

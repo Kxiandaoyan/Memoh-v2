@@ -369,6 +369,7 @@
               <p class="text-sm text-muted-foreground">
                 {{ $t('bots.container.subtitle') }}
               </p>
+              <p class="text-xs text-muted-foreground mt-1">{{ $t('bots.container.containerExplain') }}</p>
             </div>
             <div class="flex flex-wrap gap-2 shrink-0 justify-end">
               <Button
@@ -502,6 +503,7 @@
             <Separator />
 
             <div class="space-y-3">
+              <p class="text-xs text-muted-foreground">{{ $t('bots.container.snapshotExplain') }}</p>
               <div class="flex flex-col gap-2 sm:flex-row">
                 <Input
                   v-model="newSnapshotName"

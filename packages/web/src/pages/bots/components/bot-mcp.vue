@@ -177,6 +177,7 @@
                 >
                   <div class="space-y-1.5">
                     <Label>{{ $t('mcp.command') }}</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.commandHint') }}</p>
                     <Input
                       v-model="formData.command"
                       :placeholder="$t('mcp.commandPlaceholder')"
@@ -185,6 +186,7 @@
                   </div>
                   <div class="space-y-1.5">
                     <Label>{{ $t('mcp.arguments') }}</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.argumentsHint') }}</p>
                     <TagsInput
                       v-model="argsTags"
                       :add-on-blur="true"
@@ -207,6 +209,7 @@
                   </div>
                   <div class="space-y-1.5">
                     <Label>{{ $t('mcp.env') }}</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.envHint') }}</p>
                     <TagsInput
                       :model-value="envTags.tagList.value"
                       :add-on-blur="true"
@@ -229,6 +232,7 @@
                   </div>
                   <div class="space-y-1.5">
                     <Label>{{ $t('mcp.cwd') }}</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.cwdHint') }}</p>
                     <Input
                       v-model="formData.cwd"
                       :placeholder="$t('mcp.cwdPlaceholder')"
@@ -242,6 +246,7 @@
                 >
                   <div class="space-y-1.5">
                     <Label>URL</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.urlHint') }}</p>
                     <Input
                       v-model="formData.url"
                       placeholder="https://example.com/mcp"
@@ -250,6 +255,7 @@
                   </div>
                   <div class="space-y-1.5">
                     <Label>Headers</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.headersHint') }}</p>
                     <TagsInput
                       :model-value="headerTags.tagList.value"
                       :add-on-blur="true"
@@ -272,6 +278,7 @@
                   </div>
                   <div class="space-y-1.5">
                     <Label>Transport</Label>
+                    <p class="text-xs text-muted-foreground">{{ $t('mcp.transportHint') }}</p>
                     <Select
                       v-model="formData.transport"
                       @update:model-value="syncFormToEditJson"
@@ -379,6 +386,7 @@
                   >
                     <div class="space-y-1.5">
                       <Label>{{ $t('mcp.command') }}</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.commandHint') }}</p>
                       <Input
                         v-model="formData.command"
                         :placeholder="$t('mcp.commandPlaceholder')"
@@ -386,6 +394,7 @@
                     </div>
                     <div class="space-y-1.5">
                       <Label>{{ $t('mcp.arguments') }}</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.argumentsHint') }}</p>
                       <TagsInput
                         v-model="argsTags"
                         :add-on-blur="true"
@@ -407,6 +416,7 @@
                     </div>
                     <div class="space-y-1.5">
                       <Label>{{ $t('mcp.env') }}</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.envHint') }}</p>
                       <TagsInput
                         :model-value="envTags.tagList.value"
                         :add-on-blur="true"
@@ -429,6 +439,7 @@
                     </div>
                     <div class="space-y-1.5">
                       <Label>{{ $t('mcp.cwd') }}</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.cwdHint') }}</p>
                       <Input
                         v-model="formData.cwd"
                         :placeholder="$t('mcp.cwdPlaceholder')"
@@ -441,6 +452,7 @@
                   >
                     <div class="space-y-1.5">
                       <Label>URL</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.urlHint') }}</p>
                       <Input
                         v-model="formData.url"
                         placeholder="https://example.com/mcp"
@@ -448,6 +460,7 @@
                     </div>
                     <div class="space-y-1.5">
                       <Label>Headers</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.headersHint') }}</p>
                       <TagsInput
                         :model-value="headerTags.tagList.value"
                         :add-on-blur="true"
@@ -470,6 +483,7 @@
                     </div>
                     <div class="space-y-1.5">
                       <Label>Transport</Label>
+                      <p class="text-xs text-muted-foreground">{{ $t('mcp.transportHint') }}</p>
                       <Select v-model="formData.transport">
                         <SelectTrigger class="w-full">
                           <SelectValue placeholder="http" />

@@ -121,6 +121,7 @@
         <div class="mt-4 space-y-4">
           <div class="space-y-2">
             <Label>{{ $t('bots.skills.nameLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.skills.nameHint') }}</p>
             <Input
               v-model="createForm.name"
               :placeholder="$t('bots.skills.namePlaceholder')"
@@ -129,6 +130,7 @@
           </div>
           <div class="space-y-2">
             <Label>{{ $t('bots.skills.descriptionLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.skills.descriptionHint') }}</p>
             <Input
               v-model="createForm.description"
               :placeholder="$t('bots.skills.descriptionPlaceholder')"
@@ -137,6 +139,7 @@
           </div>
           <div class="space-y-2">
             <Label>{{ $t('bots.skills.contentLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.skills.contentHint') }}</p>
             <Textarea
               v-model="createForm.content"
               :placeholder="$t('bots.skills.contentPlaceholder')"

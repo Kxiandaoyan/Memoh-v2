@@ -47,6 +47,7 @@
                 <Label class="mb-2">
                   {{ $t('searchProvider.provider') }}
                 </Label>
+                <p class="text-xs text-muted-foreground">{{ $t('searchProvider.providerHint') }}</p>
                 <FormControl>
                   <Select v-bind="componentField">
                     <SelectTrigger class="w-full">

@@ -115,6 +115,7 @@
         <div class="mt-4 space-y-4">
           <div class="space-y-2">
             <Label>{{ $t('bots.subagents.nameLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.subagents.nameHint') }}</p>
             <Input
               v-model="form.name"
               :placeholder="$t('bots.subagents.namePlaceholder')"
@@ -123,6 +124,7 @@
           </div>
           <div class="space-y-2">
             <Label>{{ $t('bots.subagents.descriptionLabel') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('bots.subagents.descriptionHint') }}</p>
             <Textarea
               v-model="form.description"
               :placeholder="$t('bots.subagents.descriptionPlaceholder')"

@@ -50,10 +50,12 @@
           </div>
           <div class="space-y-2">
             <Label>{{ $t('settings.displayName') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('settings.displayNameHint') }}</p>
             <Input v-model="profileForm.display_name" />
           </div>
           <div class="space-y-2">
             <Label>{{ $t('settings.avatarUrl') }}</Label>
+            <p class="text-xs text-muted-foreground">{{ $t('settings.avatarUrlHint') }}</p>
             <Input
               v-model="profileForm.avatar_url"
               type="url"
@@ -172,6 +174,7 @@
           />
           {{ $t('settings.bindCode') }}
         </h6>
+        <p class="text-xs text-muted-foreground">{{ $t('settings.bindCodeExplain') }}</p>
         <Separator />
         <div class="mt-4 space-y-4">
           <div class="flex flex-wrap gap-3 items-end">
@@ -202,6 +205,7 @@
             </div>
             <div class="space-y-2">
               <Label>{{ $t('settings.bindCodeTTL') }}</Label>
+              <p class="text-xs text-muted-foreground">{{ $t('settings.bindCodeTTLHint') }}</p>
               <Input
                 v-model.number="bindForm.ttlSeconds"
                 type="number"

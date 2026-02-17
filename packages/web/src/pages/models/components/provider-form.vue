@@ -25,6 +25,7 @@
         <h4 class="scroll-m-20 font-semibold tracking-tight">
           {{ $t('provider.apiKey') }}
         </h4>
+        <p class="text-xs text-muted-foreground mt-1">{{ $t('provider.apiKeyHint') }}</p>
         <FormField
           v-slot="{ componentField }"
           name="api_key"
@@ -45,6 +46,7 @@
         <h4 class="scroll-m-20 font-semibold tracking-tight">
           {{ $t('provider.url') }}
         </h4>
+        <p class="text-xs text-muted-foreground mt-1">{{ $t('provider.urlHint') }}</p>
         <FormField
           v-slot="{ componentField }"
           name="base_url"
