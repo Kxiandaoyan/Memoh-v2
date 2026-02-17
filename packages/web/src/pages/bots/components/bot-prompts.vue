@@ -3,9 +3,12 @@
     <!-- Identity -->
     <div class="space-y-2">
       <Label>{{ $t('bots.persona.identity') }}</Label>
+      <div v-if="!form.identity && fileContents.identity" class="text-xs text-muted-foreground mb-1">
+        {{ $t('bots.persona.fromFile', { file: 'IDENTITY.md' }) }}
+      </div>
       <Textarea
         v-model="form.identity"
-        :placeholder="$t('bots.persona.identityPlaceholder')"
+        :placeholder="fileContents.identity || $t('bots.persona.identityPlaceholder')"
         rows="5"
       />
     </div>
@@ -13,9 +16,12 @@
     <!-- Soul -->
     <div class="space-y-2">
       <Label>{{ $t('bots.persona.soul') }}</Label>
+      <div v-if="!form.soul && fileContents.soul" class="text-xs text-muted-foreground mb-1">
+        {{ $t('bots.persona.fromFile', { file: 'SOUL.md' }) }}
+      </div>
       <Textarea
         v-model="form.soul"
-        :placeholder="$t('bots.persona.soulPlaceholder')"
+        :placeholder="fileContents.soul || $t('bots.persona.soulPlaceholder')"
         rows="5"
       />
     </div>
@@ -120,6 +126,31 @@ const { data: prompts } = useQuery({
   },
   enabled: () => !!botIdRef.value,
 })
+
+// ---- Container file fallback (shown as placeholder when DB fields are empty) ----
+const fileContents = reactive({ identity: '', soul: '' })
+
+async function loadFileContent(filename: string): Promise<string> {
+  try {
+    const { data } = await client.get({
+      url: '/bots/{bot_id}/files/{filename}',
+      path: { bot_id: botIdRef.value, filename },
+    }) as { data: { content: string } }
+    return data.content ?? ''
+  } catch {
+    return ''
+  }
+}
+
+watch(prompts, async (val) => {
+  if (!val) return
+  if (!val.identity) {
+    fileContents.identity = await loadFileContent('IDENTITY.md')
+  }
+  if (!val.soul) {
+    fileContents.soul = await loadFileContent('SOUL.md')
+  }
+}, { immediate: true })
 
 // ---- Form ----
 const form = reactive<BotPrompts>({

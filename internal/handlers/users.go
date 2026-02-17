@@ -16,6 +16,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/identities"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/route"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/heartbeat"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/identity"
 )
 
@@ -28,6 +29,7 @@ type UsersHandler struct {
 	channelService         *channel.Service
 	channelManager         *channel.Manager
 	registry               *channel.Registry
+	heartbeatEngine        *heartbeat.Engine
 	logger                 *slog.Logger
 }
 
@@ -37,7 +39,7 @@ type listMyIdentitiesResponse struct {
 }
 
 // NewUsersHandler creates a UsersHandler with channel identity support.
-func NewUsersHandler(log *slog.Logger, service *accounts.Service, channelIdentityService *identities.Service, botService *bots.Service, routeService route.Service, channelService *channel.Service, channelManager *channel.Manager, registry *channel.Registry) *UsersHandler {
+func NewUsersHandler(log *slog.Logger, service *accounts.Service, channelIdentityService *identities.Service, botService *bots.Service, routeService route.Service, channelService *channel.Service, channelManager *channel.Manager, registry *channel.Registry, heartbeatEngine *heartbeat.Engine) *UsersHandler {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -48,6 +50,7 @@ func NewUsersHandler(log *slog.Logger, service *accounts.Service, channelIdentit
 		routeService:           routeService,
 		channelService:         channelService,
 		channelManager:         channelManager,
+		heartbeatEngine:        heartbeatEngine,
 		registry:               registry,
 		logger:                 log.With(slog.String("handler", "users")),
 	}
@@ -445,6 +448,22 @@ func (h *UsersHandler) CreateBot(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+
+	// Auto-create a default heartbeat config for the new bot.
+	if h.heartbeatEngine != nil {
+		enabled := true
+		_, hbErr := h.heartbeatEngine.Create(c.Request().Context(), resp.ID, heartbeat.CreateRequest{
+			Enabled:         &enabled,
+			IntervalSeconds: 3600,
+			Prompt:          "Run your periodic maintenance: check pending tasks, review recent conversations, update notes if needed.",
+			EventTriggers:   []heartbeat.EventTrigger{heartbeat.TriggerScheduleCompleted},
+		})
+		if hbErr != nil {
+			h.logger.Warn("failed to create default heartbeat for new bot",
+				slog.String("bot_id", resp.ID), slog.Any("error", hbErr))
+		}
+	}
+
 	return c.JSON(http.StatusCreated, resp)
 }
 

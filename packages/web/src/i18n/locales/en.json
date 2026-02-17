@@ -326,7 +326,7 @@
     },
     "subagents": {
       "title": "Subagents",
-      "subtitle": "Manage the sub-agents defined for this bot. Sub-agents are specialized workers the main bot can delegate tasks to.",
+      "subtitle": "Subagents are automatically created and dispatched by the agent during conversations. You can also pre-register templates here \u2014 the agent will prioritize registered definitions.",
       "empty": "No subagents defined yet.",
       "createdAt": "Created",
       "createTitle": "Create Subagent",
@@ -346,7 +346,7 @@
     },
     "heartbeat": {
       "title": "Heartbeat",
-      "subtitle": "Configure periodic and event-driven triggers that wake the bot autonomously.",
+      "subtitle": "Heartbeats let the bot act automatically on a schedule or after specific events. New bots get a default heartbeat (hourly). You can adjust the interval, prompt, and triggers.",
       "empty": "No heartbeat configurations. Add one to let the bot act proactively.",
       "enabled": "Enabled",
       "disabled": "Disabled",
@@ -388,6 +388,7 @@
       "allowSelfEvolutionDescription": "When enabled, the bot can modify its own IDENTITY.md, SOUL.md, and TOOLS.md files to evolve its personality over time.",
       "enableOpenviking": "Enable OpenViking Context Database",
       "enableOpenvikingDescription": "When enabled, the bot can use OpenViking's filesystem paradigm to manage memories, resources, and skills with tiered context loading and self-evolution.",
+      "fromFile": "Currently empty — placeholder below is from container file {file}. The agent uses it at runtime. Edit here to override.",
       "save": "Save Persona",
       "saveSuccess": "Persona saved"
     },

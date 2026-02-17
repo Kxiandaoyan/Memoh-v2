@@ -322,7 +322,7 @@
     },
     "subagents": {
       "title": "子智能体",
-      "subtitle": "管理此 Bot 的子智能体。子智能体是主 Bot 可以委派任务的专业化工作者。",
+      "subtitle": "子智能体由 Agent 在对话中自动创建和调度。你也可以在此预注册模板，Agent 会优先使用已注册的定义。",
       "empty": "暂无子智能体。",
       "createdAt": "创建时间",
       "createTitle": "创建子智能体",
@@ -342,7 +342,7 @@
     },
     "heartbeat": {
       "title": "心跳",
-      "subtitle": "配置定时或事件驱动的触发器，让 Bot 自主行动。",
+      "subtitle": "心跳让 Bot 定时或在特定事件后自动执行任务。新建 Bot 会自动创建默认心跳（每小时一次），你可以修改间隔、提示词和触发条件。",
       "empty": "暂无心跳配置。添加一个让 Bot 可以主动执行任务。",
       "enabled": "已启用",
       "disabled": "已禁用",
@@ -384,6 +384,7 @@
       "allowSelfEvolutionDescription": "开启后，Bot 可以修改自己的 IDENTITY.md、SOUL.md 和 TOOLS.md 文件，从而在对话中逐渐发展自己的个性。",
       "enableOpenviking": "启用 OpenViking 上下文数据库",
       "enableOpenvikingDescription": "开启后，Bot 可使用 OpenViking 文件系统范式管理记忆、资源和技能，实现分层上下文加载与自我进化。",
+      "fromFile": "当前为空 — 下方提示内容来自容器文件 {file}，Agent 运行时会自动使用。如需覆盖可直接编辑。",
       "save": "保存人设",
       "saveSuccess": "人设已保存"
     },

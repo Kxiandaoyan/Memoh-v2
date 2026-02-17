@@ -12,6 +12,7 @@ import { allActions } from '../types'
 const AgentModel = z.object({
   model: ModelConfigModel,
   activeContextTime: z.number(),
+  language: z.string().optional().default(''),
   channels: z.array(z.string()),
   currentChannel: z.string(),
   allowedActions: z.array(AllowedActionModel).optional().default(allActions),
@@ -33,6 +34,7 @@ function buildAgentParams(body: AgentBody, bearer: string): AgentParams {
   return {
     model: body.model as ModelConfig,
     activeContextTime: body.activeContextTime,
+    language: body.language || undefined,
     channels: body.channels,
     currentChannel: body.currentChannel,
     allowedActions: body.allowedActions,

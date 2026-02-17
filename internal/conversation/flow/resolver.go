@@ -138,6 +138,7 @@ type gatewaySkill struct {
 type gatewayRequest struct {
 	Model              gatewayModelConfig          `json:"model"`
 	ActiveContextTime  int                         `json:"activeContextTime"`
+	Language           string                      `json:"language,omitempty"`
 	Channels           []string                    `json:"channels"`
 	CurrentChannel     string                      `json:"currentChannel"`
 	AllowedActions     []string                    `json:"allowedActions,omitempty"`
@@ -308,6 +309,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			BaseURL:    provider.BaseUrl,
 		},
 		ActiveContextTime:  maxCtx,
+		Language:            botSettings.Language,
 		Channels:           nonNilStrings(req.Channels),
 		CurrentChannel:     req.CurrentChannel,
 		AllowedActions:     req.AllowedActions,
