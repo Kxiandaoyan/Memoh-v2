@@ -1012,6 +1012,9 @@ async function loadContainerData(showLoadingToast: boolean) {
     containerMissing.value = false
     await loadSnapshots()
   } catch (error) {
+    containerInfo.value = null
+    containerMissing.value = true
+    snapshots.value = []
     if (showLoadingToast) {
       toast.error(resolveErrorMessage(error, t('bots.container.loadFailed')))
     }
@@ -1156,7 +1159,7 @@ async function handleRestoreSnapshot(snapshotName: string) {
         path: { bot_id: botId.value, snapshot_name: snapshotName },
         throwOnError: true,
       })
-      await loadContainer(false)
+      await loadContainerData(false)
     },
     t('bots.container.snapshotRestoreSuccess'),
   )
