@@ -479,6 +479,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/bots/{bot_id}/container/snapshots/{snapshot_name}": {
+            "delete": {
+                "tags": [
+                    "containerd"
+                ],
+                "summary": "Delete a snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name",
+                        "name": "snapshot_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DeleteSnapshotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/container/snapshots/{snapshot_name}/restore": {
+            "post": {
+                "tags": [
+                    "containerd"
+                ],
+                "summary": "Restore container from a snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name to restore",
+                        "name": "snapshot_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RestoreSnapshotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/bots/{bot_id}/container/start": {
             "post": {
                 "tags": [
@@ -536,6 +636,469 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/files": {
+            "get": {
+                "description": "Returns a list of text/markdown files in the bot's data directory (non-recursive, top-level only)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bot-files"
+                ],
+                "summary": "List text files in bot data directory",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/handlers.BotFileEntry"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/files/{filename}": {
+            "get": {
+                "description": "Returns the content of the specified text/markdown file",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bot-files"
+                ],
+                "summary": "Read a text file from bot data directory",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File name",
+                        "name": "filename",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BotFileContent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Creates or updates the specified text/markdown file with the given content",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bot-files"
+                ],
+                "summary": "Write/update a text file in bot data directory",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File name",
+                        "name": "filename",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "File content",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BotFileWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BotFileContent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the specified text/markdown file from the bot's data directory",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bot-files"
+                ],
+                "summary": "Delete a text file from bot data directory",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File name",
+                        "name": "filename",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/heartbeat": {
+            "get": {
+                "description": "List heartbeat configurations for a bot",
+                "tags": [
+                    "heartbeat"
+                ],
+                "summary": "List heartbeat configs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.ListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a heartbeat configuration for a bot",
+                "tags": [
+                    "heartbeat"
+                ],
+                "summary": "Create heartbeat config",
+                "parameters": [
+                    {
+                        "description": "Heartbeat config payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.Config"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/heartbeat/{id}": {
+            "get": {
+                "description": "Get a heartbeat configuration by ID",
+                "tags": [
+                    "heartbeat"
+                ],
+                "summary": "Get heartbeat config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Heartbeat config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.Config"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update a heartbeat configuration by ID",
+                "tags": [
+                    "heartbeat"
+                ],
+                "summary": "Update heartbeat config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Heartbeat config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Heartbeat config payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heartbeat.Config"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a heartbeat configuration by ID",
+                "tags": [
+                    "heartbeat"
+                ],
+                "summary": "Delete heartbeat config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Heartbeat config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/heartbeat/{id}/trigger": {
+            "post": {
+                "description": "Manually trigger a heartbeat configuration to fire immediately",
+                "tags": [
+                    "heartbeat"
+                ],
+                "summary": "Trigger heartbeat manually",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Heartbeat config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "404": {
@@ -2446,6 +3009,67 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/token-usage/daily": {
+            "get": {
+                "tags": [
+                    "token-usage"
+                ],
+                "summary": "Get daily token usage series for a bot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/bots/{bot_id}/token-usage/total": {
+            "get": {
+                "tags": [
+                    "token-usage"
+                ],
+                "summary": "Get total token usage for a bot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bot ID",
+                        "name": "bot_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer",
+                                "format": "int64"
+                            }
                         }
                     }
                 }
@@ -4375,6 +4999,48 @@ const docTemplate = `{
                 }
             }
         },
+        "/token-usage/all": {
+            "get": {
+                "tags": [
+                    "token-usage"
+                ],
+                "summary": "Get token usage totals for all bots",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/token-usage/daily": {
+            "get": {
+                "tags": [
+                    "token-usage"
+                ],
+                "summary": "Get daily token usage series for all bots",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "List users",
@@ -5061,6 +5727,9 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean"
                 },
+                "is_privileged": {
+                    "type": "boolean"
+                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": {}
@@ -5120,8 +5789,14 @@ const docTemplate = `{
                 "allow_self_evolution": {
                     "type": "boolean"
                 },
+                "enable_openviking": {
+                    "type": "boolean"
+                },
                 "identity": {
                     "type": "string"
+                },
+                "is_privileged": {
+                    "type": "boolean"
                 },
                 "soul": {
                     "type": "string"
@@ -5163,8 +5838,14 @@ const docTemplate = `{
                 "allow_self_evolution": {
                     "type": "boolean"
                 },
+                "enable_openviking": {
+                    "type": "boolean"
+                },
                 "identity": {
                     "type": "string"
+                },
+                "is_privileged": {
+                    "type": "boolean"
                 },
                 "soul": {
                     "type": "string"
@@ -5696,6 +6377,42 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.BotFileContent": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.BotFileEntry": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.BotFileWriteRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.ChannelMeta": {
             "type": "object",
             "properties": {
@@ -5765,6 +6482,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "snapshotter": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.DeleteSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "snapshot_name": {
                     "type": "string"
                 }
             }
@@ -5980,6 +6705,17 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.RestoreSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "container_id": {
+                    "type": "string"
+                },
+                "snapshot_name": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.SkillItem": {
             "type": "object",
             "properties": {
@@ -6165,6 +6901,100 @@ const docTemplate = `{
             "properties": {
                 "ok": {
                     "type": "boolean"
+                }
+            }
+        },
+        "heartbeat.Config": {
+            "type": "object",
+            "properties": {
+                "bot_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "event_triggers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heartbeat.EventTrigger"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "interval_seconds": {
+                    "type": "integer"
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "heartbeat.CreateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "event_triggers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heartbeat.EventTrigger"
+                    }
+                },
+                "interval_seconds": {
+                    "type": "integer"
+                },
+                "prompt": {
+                    "type": "string"
+                }
+            }
+        },
+        "heartbeat.EventTrigger": {
+            "type": "string",
+            "enum": [
+                "message_created",
+                "schedule_completed"
+            ],
+            "x-enum-varnames": [
+                "TriggerMessageCreated",
+                "TriggerScheduleCompleted"
+            ]
+        },
+        "heartbeat.ListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heartbeat.Config"
+                    }
+                }
+            }
+        },
+        "heartbeat.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "event_triggers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heartbeat.EventTrigger"
+                    }
+                },
+                "interval_seconds": {
+                    "type": "integer"
+                },
+                "prompt": {
+                    "type": "string"
                 }
             }
         },
@@ -6526,8 +7356,14 @@ const docTemplate = `{
         "models.AddRequest": {
             "type": "object",
             "properties": {
+                "context_window": {
+                    "type": "integer"
+                },
                 "dimensions": {
                     "type": "integer"
+                },
+                "fallback_model_id": {
+                    "type": "string"
                 },
                 "input": {
                     "type": "array",
@@ -6574,8 +7410,14 @@ const docTemplate = `{
         "models.GetResponse": {
             "type": "object",
             "properties": {
+                "context_window": {
+                    "type": "integer"
+                },
                 "dimensions": {
                     "type": "integer"
+                },
+                "fallback_model_id": {
+                    "type": "string"
                 },
                 "input": {
                     "type": "array",
@@ -6614,8 +7456,14 @@ const docTemplate = `{
         "models.UpdateRequest": {
             "type": "object",
             "properties": {
+                "context_window": {
+                    "type": "integer"
+                },
                 "dimensions": {
                     "type": "integer"
+                },
+                "fallback_model_id": {
+                    "type": "string"
                 },
                 "input": {
                     "type": "array",
@@ -6950,10 +7798,12 @@ const docTemplate = `{
         "searchproviders.ProviderName": {
             "type": "string",
             "enum": [
-                "brave"
+                "brave",
+                "serpapi"
             ],
             "x-enum-varnames": [
-                "ProviderBrave"
+                "ProviderBrave",
+                "ProviderSerpApi"
             ]
         },
         "searchproviders.UpdateRequest": {

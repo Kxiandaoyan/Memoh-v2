@@ -1,21 +1,21 @@
 -- name: CreateBot :one
-INSERT INTO bots (owner_user_id, type, display_name, avatar_url, is_active, metadata, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at;
+INSERT INTO bots (owner_user_id, type, display_name, avatar_url, is_active, metadata, status, is_privileged)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at;
 
 -- name: GetBotByID :one
-SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 FROM bots
 WHERE id = $1;
 
 -- name: ListBotsByOwner :many
-SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 FROM bots
 WHERE owner_user_id = $1
 ORDER BY created_at DESC;
 
 -- name: ListBotsByMember :many
-SELECT b.id, b.owner_user_id, b.type, b.display_name, b.avatar_url, b.is_active, b.status, b.max_context_load_time, b.language, b.allow_guest, b.chat_model_id, b.memory_model_id, b.embedding_model_id, b.search_provider_id, b.identity, b.soul, b.task, b.allow_self_evolution, b.enable_openviking, b.metadata, b.created_at, b.updated_at
+SELECT b.id, b.owner_user_id, b.type, b.display_name, b.avatar_url, b.is_active, b.status, b.max_context_load_time, b.language, b.allow_guest, b.chat_model_id, b.memory_model_id, b.embedding_model_id, b.vlm_model_id, b.search_provider_id, b.identity, b.soul, b.task, b.allow_self_evolution, b.enable_openviking, b.is_privileged, b.metadata, b.created_at, b.updated_at
 FROM bots b
 JOIN bot_members m ON m.bot_id = b.id
 WHERE m.user_id = $1
@@ -29,14 +29,14 @@ SET display_name = $2,
     metadata = $5,
     updated_at = now()
 WHERE id = $1
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at;
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at;
 
 -- name: UpdateBotOwner :one
 UPDATE bots
 SET owner_user_id = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at;
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at;
 
 -- name: UpdateBotStatus :exec
 UPDATE bots
@@ -70,7 +70,7 @@ LIMIT 1;
 DELETE FROM bot_members WHERE bot_id = $1 AND user_id = $2;
 
 -- name: GetBotPrompts :one
-SELECT identity, soul, task, allow_self_evolution, enable_openviking
+SELECT identity, soul, task, allow_self_evolution, enable_openviking, is_privileged
 FROM bots
 WHERE id = $1;
 
@@ -81,6 +81,12 @@ SET identity = COALESCE(sqlc.narg(identity), bots.identity),
     task = COALESCE(sqlc.narg(task), bots.task),
     allow_self_evolution = COALESCE(sqlc.narg(allow_self_evolution), bots.allow_self_evolution),
     enable_openviking = COALESCE(sqlc.narg(enable_openviking), bots.enable_openviking),
+    is_privileged = COALESCE(sqlc.narg(is_privileged), bots.is_privileged),
     updated_at = now()
 WHERE id = sqlc.arg(id)
-RETURNING identity, soul, task, allow_self_evolution, enable_openviking;
+RETURNING identity, soul, task, allow_self_evolution, enable_openviking, is_privileged;
+
+-- name: GetBotIsPrivileged :one
+SELECT is_privileged
+FROM bots
+WHERE id = $1;

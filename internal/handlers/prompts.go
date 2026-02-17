@@ -225,10 +225,11 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 	}
 
 	// Read bot-specific model settings.
-	var botEmbeddingModelID, botChatModelID string
+	var botEmbeddingModelID, botVlmModelID, botChatModelID string
 	if botUUID, err := db.ParseUUID(botID); err == nil {
 		if row, err := h.queries.GetSettingsByBotID(ctx, botUUID); err == nil {
 			botEmbeddingModelID = row.EmbeddingModelID.String
+			botVlmModelID = row.VlmModelID.String
 			botChatModelID = row.ChatModelID.String
 		}
 	}
@@ -251,9 +252,18 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 		}
 	}
 
-	// Populate VLM: prefer bot chat model, fall back to system first multimodal chat model.
+	// Populate VLM: prefer dedicated vlm_model_id, then fall back to bot chat model,
+	// then to system first multimodal chat model.
 	vlmPopulated := false
-	if botChatModelID != "" {
+	if botVlmModelID != "" {
+		if vlm, err := h.modelsService.GetByID(ctx, botVlmModelID); err == nil {
+			if provider, provErr := models.FetchProviderByID(ctx, h.queries, vlm.LlmProviderID); provErr == nil {
+				h.applyVLMConf(&conf, vlm, provider)
+				vlmPopulated = true
+			}
+		}
+	}
+	if !vlmPopulated && botChatModelID != "" {
 		if chat, err := h.modelsService.GetByID(ctx, botChatModelID); err == nil {
 			if provider, provErr := models.FetchProviderByID(ctx, h.queries, chat.LlmProviderID); provErr == nil {
 				h.applyVLMConf(&conf, chat, provider)

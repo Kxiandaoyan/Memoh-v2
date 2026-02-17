@@ -41,11 +41,12 @@ type BotCheck struct {
 
 // CreateBotRequest is the input for creating a bot.
 type CreateBotRequest struct {
-	Type        string         `json:"type"`
-	DisplayName string         `json:"display_name,omitempty"`
-	AvatarURL   string         `json:"avatar_url,omitempty"`
-	IsActive    *bool          `json:"is_active,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
+	Type         string         `json:"type"`
+	DisplayName  string         `json:"display_name,omitempty"`
+	AvatarURL    string         `json:"avatar_url,omitempty"`
+	IsActive     *bool          `json:"is_active,omitempty"`
+	IsPrivileged bool           `json:"is_privileged,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 // UpdateBotRequest is the input for updating a bot.
@@ -94,6 +95,7 @@ type Prompts struct {
 	Task               string `json:"task"`
 	AllowSelfEvolution bool   `json:"allow_self_evolution"`
 	EnableOpenviking   bool   `json:"enable_openviking"`
+	IsPrivileged       bool   `json:"is_privileged"`
 }
 
 // UpdatePromptsRequest is the input for updating bot prompts.
@@ -103,12 +105,19 @@ type UpdatePromptsRequest struct {
 	Task               *string `json:"task,omitempty"`
 	AllowSelfEvolution *bool   `json:"allow_self_evolution,omitempty"`
 	EnableOpenviking   *bool   `json:"enable_openviking,omitempty"`
+	IsPrivileged       *bool   `json:"is_privileged,omitempty"`
 }
 
 // ContainerLifecycle handles container lifecycle events bound to bot operations.
 type ContainerLifecycle interface {
 	SetupBotContainer(ctx context.Context, botID string) error
 	CleanupBotContainer(ctx context.Context, botID string) error
+}
+
+// HeartbeatSeeder seeds system heartbeat configs for a bot.
+type HeartbeatSeeder interface {
+	SeedEvolutionConfig(ctx context.Context, botID string) error
+	DisableEvolutionConfig(ctx context.Context, botID string) error
 }
 
 // RuntimeChecker produces runtime check items for a bot.

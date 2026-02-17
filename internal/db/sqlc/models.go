@@ -22,12 +22,14 @@ type Bot struct {
 	ChatModelID        pgtype.UUID        `json:"chat_model_id"`
 	MemoryModelID      pgtype.UUID        `json:"memory_model_id"`
 	EmbeddingModelID   pgtype.UUID        `json:"embedding_model_id"`
+	VlmModelID         pgtype.UUID        `json:"vlm_model_id"`
 	SearchProviderID   pgtype.UUID        `json:"search_provider_id"`
 	Identity           pgtype.Text        `json:"identity"`
 	Soul               pgtype.Text        `json:"soul"`
 	Task               pgtype.Text        `json:"task"`
 	AllowSelfEvolution bool               `json:"allow_self_evolution"`
 	EnableOpenviking   bool               `json:"enable_openviking"`
+	IsPrivileged       bool               `json:"is_privileged"`
 	Metadata           []byte             `json:"metadata"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`

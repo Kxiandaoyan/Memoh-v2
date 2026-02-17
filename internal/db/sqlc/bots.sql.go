@@ -12,19 +12,20 @@ import (
 )
 
 const createBot = `-- name: CreateBot :one
-INSERT INTO bots (owner_user_id, type, display_name, avatar_url, is_active, metadata, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+INSERT INTO bots (owner_user_id, type, display_name, avatar_url, is_active, metadata, status, is_privileged)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 `
 
 type CreateBotParams struct {
-	OwnerUserID pgtype.UUID `json:"owner_user_id"`
-	Type        string      `json:"type"`
-	DisplayName pgtype.Text `json:"display_name"`
-	AvatarUrl   pgtype.Text `json:"avatar_url"`
-	IsActive    bool        `json:"is_active"`
-	Metadata    []byte      `json:"metadata"`
-	Status      string      `json:"status"`
+	OwnerUserID  pgtype.UUID `json:"owner_user_id"`
+	Type         string      `json:"type"`
+	DisplayName  pgtype.Text `json:"display_name"`
+	AvatarUrl    pgtype.Text `json:"avatar_url"`
+	IsActive     bool        `json:"is_active"`
+	Metadata     []byte      `json:"metadata"`
+	Status       string      `json:"status"`
+	IsPrivileged bool        `json:"is_privileged"`
 }
 
 func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, error) {
@@ -36,6 +37,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		arg.IsActive,
 		arg.Metadata,
 		arg.Status,
+		arg.IsPrivileged,
 	)
 	var i Bot
 	err := row.Scan(
@@ -52,12 +54,14 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		&i.ChatModelID,
 		&i.MemoryModelID,
 		&i.EmbeddingModelID,
+		&i.VlmModelID,
 		&i.SearchProviderID,
 		&i.Identity,
 		&i.Soul,
 		&i.Task,
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
+		&i.IsPrivileged,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -89,7 +93,7 @@ func (q *Queries) DeleteBotMember(ctx context.Context, arg DeleteBotMemberParams
 }
 
 const getBotByID = `-- name: GetBotByID :one
-SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 FROM bots
 WHERE id = $1
 `
@@ -111,17 +115,32 @@ func (q *Queries) GetBotByID(ctx context.Context, id pgtype.UUID) (Bot, error) {
 		&i.ChatModelID,
 		&i.MemoryModelID,
 		&i.EmbeddingModelID,
+		&i.VlmModelID,
 		&i.SearchProviderID,
 		&i.Identity,
 		&i.Soul,
 		&i.Task,
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
+		&i.IsPrivileged,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getBotIsPrivileged = `-- name: GetBotIsPrivileged :one
+SELECT is_privileged
+FROM bots
+WHERE id = $1
+`
+
+func (q *Queries) GetBotIsPrivileged(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getBotIsPrivileged, id)
+	var is_privileged bool
+	err := row.Scan(&is_privileged)
+	return is_privileged, err
 }
 
 const getBotMember = `-- name: GetBotMember :one
@@ -149,7 +168,7 @@ func (q *Queries) GetBotMember(ctx context.Context, arg GetBotMemberParams) (Bot
 }
 
 const getBotPrompts = `-- name: GetBotPrompts :one
-SELECT identity, soul, task, allow_self_evolution, enable_openviking
+SELECT identity, soul, task, allow_self_evolution, enable_openviking, is_privileged
 FROM bots
 WHERE id = $1
 `
@@ -160,6 +179,7 @@ type GetBotPromptsRow struct {
 	Task               pgtype.Text `json:"task"`
 	AllowSelfEvolution bool        `json:"allow_self_evolution"`
 	EnableOpenviking   bool        `json:"enable_openviking"`
+	IsPrivileged       bool        `json:"is_privileged"`
 }
 
 func (q *Queries) GetBotPrompts(ctx context.Context, id pgtype.UUID) (GetBotPromptsRow, error) {
@@ -171,6 +191,7 @@ func (q *Queries) GetBotPrompts(ctx context.Context, id pgtype.UUID) (GetBotProm
 		&i.Task,
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
+		&i.IsPrivileged,
 	)
 	return i, err
 }
@@ -208,7 +229,7 @@ func (q *Queries) ListBotMembers(ctx context.Context, botID pgtype.UUID) ([]BotM
 }
 
 const listBotsByMember = `-- name: ListBotsByMember :many
-SELECT b.id, b.owner_user_id, b.type, b.display_name, b.avatar_url, b.is_active, b.status, b.max_context_load_time, b.language, b.allow_guest, b.chat_model_id, b.memory_model_id, b.embedding_model_id, b.search_provider_id, b.identity, b.soul, b.task, b.allow_self_evolution, b.enable_openviking, b.metadata, b.created_at, b.updated_at
+SELECT b.id, b.owner_user_id, b.type, b.display_name, b.avatar_url, b.is_active, b.status, b.max_context_load_time, b.language, b.allow_guest, b.chat_model_id, b.memory_model_id, b.embedding_model_id, b.vlm_model_id, b.search_provider_id, b.identity, b.soul, b.task, b.allow_self_evolution, b.enable_openviking, b.is_privileged, b.metadata, b.created_at, b.updated_at
 FROM bots b
 JOIN bot_members m ON m.bot_id = b.id
 WHERE m.user_id = $1
@@ -238,12 +259,14 @@ func (q *Queries) ListBotsByMember(ctx context.Context, userID pgtype.UUID) ([]B
 			&i.ChatModelID,
 			&i.MemoryModelID,
 			&i.EmbeddingModelID,
+			&i.VlmModelID,
 			&i.SearchProviderID,
 			&i.Identity,
 			&i.Soul,
 			&i.Task,
 			&i.AllowSelfEvolution,
 			&i.EnableOpenviking,
+			&i.IsPrivileged,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -259,7 +282,7 @@ func (q *Queries) ListBotsByMember(ctx context.Context, userID pgtype.UUID) ([]B
 }
 
 const listBotsByOwner = `-- name: ListBotsByOwner :many
-SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 FROM bots
 WHERE owner_user_id = $1
 ORDER BY created_at DESC
@@ -288,12 +311,14 @@ func (q *Queries) ListBotsByOwner(ctx context.Context, ownerUserID pgtype.UUID) 
 			&i.ChatModelID,
 			&i.MemoryModelID,
 			&i.EmbeddingModelID,
+			&i.VlmModelID,
 			&i.SearchProviderID,
 			&i.Identity,
 			&i.Soul,
 			&i.Task,
 			&i.AllowSelfEvolution,
 			&i.EnableOpenviking,
+			&i.IsPrivileged,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -313,7 +338,7 @@ UPDATE bots
 SET owner_user_id = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 `
 
 type UpdateBotOwnerParams struct {
@@ -338,12 +363,14 @@ func (q *Queries) UpdateBotOwner(ctx context.Context, arg UpdateBotOwnerParams) 
 		&i.ChatModelID,
 		&i.MemoryModelID,
 		&i.EmbeddingModelID,
+		&i.VlmModelID,
 		&i.SearchProviderID,
 		&i.Identity,
 		&i.Soul,
 		&i.Task,
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
+		&i.IsPrivileged,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -359,7 +386,7 @@ SET display_name = $2,
     metadata = $5,
     updated_at = now()
 WHERE id = $1
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, metadata, created_at, updated_at
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
 `
 
 type UpdateBotProfileParams struct {
@@ -393,12 +420,14 @@ func (q *Queries) UpdateBotProfile(ctx context.Context, arg UpdateBotProfilePara
 		&i.ChatModelID,
 		&i.MemoryModelID,
 		&i.EmbeddingModelID,
+		&i.VlmModelID,
 		&i.SearchProviderID,
 		&i.Identity,
 		&i.Soul,
 		&i.Task,
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
+		&i.IsPrivileged,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -413,9 +442,10 @@ SET identity = COALESCE($1, bots.identity),
     task = COALESCE($3, bots.task),
     allow_self_evolution = COALESCE($4, bots.allow_self_evolution),
     enable_openviking = COALESCE($5, bots.enable_openviking),
+    is_privileged = COALESCE($6, bots.is_privileged),
     updated_at = now()
-WHERE id = $6
-RETURNING identity, soul, task, allow_self_evolution, enable_openviking
+WHERE id = $7
+RETURNING identity, soul, task, allow_self_evolution, enable_openviking, is_privileged
 `
 
 type UpdateBotPromptsParams struct {
@@ -424,6 +454,7 @@ type UpdateBotPromptsParams struct {
 	Task               pgtype.Text `json:"task"`
 	AllowSelfEvolution pgtype.Bool `json:"allow_self_evolution"`
 	EnableOpenviking   pgtype.Bool `json:"enable_openviking"`
+	IsPrivileged       pgtype.Bool `json:"is_privileged"`
 	ID                 pgtype.UUID `json:"id"`
 }
 
@@ -433,6 +464,7 @@ type UpdateBotPromptsRow struct {
 	Task               pgtype.Text `json:"task"`
 	AllowSelfEvolution bool        `json:"allow_self_evolution"`
 	EnableOpenviking   bool        `json:"enable_openviking"`
+	IsPrivileged       bool        `json:"is_privileged"`
 }
 
 func (q *Queries) UpdateBotPrompts(ctx context.Context, arg UpdateBotPromptsParams) (UpdateBotPromptsRow, error) {
@@ -442,6 +474,7 @@ func (q *Queries) UpdateBotPrompts(ctx context.Context, arg UpdateBotPromptsPara
 		arg.Task,
 		arg.AllowSelfEvolution,
 		arg.EnableOpenviking,
+		arg.IsPrivileged,
 		arg.ID,
 	)
 	var i UpdateBotPromptsRow
@@ -451,6 +484,7 @@ func (q *Queries) UpdateBotPrompts(ctx context.Context, arg UpdateBotPromptsPara
 		&i.Task,
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
+		&i.IsPrivileged,
 	)
 	return i, err
 }

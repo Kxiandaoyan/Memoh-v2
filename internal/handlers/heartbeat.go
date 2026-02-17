@@ -39,6 +39,7 @@ func (h *HeartbeatHandler) Register(e *echo.Echo) {
 	group.GET("/:id", h.Get)
 	group.PUT("/:id", h.Update)
 	group.DELETE("/:id", h.Delete)
+	group.POST("/:id/trigger", h.Trigger)
 }
 
 // Create godoc
@@ -216,6 +217,47 @@ func (h *HeartbeatHandler) Delete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// Trigger godoc
+// @Summary Trigger heartbeat manually
+// @Description Manually trigger a heartbeat configuration to fire immediately
+// @Tags heartbeat
+// @Param bot_id path string true "Bot ID"
+// @Param id path string true "Heartbeat config ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/heartbeat/{id}/trigger [post]
+func (h *HeartbeatHandler) Trigger(c echo.Context) error {
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return err
+	}
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
+	}
+	id := c.Param("id")
+	if id == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id is required")
+	}
+	item, err := h.engine.Get(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	if item.BotID != botID {
+		return echo.NewHTTPError(http.StatusForbidden, "bot mismatch")
+	}
+	if _, err := h.authorizeBotAccess(c.Request().Context(), userID, botID); err != nil {
+		return err
+	}
+	if err := h.engine.Fire(c.Request().Context(), id, "manual"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "triggered"})
 }
 
 func (h *HeartbeatHandler) requireUserID(c echo.Context) (string, error) {

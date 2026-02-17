@@ -43,6 +43,7 @@ import (
 	mcpmemory "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/memory"
 	mcpmessage "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/message"
 	mcpschedule "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/schedule"
+	mcpadmin "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/admin"
 	mcpweb "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/web"
 	mcpfederation "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/sources/federation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
@@ -361,7 +362,7 @@ func provideContainerdHandler(log *slog.Logger, service ctr.Service, cfg config.
 	return handlers.NewContainerdHandler(log, service, cfg.MCP, cfg.Containerd.Namespace, botService, accountService, policyService, queries)
 }
 
-func provideToolGatewayService(log *slog.Logger, cfg config.Config, channelManager *channel.Manager, registry *channel.Registry, channelService *channel.Service, scheduleService *schedule.Service, memoryService *memory.Service, chatService *conversation.Service, accountService *accounts.Service, settingsService *settings.Service, searchProviderService *searchproviders.Service, manager *mcp.Manager, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService) *mcp.ToolGatewayService {
+func provideToolGatewayService(log *slog.Logger, cfg config.Config, channelManager *channel.Manager, registry *channel.Registry, channelService *channel.Service, scheduleService *schedule.Service, memoryService *memory.Service, chatService *conversation.Service, accountService *accounts.Service, settingsService *settings.Service, searchProviderService *searchproviders.Service, manager *mcp.Manager, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, botService *bots.Service, modelService *models.Service, providerService *providers.Service, queries *dbsqlc.Queries) *mcp.ToolGatewayService {
 	messageExec := mcpmessage.NewExecutor(log, channelManager, channelManager, registry)
 	directoryExec := mcpdirectory.NewExecutor(log, registry, channelService, registry)
 	scheduleExec := mcpschedule.NewExecutor(log, scheduleService)
@@ -373,12 +374,15 @@ func provideToolGatewayService(log *slog.Logger, cfg config.Config, channelManag
 	}
 	fsExec := mcpcontainer.NewExecutor(log, manager, execWorkDir)
 
+	adminInner := mcpadmin.NewExecutor(log, botService, modelService, providerService)
+	adminExec := mcpadmin.NewConditionalExecutor(log, adminInner, queries)
+
 	fedGateway := handlers.NewMCPFederationGateway(log, containerdHandler)
 	fedSource := mcpfederation.NewSource(log, fedGateway, mcpConnService)
 
 	svc := mcp.NewToolGatewayService(
 		log,
-		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec},
+		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec},
 		[]mcp.ToolSource{fedSource},
 	)
 	containerdHandler.SetToolGatewayService(svc)
@@ -510,7 +514,7 @@ func startContainerReconciliation(lc fx.Lifecycle, containerdHandler *handlers.C
 	})
 }
 
-func startServer(lc fx.Lifecycle, logger *slog.Logger, srv *server.Server, shutdowner fx.Shutdowner, cfg config.Config, queries *dbsqlc.Queries, botService *bots.Service, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, toolGateway *mcp.ToolGatewayService) {
+func startServer(lc fx.Lifecycle, logger *slog.Logger, srv *server.Server, shutdowner fx.Shutdowner, cfg config.Config, queries *dbsqlc.Queries, botService *bots.Service, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, toolGateway *mcp.ToolGatewayService, heartbeatEngine *heartbeat.Engine) {
 	fmt.Printf("Starting Memoh Agent %s\n", version.GetInfo())
 
 	lc.Append(fx.Hook{
@@ -519,6 +523,7 @@ func startServer(lc fx.Lifecycle, logger *slog.Logger, srv *server.Server, shutd
 				return err
 			}
 			botService.SetContainerLifecycle(containerdHandler)
+			botService.SetHeartbeatSeeder(heartbeatEngine)
 			botService.AddRuntimeChecker(mcp.NewConnectionChecker(logger, mcpConnService, toolGateway))
 
 			go func() {

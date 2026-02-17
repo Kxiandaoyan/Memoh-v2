@@ -302,6 +302,31 @@ func (q *Queries) GetModelByModelID(ctx context.Context, modelID string) (Model,
 	return i, err
 }
 
+const getModelFallback = `-- name: GetModelFallback :one
+SELECT fallback.id, fallback.model_id, fallback.name, fallback.llm_provider_id, fallback.dimensions, fallback.is_multimodal, fallback.type, fallback.context_window, fallback.fallback_model_id, fallback.created_at, fallback.updated_at FROM models AS fallback
+JOIN models AS primary_model ON primary_model.fallback_model_id = fallback.id
+WHERE primary_model.id = $1
+`
+
+func (q *Queries) GetModelFallback(ctx context.Context, primaryModelID pgtype.UUID) (Model, error) {
+	row := q.db.QueryRow(ctx, getModelFallback, primaryModelID)
+	var i Model
+	err := row.Scan(
+		&i.ID,
+		&i.ModelID,
+		&i.Name,
+		&i.LlmProviderID,
+		&i.Dimensions,
+		&i.IsMultimodal,
+		&i.Type,
+		&i.ContextWindow,
+		&i.FallbackModelID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listLlmProviders = `-- name: ListLlmProviders :many
 SELECT id, name, client_type, base_url, api_key, metadata, created_at, updated_at FROM llm_providers
 ORDER BY created_at DESC
@@ -740,31 +765,6 @@ func (q *Queries) UpdateModelByModelID(ctx context.Context, arg UpdateModelByMod
 		arg.FallbackModelID,
 		arg.ModelID,
 	)
-	var i Model
-	err := row.Scan(
-		&i.ID,
-		&i.ModelID,
-		&i.Name,
-		&i.LlmProviderID,
-		&i.Dimensions,
-		&i.IsMultimodal,
-		&i.Type,
-		&i.ContextWindow,
-		&i.FallbackModelID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getModelFallback = `-- name: GetModelFallback :one
-SELECT fallback.id, fallback.model_id, fallback.name, fallback.llm_provider_id, fallback.dimensions, fallback.is_multimodal, fallback.type, fallback.context_window, fallback.fallback_model_id, fallback.created_at, fallback.updated_at FROM models AS fallback
-JOIN models AS primary_model ON primary_model.fallback_model_id = fallback.id
-WHERE primary_model.id = $1
-`
-
-func (q *Queries) GetModelFallback(ctx context.Context, primaryModelID pgtype.UUID) (Model, error) {
-	row := q.db.QueryRow(ctx, getModelFallback, primaryModelID)
 	var i Model
 	err := row.Scan(
 		&i.ID,

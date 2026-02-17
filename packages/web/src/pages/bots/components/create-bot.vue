@@ -92,6 +92,24 @@
               </FormControl>
             </FormItem>
           </FormField>
+          <!-- Privileged -->
+          <FormField
+            v-slot="{ value, handleChange }"
+            name="is_privileged"
+          >
+            <FormItem>
+              <div class="flex items-center justify-between">
+                <div class="space-y-0.5">
+                  <Label>{{ $t('bots.settings.isPrivileged') }}</Label>
+                  <p class="text-xs text-muted-foreground">{{ $t('bots.settings.isPrivilegedHint') }}</p>
+                </div>
+                <Switch
+                  :checked="value"
+                  @update:checked="handleChange"
+                />
+              </div>
+            </FormItem>
+          </FormField>
         </div>
 
         <DialogFooter class="mt-6">
@@ -131,6 +149,7 @@ import {
   Separator,
   Label,
   Spinner,
+  Switch,
   Select,
   SelectContent,
   SelectGroup,
@@ -151,6 +170,7 @@ const formSchema = toTypedSchema(z.object({
   display_name: z.string().min(1),
   avatar_url: z.string().optional(),
   type: z.string(),
+  is_privileged: z.boolean().optional(),
 }))
 
 const form = useForm({
@@ -159,6 +179,7 @@ const form = useForm({
     display_name: '',
     avatar_url: '',
     type: 'personal',
+    is_privileged: false,
   },
 })
 
@@ -175,6 +196,7 @@ watch(open, (val) => {
         display_name: '',
         avatar_url: '',
         type: 'personal',
+        is_privileged: false,
       },
     })
   } else {
@@ -190,6 +212,7 @@ const handleSubmit = form.handleSubmit(async (values) => {
         avatar_url: values.avatar_url || undefined,
         type: values.type,
         is_active: true,
+        is_privileged: values.is_privileged || false,
       },
     })
     open.value = false

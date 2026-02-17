@@ -1,4 +1,4 @@
-import { LanguageModelUsage, ModelMessage } from 'ai'
+import { ModelMessage } from 'ai'
 import { AgentInput } from './agent'
 import { AgentAttachment } from './attachment'
 
@@ -63,12 +63,18 @@ export interface ToolCallEndAction extends BaseAction {
   result: unknown
 }
 
+export interface NormalizedUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
 export interface AgentEndAction extends BaseAction {
   type: 'agent_end'
   messages: ModelMessage[]
   skills: string[]
   reasoning: string[]
-  usage: LanguageModelUsage
+  usage: NormalizedUsage
 }
 
 export type AgentAction = 

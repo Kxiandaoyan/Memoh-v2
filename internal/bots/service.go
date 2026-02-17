@@ -23,6 +23,7 @@ type Service struct {
 	queries            *sqlc.Queries
 	logger             *slog.Logger
 	containerLifecycle ContainerLifecycle
+	heartbeatSeeder    HeartbeatSeeder
 	checkers           []RuntimeChecker
 }
 
@@ -56,6 +57,11 @@ func NewService(log *slog.Logger, queries *sqlc.Queries) *Service {
 // SetContainerLifecycle registers a container lifecycle handler for bot operations.
 func (s *Service) SetContainerLifecycle(lc ContainerLifecycle) {
 	s.containerLifecycle = lc
+}
+
+// SetHeartbeatSeeder registers a heartbeat seeder for auto-creating evolution heartbeats.
+func (s *Service) SetHeartbeatSeeder(hs HeartbeatSeeder) {
+	s.heartbeatSeeder = hs
 }
 
 // AddRuntimeChecker registers an additional runtime checker.
@@ -131,13 +137,14 @@ func (s *Service) Create(ctx context.Context, ownerUserID string, req CreateBotR
 		return Bot{}, err
 	}
 	row, err := s.queries.CreateBot(ctx, sqlc.CreateBotParams{
-		OwnerUserID: ownerUUID,
-		Type:        normalizedType,
-		DisplayName: pgtype.Text{String: displayName, Valid: displayName != ""},
-		AvatarUrl:   pgtype.Text{String: avatarURL, Valid: avatarURL != ""},
-		IsActive:    isActive,
-		Metadata:    payload,
-		Status:      BotStatusCreating,
+		OwnerUserID:  ownerUUID,
+		Type:         normalizedType,
+		DisplayName:  pgtype.Text{String: displayName, Valid: displayName != ""},
+		AvatarUrl:    pgtype.Text{String: avatarURL, Valid: avatarURL != ""},
+		IsActive:     isActive,
+		Metadata:     payload,
+		Status:       BotStatusCreating,
+		IsPrivileged: req.IsPrivileged,
 	})
 	if err != nil {
 		return Bot{}, err
@@ -393,6 +400,7 @@ func (s *Service) GetPrompts(ctx context.Context, botID string) (Prompts, error)
 		Task:               row.Task.String,
 		AllowSelfEvolution: row.AllowSelfEvolution,
 		EnableOpenviking:   row.EnableOpenviking,
+		IsPrivileged:       row.IsPrivileged,
 	}, nil
 }
 
@@ -423,16 +431,36 @@ func (s *Service) UpdatePrompts(ctx context.Context, botID string, req UpdatePro
 	if req.EnableOpenviking != nil {
 		params.EnableOpenviking = pgtype.Bool{Bool: *req.EnableOpenviking, Valid: true}
 	}
+	if req.IsPrivileged != nil {
+		params.IsPrivileged = pgtype.Bool{Bool: *req.IsPrivileged, Valid: true}
+	}
 	row, err := s.queries.UpdateBotPrompts(ctx, params)
 	if err != nil {
 		return Prompts{}, err
 	}
+
+	// Toggle evolution heartbeat when allow_self_evolution changes.
+	if req.AllowSelfEvolution != nil && s.heartbeatSeeder != nil {
+		if *req.AllowSelfEvolution {
+			if seedErr := s.heartbeatSeeder.SeedEvolutionConfig(ctx, botID); seedErr != nil {
+				s.logger.Warn("failed to seed evolution heartbeat on toggle",
+					slog.String("bot_id", botID), slog.Any("error", seedErr))
+			}
+		} else {
+			if disErr := s.heartbeatSeeder.DisableEvolutionConfig(ctx, botID); disErr != nil {
+				s.logger.Warn("failed to disable evolution heartbeat on toggle",
+					slog.String("bot_id", botID), slog.Any("error", disErr))
+			}
+		}
+	}
+
 	return Prompts{
 		Identity:           row.Identity.String,
 		Soul:               row.Soul.String,
 		Task:               row.Task.String,
 		AllowSelfEvolution: row.AllowSelfEvolution,
 		EnableOpenviking:   row.EnableOpenviking,
+		IsPrivileged:       row.IsPrivileged,
 	}, nil
 }
 
@@ -471,6 +499,16 @@ func (s *Service) enqueueCreateLifecycle(botID string) {
 				slog.String("bot_id", botID),
 				slog.Any("error", err),
 			)
+		}
+
+		// Seed evolution heartbeat for new bots with self-evolution enabled (default).
+		if s.heartbeatSeeder != nil {
+			if err := s.heartbeatSeeder.SeedEvolutionConfig(ctx, botID); err != nil {
+				s.logger.Error("failed to seed evolution heartbeat",
+					slog.String("bot_id", botID),
+					slog.Any("error", err),
+				)
+			}
 		}
 	}()
 }

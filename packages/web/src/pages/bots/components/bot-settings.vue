@@ -39,6 +39,19 @@
       />
     </div>
 
+    <!-- VLM Model -->
+    <div class="space-y-2">
+      <Label>{{ $t('bots.settings.vlmModel') }}</Label>
+      <p class="text-xs text-muted-foreground">{{ $t('bots.settings.vlmModelHint') }}</p>
+      <ModelSelect
+        v-model="form.vlm_model_id"
+        :models="models"
+        :providers="providers"
+        model-type="chat"
+        :placeholder="$t('bots.settings.vlmModel')"
+      />
+    </div>
+
     <!-- Search Provider -->
     <div class="space-y-2">
       <Label>{{ $t('bots.settings.searchProvider') }}</Label>
@@ -113,6 +126,20 @@
       <Switch
         :model-value="promptsForm.enable_openviking"
         @update:model-value="(val) => promptsForm.enable_openviking = !!val"
+      />
+    </div>
+
+    <!-- Privileged Bot -->
+    <div class="flex items-center justify-between">
+      <div class="space-y-0.5">
+        <Label>{{ $t('bots.settings.isPrivileged') }}</Label>
+        <p class="text-sm text-muted-foreground">
+          {{ $t('bots.settings.isPrivilegedDescription') }}
+        </p>
+      </div>
+      <Switch
+        :model-value="promptsForm.is_privileged"
+        @update:model-value="(val) => promptsForm.is_privileged = !!val"
       />
     </div>
 
@@ -302,6 +329,7 @@ const form = reactive<SettingsSettings>({
   chat_model_id: '',
   memory_model_id: '',
   embedding_model_id: '',
+  vlm_model_id: '',
   search_provider_id: '',
   max_context_load_time: 0,
   language: '',
@@ -313,6 +341,7 @@ watch(settings, (val) => {
     form.chat_model_id = val.chat_model_id ?? ''
     form.memory_model_id = val.memory_model_id ?? ''
     form.embedding_model_id = val.embedding_model_id ?? ''
+    form.vlm_model_id = val.vlm_model_id ?? ''
     form.search_provider_id = val.search_provider_id ?? ''
     form.max_context_load_time = val.max_context_load_time ?? 0
     form.language = val.language ?? ''
@@ -325,6 +354,7 @@ const promptsForm = reactive({
   task: '',
   allow_self_evolution: true,
   enable_openviking: false,
+  is_privileged: false,
 })
 
 watch(prompts, (val) => {
@@ -332,6 +362,7 @@ watch(prompts, (val) => {
     promptsForm.task = val.task ?? ''
     promptsForm.allow_self_evolution = val.allow_self_evolution ?? true
     promptsForm.enable_openviking = val.enable_openviking ?? false
+    promptsForm.is_privileged = val.is_privileged ?? false
   }
 }, { immediate: true })
 
@@ -343,6 +374,7 @@ const hasSettingsChanges = computed(() => {
     form.chat_model_id !== (s.chat_model_id ?? '')
     || form.memory_model_id !== (s.memory_model_id ?? '')
     || form.embedding_model_id !== (s.embedding_model_id ?? '')
+    || form.vlm_model_id !== (s.vlm_model_id ?? '')
     || form.search_provider_id !== (s.search_provider_id ?? '')
     || form.max_context_load_time !== (s.max_context_load_time ?? 0)
     || form.language !== (s.language ?? '')
@@ -359,6 +391,7 @@ const hasPromptsChanges = computed(() => {
     promptsForm.task !== (p.task ?? '')
     || promptsForm.allow_self_evolution !== (p.allow_self_evolution ?? true)
     || promptsForm.enable_openviking !== (p.enable_openviking ?? false)
+    || promptsForm.is_privileged !== (p.is_privileged ?? false)
   )
 })
 
@@ -383,6 +416,7 @@ async function handleSave() {
             task: promptsForm.task,
             allow_self_evolution: promptsForm.allow_self_evolution,
             enable_openviking: promptsForm.enable_openviking,
+            is_privileged: promptsForm.is_privileged,
           },
         }).then(() => {
           queryCache.invalidateQueries({ key: ['bot-prompts', botIdRef.value] })

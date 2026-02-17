@@ -107,6 +107,9 @@
         <TabsTrigger value="overview">
           {{ $t('bots.tabs.overview') }}
         </TabsTrigger>
+        <TabsTrigger value="evolution">
+          {{ $t('bots.tabs.evolution') }}
+        </TabsTrigger>
         <TabsTrigger value="memory">
           {{ $t('bots.tabs.memory') }}
         </TabsTrigger>
@@ -337,6 +340,12 @@
             </div>
           </div>
         </div>
+      </TabsContent>
+      <TabsContent
+        value="evolution"
+        class="mt-6"
+      >
+        <BotEvolution :bot-id="botId" />
       </TabsContent>
       <TabsContent
         value="memory"
@@ -733,6 +742,7 @@ import BotMemory from './components/bot-memory.vue'
 import BotFiles from './components/bot-files.vue'
 import BotSkills from './components/bot-skills.vue'
 import BotSubagents from './components/bot-subagents.vue'
+import BotEvolution from './components/bot-evolution.vue'
 import BotHeartbeat from './components/bot-heartbeat.vue'
 import BotHistory from './components/bot-history.vue'
 
@@ -1055,6 +1065,7 @@ watch([activeTab, botId], ([tab]) => {
     void loadChecks(true)
     void loadEvolutionStatus()
   }
+  // Evolution tab data loading is handled by the BotEvolution component's onMounted
 }, { immediate: true })
 
 function formatDate(value: string | undefined): string {

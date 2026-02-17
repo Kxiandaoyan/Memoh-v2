@@ -215,6 +215,59 @@ func (e *Engine) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// Fire manually triggers a heartbeat config by its ID.
+func (e *Engine) Fire(ctx context.Context, configID, reason string) error {
+	cfg, err := e.Get(ctx, configID)
+	if err != nil {
+		return err
+	}
+	return e.fire(ctx, cfg, reason)
+}
+
+// SeedEvolutionConfig creates (or enables) the system evolution heartbeat for a bot.
+// It is called when allow_self_evolution is turned on.
+func (e *Engine) SeedEvolutionConfig(ctx context.Context, botID string) error {
+	existing, err := e.List(ctx, botID)
+	if err != nil {
+		return fmt.Errorf("list heartbeat configs: %w", err)
+	}
+	for _, cfg := range existing {
+		if strings.Contains(cfg.Prompt, EvolutionPromptMarker) {
+			if !cfg.Enabled {
+				enabled := true
+				_, err := e.Update(ctx, cfg.ID, UpdateRequest{Enabled: &enabled})
+				return err
+			}
+			return nil
+		}
+	}
+	prompt := EvolutionPromptMarker + "\n" + EvolutionReflectionPrompt
+	enabled := true
+	_, err = e.Create(ctx, botID, CreateRequest{
+		Enabled:         &enabled,
+		IntervalSeconds: DefaultEvolutionIntervalSeconds,
+		Prompt:          prompt,
+		EventTriggers:   nil,
+	})
+	return err
+}
+
+// DisableEvolutionConfig disables the system evolution heartbeat for a bot.
+func (e *Engine) DisableEvolutionConfig(ctx context.Context, botID string) error {
+	existing, err := e.List(ctx, botID)
+	if err != nil {
+		return fmt.Errorf("list heartbeat configs: %w", err)
+	}
+	for _, cfg := range existing {
+		if strings.Contains(cfg.Prompt, EvolutionPromptMarker) && cfg.Enabled {
+			enabled := false
+			_, err := e.Update(ctx, cfg.ID, UpdateRequest{Enabled: &enabled})
+			return err
+		}
+	}
+	return nil
+}
+
 // ── Internal lifecycle management ─────────────────────────────────────
 
 func (e *Engine) startConfig(cfg Config) {

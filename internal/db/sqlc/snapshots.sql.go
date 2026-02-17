@@ -58,24 +58,15 @@ WHERE container_id = $1
 ORDER BY created_at DESC
 `
 
-type ListSnapshotsByContainerIDRow struct {
-	ID               string             `json:"id"`
-	ContainerID      string             `json:"container_id"`
-	ParentSnapshotID pgtype.Text        `json:"parent_snapshot_id"`
-	Snapshotter      string             `json:"snapshotter"`
-	Digest           pgtype.Text        `json:"digest"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListSnapshotsByContainerID(ctx context.Context, containerID string) ([]ListSnapshotsByContainerIDRow, error) {
+func (q *Queries) ListSnapshotsByContainerID(ctx context.Context, containerID string) ([]Snapshot, error) {
 	rows, err := q.db.Query(ctx, listSnapshotsByContainerID, containerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSnapshotsByContainerIDRow
+	var items []Snapshot
 	for rows.Next() {
-		var i ListSnapshotsByContainerIDRow
+		var i Snapshot
 		if err := rows.Scan(
 			&i.ID,
 			&i.ContainerID,

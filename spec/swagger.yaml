@@ -139,6 +139,8 @@ definitions:
         type: string
       is_active:
         type: boolean
+      is_privileged:
+        type: boolean
       metadata:
         additionalProperties: {}
         type: object
@@ -177,8 +179,12 @@ definitions:
     properties:
       allow_self_evolution:
         type: boolean
+      enable_openviking:
+        type: boolean
       identity:
         type: string
+      is_privileged:
+        type: boolean
       soul:
         type: string
       task:
@@ -205,8 +211,12 @@ definitions:
     properties:
       allow_self_evolution:
         type: boolean
+      enable_openviking:
+        type: boolean
       identity:
         type: string
+      is_privileged:
+        type: boolean
       soul:
         type: string
       task:
@@ -570,6 +580,29 @@ definitions:
           type: string
         type: array
     type: object
+  handlers.BotFileContent:
+    properties:
+      content:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  handlers.BotFileEntry:
+    properties:
+      name:
+        type: string
+      size:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  handlers.BotFileWriteRequest:
+    properties:
+      content:
+        type: string
+    type: object
   handlers.ChannelMeta:
     properties:
       capabilities:
@@ -615,6 +648,11 @@ definitions:
       snapshot_name:
         type: string
       snapshotter:
+        type: string
+    type: object
+  handlers.DeleteSnapshotResponse:
+    properties:
+      snapshot_name:
         type: string
     type: object
   handlers.EmbeddingsInput:
@@ -754,6 +792,13 @@ definitions:
       url:
         type: string
     type: object
+  handlers.RestoreSnapshotResponse:
+    properties:
+      container_id:
+        type: string
+      snapshot_name:
+        type: string
+    type: object
   handlers.SkillItem:
     properties:
       content:
@@ -876,6 +921,68 @@ definitions:
     properties:
       ok:
         type: boolean
+    type: object
+  heartbeat.Config:
+    properties:
+      bot_id:
+        type: string
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      event_triggers:
+        items:
+          $ref: '#/definitions/heartbeat.EventTrigger'
+        type: array
+      id:
+        type: string
+      interval_seconds:
+        type: integer
+      prompt:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  heartbeat.CreateRequest:
+    properties:
+      enabled:
+        type: boolean
+      event_triggers:
+        items:
+          $ref: '#/definitions/heartbeat.EventTrigger'
+        type: array
+      interval_seconds:
+        type: integer
+      prompt:
+        type: string
+    type: object
+  heartbeat.EventTrigger:
+    enum:
+    - message_created
+    - schedule_completed
+    type: string
+    x-enum-varnames:
+    - TriggerMessageCreated
+    - TriggerScheduleCompleted
+  heartbeat.ListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/heartbeat.Config'
+        type: array
+    type: object
+  heartbeat.UpdateRequest:
+    properties:
+      enabled:
+        type: boolean
+      event_triggers:
+        items:
+          $ref: '#/definitions/heartbeat.EventTrigger'
+        type: array
+      interval_seconds:
+        type: integer
+      prompt:
+        type: string
     type: object
   identities.ChannelIdentity:
     properties:
@@ -1113,8 +1220,12 @@ definitions:
     type: object
   models.AddRequest:
     properties:
+      context_window:
+        type: integer
       dimensions:
         type: integer
+      fallback_model_id:
+        type: string
       input:
         items:
           type: string
@@ -1144,8 +1255,12 @@ definitions:
     type: object
   models.GetResponse:
     properties:
+      context_window:
+        type: integer
       dimensions:
         type: integer
+      fallback_model_id:
+        type: string
       input:
         items:
           type: string
@@ -1171,8 +1286,12 @@ definitions:
     - ModelTypeEmbedding
   models.UpdateRequest:
     properties:
+      context_window:
+        type: integer
       dimensions:
         type: integer
+      fallback_model_id:
+        type: string
       input:
         items:
           type: string
@@ -1400,9 +1519,11 @@ definitions:
   searchproviders.ProviderName:
     enum:
     - brave
+    - serpapi
     type: string
     x-enum-varnames:
     - ProviderBrave
+    - ProviderSerpApi
   searchproviders.UpdateRequest:
     properties:
       config:
@@ -1860,6 +1981,72 @@ paths:
       summary: Create container snapshot for bot
       tags:
       - containerd
+  /bots/{bot_id}/container/snapshots/{snapshot_name}:
+    delete:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Snapshot name
+        in: path
+        name: snapshot_name
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DeleteSnapshotResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete a snapshot
+      tags:
+      - containerd
+  /bots/{bot_id}/container/snapshots/{snapshot_name}/restore:
+    post:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Snapshot name to restore
+        in: path
+        name: snapshot_name
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.RestoreSnapshotResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Restore container from a snapshot
+      tags:
+      - containerd
   /bots/{bot_id}/container/start:
     post:
       parameters:
@@ -1908,6 +2095,316 @@ paths:
       summary: Stop container task for bot
       tags:
       - containerd
+  /bots/{bot_id}/files:
+    get:
+      description: Returns a list of text/markdown files in the bot's data directory
+        (non-recursive, top-level only)
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/handlers.BotFileEntry'
+              type: array
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List text files in bot data directory
+      tags:
+      - bot-files
+  /bots/{bot_id}/files/{filename}:
+    delete:
+      description: Removes the specified text/markdown file from the bot's data directory
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: File name
+        in: path
+        name: filename
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete a text file from bot data directory
+      tags:
+      - bot-files
+    get:
+      description: Returns the content of the specified text/markdown file
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: File name
+        in: path
+        name: filename
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BotFileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Read a text file from bot data directory
+      tags:
+      - bot-files
+    put:
+      consumes:
+      - application/json
+      description: Creates or updates the specified text/markdown file with the given
+        content
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: File name
+        in: path
+        name: filename
+        required: true
+        type: string
+      - description: File content
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.BotFileWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BotFileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Write/update a text file in bot data directory
+      tags:
+      - bot-files
+  /bots/{bot_id}/heartbeat:
+    get:
+      description: List heartbeat configurations for a bot
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heartbeat.ListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List heartbeat configs
+      tags:
+      - heartbeat
+    post:
+      description: Create a heartbeat configuration for a bot
+      parameters:
+      - description: Heartbeat config payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/heartbeat.CreateRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/heartbeat.Config'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Create heartbeat config
+      tags:
+      - heartbeat
+  /bots/{bot_id}/heartbeat/{id}:
+    delete:
+      description: Delete a heartbeat configuration by ID
+      parameters:
+      - description: Heartbeat config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete heartbeat config
+      tags:
+      - heartbeat
+    get:
+      description: Get a heartbeat configuration by ID
+      parameters:
+      - description: Heartbeat config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heartbeat.Config'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get heartbeat config
+      tags:
+      - heartbeat
+    put:
+      description: Update a heartbeat configuration by ID
+      parameters:
+      - description: Heartbeat config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heartbeat config payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/heartbeat.UpdateRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heartbeat.Config'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Update heartbeat config
+      tags:
+      - heartbeat
+  /bots/{bot_id}/heartbeat/{id}/trigger:
+    post:
+      description: Manually trigger a heartbeat configuration to fire immediately
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Heartbeat config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Trigger heartbeat manually
+      tags:
+      - heartbeat
   /bots/{bot_id}/mcp:
     get:
       description: List MCP connections for a bot
@@ -3179,6 +3676,46 @@ paths:
       summary: Update subagent skills
       tags:
       - subagent
+  /bots/{bot_id}/token-usage/daily:
+    get:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Number of days (default 30)
+        in: query
+        name: days
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get daily token usage series for a bot
+      tags:
+      - token-usage
+  /bots/{bot_id}/token-usage/total:
+    get:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+      summary: Get total token usage for a bot
+      tags:
+      - token-usage
   /bots/{bot_id}/tools:
     post:
       description: MCP endpoint for tool discovery and invocation.
@@ -4458,6 +4995,33 @@ paths:
       summary: List search provider metadata
       tags:
       - search-providers
+  /token-usage/all:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get token usage totals for all bots
+      tags:
+      - token-usage
+  /token-usage/daily:
+    get:
+      parameters:
+      - description: Number of days (default 30)
+        in: query
+        name: days
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get daily token usage series for all bots
+      tags:
+      - token-usage
   /users:
     get:
       description: List users

@@ -60,6 +60,26 @@ type Triggerer interface {
 type TriggerPayload struct {
 	HeartbeatID string `json:"heartbeat_id"`
 	Prompt      string `json:"prompt"`
-	Reason      string `json:"reason"` // "periodic" or event trigger name
+	Reason      string `json:"reason"` // "periodic", event trigger name, or "manual"
 	OwnerUserID string `json:"owner_user_id"`
 }
+
+// EvolutionReflectionPrompt is the default prompt used for self-evolution heartbeat.
+const EvolutionReflectionPrompt = `Perform your self-evolution reflection cycle:
+1. Re-read EXPERIMENTS.md, IDENTITY.md, SOUL.md, TOOLS.md
+2. Reflect on recent conversations — what went well, what was slow or brittle
+3. Record any new learnings at the top of EXPERIMENTS.md using the format:
+   ### [today's date] Title
+   **Goal**: ...
+   **Method**: ...
+   **Result**: ✅ Worked / ❌ Failed / ⚠️ Partial
+   **Takeaway**: ...
+4. If you discovered user preferences, update IDENTITY.md
+5. If you found better workflows, update TOOLS.md
+6. Summarize what you changed (or "no changes needed")`
+
+// DefaultEvolutionIntervalSeconds is the default interval for the evolution heartbeat (24 hours).
+const DefaultEvolutionIntervalSeconds = 86400
+
+// EvolutionPromptMarker is a prefix used to identify system-created evolution heartbeats.
+const EvolutionPromptMarker = "[evolution-reflection]"

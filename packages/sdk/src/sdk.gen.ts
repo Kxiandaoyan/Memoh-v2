@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { DeleteBotsByBotIdContainerData, DeleteBotsByBotIdContainerErrors, DeleteBotsByBotIdContainerResponses, DeleteBotsByBotIdContainerSkillsData, DeleteBotsByBotIdContainerSkillsErrors, DeleteBotsByBotIdContainerSkillsResponses, DeleteBotsByBotIdContainerSnapshotsBySnapshotNameData, DeleteBotsByBotIdContainerSnapshotsBySnapshotNameErrors, DeleteBotsByBotIdContainerSnapshotsBySnapshotNameResponses, DeleteBotsByBotIdMcpByIdData, DeleteBotsByBotIdMcpByIdErrors, DeleteBotsByBotIdMcpByIdResponses, DeleteBotsByBotIdMemoryByIdData, DeleteBotsByBotIdMemoryByIdErrors, DeleteBotsByBotIdMemoryByIdResponses, DeleteBotsByBotIdMemoryData, DeleteBotsByBotIdMemoryErrors, DeleteBotsByBotIdMemoryResponses, DeleteBotsByBotIdScheduleByIdData, DeleteBotsByBotIdScheduleByIdErrors, DeleteBotsByBotIdScheduleByIdResponses, DeleteBotsByBotIdSettingsData, DeleteBotsByBotIdSettingsErrors, DeleteBotsByBotIdSettingsResponses, DeleteBotsByBotIdSubagentsByIdData, DeleteBotsByBotIdSubagentsByIdErrors, DeleteBotsByBotIdSubagentsByIdResponses, DeleteBotsByIdData, DeleteBotsByIdErrors, DeleteBotsByIdMembersByUserIdData, DeleteBotsByIdMembersByUserIdErrors, DeleteBotsByIdMembersByUserIdResponses, DeleteBotsByIdResponses, DeleteModelsByIdData, DeleteModelsByIdErrors, DeleteModelsByIdResponses, DeleteModelsModelByModelIdData, DeleteModelsModelByModelIdErrors, DeleteModelsModelByModelIdResponses, DeleteProvidersByIdData, DeleteProvidersByIdErrors, DeleteProvidersByIdResponses, DeleteSearchProvidersByIdData, DeleteSearchProvidersByIdErrors, DeleteSearchProvidersByIdResponses, GetBotsByBotIdContainerData, GetBotsByBotIdContainerErrors, GetBotsByBotIdContainerResponses, GetBotsByBotIdContainerSkillsData, GetBotsByBotIdContainerSkillsErrors, GetBotsByBotIdContainerSkillsResponses, GetBotsByBotIdContainerSnapshotsData, GetBotsByBotIdContainerSnapshotsResponses, GetBotsByBotIdMcpByIdData, GetBotsByBotIdMcpByIdErrors, GetBotsByBotIdMcpByIdResponses, GetBotsByBotIdMcpData, GetBotsByBotIdMcpErrors, GetBotsByBotIdMcpExportData, GetBotsByBotIdMcpExportErrors, GetBotsByBotIdMcpExportResponses, GetBotsByBotIdMcpResponses, GetBotsByBotIdMemoryData, GetBotsByBotIdMemoryErrors, GetBotsByBotIdMemoryResponses, GetBotsByBotIdMemoryUsageData, GetBotsByBotIdMemoryUsageErrors, GetBotsByBotIdMemoryUsageResponses, GetBotsByBotIdMessagesData, GetBotsByBotIdMessagesErrors, GetBotsByBotIdMessagesResponses, GetBotsByBotIdPromptsData, GetBotsByBotIdPromptsErrors, GetBotsByBotIdPromptsResponses, GetBotsByBotIdScheduleByIdData, GetBotsByBotIdScheduleByIdErrors, GetBotsByBotIdScheduleByIdResponses, GetBotsByBotIdScheduleData, GetBotsByBotIdScheduleErrors, GetBotsByBotIdScheduleResponses, GetBotsByBotIdSettingsData, GetBotsByBotIdSettingsErrors, GetBotsByBotIdSettingsResponses, GetBotsByBotIdSubagentsByIdContextData, GetBotsByBotIdSubagentsByIdContextErrors, GetBotsByBotIdSubagentsByIdContextResponses, GetBotsByBotIdSubagentsByIdData, GetBotsByBotIdSubagentsByIdErrors, GetBotsByBotIdSubagentsByIdResponses, GetBotsByBotIdSubagentsByIdSkillsData, GetBotsByBotIdSubagentsByIdSkillsErrors, GetBotsByBotIdSubagentsByIdSkillsResponses, GetBotsByBotIdSubagentsData, GetBotsByBotIdSubagentsErrors, GetBotsByBotIdSubagentsResponses, GetBotsByIdChannelByPlatformData, GetBotsByIdChannelByPlatformErrors, GetBotsByIdChannelByPlatformResponses, GetBotsByIdChecksData, GetBotsByIdChecksErrors, GetBotsByIdChecksKeysData, GetBotsByIdChecksKeysResponses, GetBotsByIdChecksResponses, GetBotsByIdChecksRunByKeyData, GetBotsByIdChecksRunByKeyResponses, GetBotsByIdData, GetBotsByIdErrors, GetBotsByIdMembersData, GetBotsByIdMembersErrors, GetBotsByIdMembersResponses, GetBotsByIdResponses, GetBotsData, GetBotsErrors, GetBotsResponses, GetChannelsByPlatformData, GetChannelsByPlatformErrors, GetChannelsByPlatformResponses, GetChannelsData, GetChannelsErrors, GetChannelsResponses, GetModelsByIdData, GetModelsByIdErrors, GetModelsByIdResponses, GetModelsCountData, GetModelsCountErrors, GetModelsCountResponses, GetModelsData, GetModelsErrors, GetModelsModelByModelIdData, GetModelsModelByModelIdErrors, GetModelsModelByModelIdResponses, GetModelsResponses, GetProvidersByIdData, GetProvidersByIdErrors, GetProvidersByIdModelsData, GetProvidersByIdModelsErrors, GetProvidersByIdModelsResponses, GetProvidersByIdResponses, GetProvidersCountData, GetProvidersCountErrors, GetProvidersCountResponses, GetProvidersData, GetProvidersErrors, GetProvidersNameByNameData, GetProvidersNameByNameErrors, GetProvidersNameByNameResponses, GetProvidersResponses, GetSearchProvidersByIdData, GetSearchProvidersByIdErrors, GetSearchProvidersByIdResponses, GetSearchProvidersData, GetSearchProvidersErrors, GetSearchProvidersMetaData, GetSearchProvidersMetaResponses, GetSearchProvidersResponses, GetUsersByIdData, GetUsersByIdErrors, GetUsersByIdResponses, GetUsersData, GetUsersErrors, GetUsersMeChannelsByPlatformData, GetUsersMeChannelsByPlatformErrors, GetUsersMeChannelsByPlatformResponses, GetUsersMeData, GetUsersMeErrors, GetUsersMeIdentitiesData, GetUsersMeIdentitiesErrors, GetUsersMeIdentitiesResponses, GetUsersMeResponses, GetUsersResponses, PostAuthLoginData, PostAuthLoginErrors, PostAuthLoginResponses, PostBotsByBotIdContainerData, PostBotsByBotIdContainerErrors, PostBotsByBotIdContainerResponses, PostBotsByBotIdContainerSkillsData, PostBotsByBotIdContainerSkillsErrors, PostBotsByBotIdContainerSkillsResponses, PostBotsByBotIdContainerSnapshotsData, PostBotsByBotIdContainerSnapshotsErrors, PostBotsByBotIdContainerSnapshotsResponses, PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreData, PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreErrors, PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreResponses, PostBotsByBotIdContainerStartData, PostBotsByBotIdContainerStartErrors, PostBotsByBotIdContainerStartResponses, PostBotsByBotIdContainerStopData, PostBotsByBotIdContainerStopErrors, PostBotsByBotIdContainerStopResponses, PostBotsByBotIdMcpData, PostBotsByBotIdMcpErrors, PostBotsByBotIdMcpOpsBatchDeleteData, PostBotsByBotIdMcpOpsBatchDeleteErrors, PostBotsByBotIdMcpOpsBatchDeleteResponses, PostBotsByBotIdMcpResponses, PostBotsByBotIdMcpStdioByConnectionIdData, PostBotsByBotIdMcpStdioByConnectionIdErrors, PostBotsByBotIdMcpStdioByConnectionIdResponses, PostBotsByBotIdMcpStdioData, PostBotsByBotIdMcpStdioErrors, PostBotsByBotIdMcpStdioResponses, PostBotsByBotIdMemoryCompactData, PostBotsByBotIdMemoryCompactErrors, PostBotsByBotIdMemoryCompactResponses, PostBotsByBotIdMemoryData, PostBotsByBotIdMemoryErrors, PostBotsByBotIdMemoryRebuildData, PostBotsByBotIdMemoryRebuildErrors, PostBotsByBotIdMemoryRebuildResponses, PostBotsByBotIdMemoryResponses, PostBotsByBotIdMemorySearchData, PostBotsByBotIdMemorySearchErrors, PostBotsByBotIdMemorySearchResponses, PostBotsByBotIdScheduleData, PostBotsByBotIdScheduleErrors, PostBotsByBotIdScheduleResponses, PostBotsByBotIdSettingsData, PostBotsByBotIdSettingsErrors, PostBotsByBotIdSettingsResponses, PostBotsByBotIdSubagentsByIdSkillsData, PostBotsByBotIdSubagentsByIdSkillsErrors, PostBotsByBotIdSubagentsByIdSkillsResponses, PostBotsByBotIdSubagentsData, PostBotsByBotIdSubagentsErrors, PostBotsByBotIdSubagentsResponses, PostBotsByBotIdToolsData, PostBotsByBotIdToolsErrors, PostBotsByBotIdToolsResponses, PostBotsByIdChannelByPlatformSendChatData, PostBotsByIdChannelByPlatformSendChatErrors, PostBotsByIdChannelByPlatformSendChatResponses, PostBotsByIdChannelByPlatformSendData, PostBotsByIdChannelByPlatformSendErrors, PostBotsByIdChannelByPlatformSendResponses, PostBotsData, PostBotsErrors, PostBotsResponses, PostEmbeddingsData, PostEmbeddingsErrors, PostEmbeddingsResponses, PostModelsData, PostModelsErrors, PostModelsResponses, PostProvidersData, PostProvidersErrors, PostProvidersResponses, PostSearchProvidersData, PostSearchProvidersErrors, PostSearchProvidersResponses, PostUsersData, PostUsersErrors, PostUsersResponses, PutBotsByBotIdMcpByIdData, PutBotsByBotIdMcpByIdErrors, PutBotsByBotIdMcpByIdResponses, PutBotsByBotIdMcpImportData, PutBotsByBotIdMcpImportErrors, PutBotsByBotIdMcpImportResponses, PutBotsByBotIdPromptsData, PutBotsByBotIdPromptsErrors, PutBotsByBotIdPromptsResponses, PutBotsByBotIdScheduleByIdData, PutBotsByBotIdScheduleByIdErrors, PutBotsByBotIdScheduleByIdResponses, PutBotsByBotIdSettingsData, PutBotsByBotIdSettingsErrors, PutBotsByBotIdSettingsResponses, PutBotsByBotIdSubagentsByIdContextData, PutBotsByBotIdSubagentsByIdContextErrors, PutBotsByBotIdSubagentsByIdContextResponses, PutBotsByBotIdSubagentsByIdData, PutBotsByBotIdSubagentsByIdErrors, PutBotsByBotIdSubagentsByIdResponses, PutBotsByBotIdSubagentsByIdSkillsData, PutBotsByBotIdSubagentsByIdSkillsErrors, PutBotsByBotIdSubagentsByIdSkillsResponses, PutBotsByIdChannelByPlatformData, PutBotsByIdChannelByPlatformErrors, PutBotsByIdChannelByPlatformResponses, PutBotsByIdData, PutBotsByIdErrors, PutBotsByIdMembersData, PutBotsByIdMembersErrors, PutBotsByIdMembersResponses, PutBotsByIdOwnerData, PutBotsByIdOwnerErrors, PutBotsByIdOwnerResponses, PutBotsByIdResponses, PutModelsByIdData, PutModelsByIdErrors, PutModelsByIdResponses, PutModelsModelByModelIdData, PutModelsModelByModelIdErrors, PutModelsModelByModelIdResponses, PutProvidersByIdData, PutProvidersByIdErrors, PutProvidersByIdResponses, PutSearchProvidersByIdData, PutSearchProvidersByIdErrors, PutSearchProvidersByIdResponses, PutUsersByIdData, PutUsersByIdErrors, PutUsersByIdPasswordData, PutUsersByIdPasswordErrors, PutUsersByIdPasswordResponses, PutUsersByIdResponses, PutUsersMeChannelsByPlatformData, PutUsersMeChannelsByPlatformErrors, PutUsersMeChannelsByPlatformResponses, PutUsersMeData, PutUsersMeErrors, PutUsersMePasswordData, PutUsersMePasswordErrors, PutUsersMePasswordResponses, PutUsersMeResponses } from './types.gen';
+import type { DeleteBotsByBotIdContainerData, DeleteBotsByBotIdContainerErrors, DeleteBotsByBotIdContainerResponses, DeleteBotsByBotIdContainerSkillsData, DeleteBotsByBotIdContainerSkillsErrors, DeleteBotsByBotIdContainerSkillsResponses, DeleteBotsByBotIdContainerSnapshotsBySnapshotNameData, DeleteBotsByBotIdContainerSnapshotsBySnapshotNameErrors, DeleteBotsByBotIdContainerSnapshotsBySnapshotNameResponses, DeleteBotsByBotIdFilesByFilenameData, DeleteBotsByBotIdFilesByFilenameErrors, DeleteBotsByBotIdFilesByFilenameResponses, DeleteBotsByBotIdHeartbeatByIdData, DeleteBotsByBotIdHeartbeatByIdErrors, DeleteBotsByBotIdHeartbeatByIdResponses, DeleteBotsByBotIdMcpByIdData, DeleteBotsByBotIdMcpByIdErrors, DeleteBotsByBotIdMcpByIdResponses, DeleteBotsByBotIdMemoryByIdData, DeleteBotsByBotIdMemoryByIdErrors, DeleteBotsByBotIdMemoryByIdResponses, DeleteBotsByBotIdMemoryData, DeleteBotsByBotIdMemoryErrors, DeleteBotsByBotIdMemoryResponses, DeleteBotsByBotIdScheduleByIdData, DeleteBotsByBotIdScheduleByIdErrors, DeleteBotsByBotIdScheduleByIdResponses, DeleteBotsByBotIdSettingsData, DeleteBotsByBotIdSettingsErrors, DeleteBotsByBotIdSettingsResponses, DeleteBotsByBotIdSubagentsByIdData, DeleteBotsByBotIdSubagentsByIdErrors, DeleteBotsByBotIdSubagentsByIdResponses, DeleteBotsByIdData, DeleteBotsByIdErrors, DeleteBotsByIdMembersByUserIdData, DeleteBotsByIdMembersByUserIdErrors, DeleteBotsByIdMembersByUserIdResponses, DeleteBotsByIdResponses, DeleteModelsByIdData, DeleteModelsByIdErrors, DeleteModelsByIdResponses, DeleteModelsModelByModelIdData, DeleteModelsModelByModelIdErrors, DeleteModelsModelByModelIdResponses, DeleteProvidersByIdData, DeleteProvidersByIdErrors, DeleteProvidersByIdResponses, DeleteSearchProvidersByIdData, DeleteSearchProvidersByIdErrors, DeleteSearchProvidersByIdResponses, GetBotsByBotIdContainerData, GetBotsByBotIdContainerErrors, GetBotsByBotIdContainerResponses, GetBotsByBotIdContainerSkillsData, GetBotsByBotIdContainerSkillsErrors, GetBotsByBotIdContainerSkillsResponses, GetBotsByBotIdContainerSnapshotsData, GetBotsByBotIdContainerSnapshotsResponses, GetBotsByBotIdFilesByFilenameData, GetBotsByBotIdFilesByFilenameErrors, GetBotsByBotIdFilesByFilenameResponses, GetBotsByBotIdFilesData, GetBotsByBotIdFilesErrors, GetBotsByBotIdFilesResponses, GetBotsByBotIdHeartbeatByIdData, GetBotsByBotIdHeartbeatByIdErrors, GetBotsByBotIdHeartbeatByIdResponses, GetBotsByBotIdHeartbeatData, GetBotsByBotIdHeartbeatErrors, GetBotsByBotIdHeartbeatResponses, GetBotsByBotIdMcpByIdData, GetBotsByBotIdMcpByIdErrors, GetBotsByBotIdMcpByIdResponses, GetBotsByBotIdMcpData, GetBotsByBotIdMcpErrors, GetBotsByBotIdMcpExportData, GetBotsByBotIdMcpExportErrors, GetBotsByBotIdMcpExportResponses, GetBotsByBotIdMcpResponses, GetBotsByBotIdMemoryData, GetBotsByBotIdMemoryErrors, GetBotsByBotIdMemoryResponses, GetBotsByBotIdMemoryUsageData, GetBotsByBotIdMemoryUsageErrors, GetBotsByBotIdMemoryUsageResponses, GetBotsByBotIdMessagesData, GetBotsByBotIdMessagesErrors, GetBotsByBotIdMessagesResponses, GetBotsByBotIdPromptsData, GetBotsByBotIdPromptsErrors, GetBotsByBotIdPromptsResponses, GetBotsByBotIdScheduleByIdData, GetBotsByBotIdScheduleByIdErrors, GetBotsByBotIdScheduleByIdResponses, GetBotsByBotIdScheduleData, GetBotsByBotIdScheduleErrors, GetBotsByBotIdScheduleResponses, GetBotsByBotIdSettingsData, GetBotsByBotIdSettingsErrors, GetBotsByBotIdSettingsResponses, GetBotsByBotIdSubagentsByIdContextData, GetBotsByBotIdSubagentsByIdContextErrors, GetBotsByBotIdSubagentsByIdContextResponses, GetBotsByBotIdSubagentsByIdData, GetBotsByBotIdSubagentsByIdErrors, GetBotsByBotIdSubagentsByIdResponses, GetBotsByBotIdSubagentsByIdSkillsData, GetBotsByBotIdSubagentsByIdSkillsErrors, GetBotsByBotIdSubagentsByIdSkillsResponses, GetBotsByBotIdSubagentsData, GetBotsByBotIdSubagentsErrors, GetBotsByBotIdSubagentsResponses, GetBotsByBotIdTokenUsageDailyData, GetBotsByBotIdTokenUsageDailyResponses, GetBotsByBotIdTokenUsageTotalData, GetBotsByBotIdTokenUsageTotalResponses, GetBotsByIdChannelByPlatformData, GetBotsByIdChannelByPlatformErrors, GetBotsByIdChannelByPlatformResponses, GetBotsByIdChecksData, GetBotsByIdChecksErrors, GetBotsByIdChecksKeysData, GetBotsByIdChecksKeysResponses, GetBotsByIdChecksResponses, GetBotsByIdChecksRunByKeyData, GetBotsByIdChecksRunByKeyResponses, GetBotsByIdData, GetBotsByIdErrors, GetBotsByIdMembersData, GetBotsByIdMembersErrors, GetBotsByIdMembersResponses, GetBotsByIdResponses, GetBotsData, GetBotsErrors, GetBotsResponses, GetChannelsByPlatformData, GetChannelsByPlatformErrors, GetChannelsByPlatformResponses, GetChannelsData, GetChannelsErrors, GetChannelsResponses, GetModelsByIdData, GetModelsByIdErrors, GetModelsByIdResponses, GetModelsCountData, GetModelsCountErrors, GetModelsCountResponses, GetModelsData, GetModelsErrors, GetModelsModelByModelIdData, GetModelsModelByModelIdErrors, GetModelsModelByModelIdResponses, GetModelsResponses, GetProvidersByIdData, GetProvidersByIdErrors, GetProvidersByIdModelsData, GetProvidersByIdModelsErrors, GetProvidersByIdModelsResponses, GetProvidersByIdResponses, GetProvidersCountData, GetProvidersCountErrors, GetProvidersCountResponses, GetProvidersData, GetProvidersErrors, GetProvidersNameByNameData, GetProvidersNameByNameErrors, GetProvidersNameByNameResponses, GetProvidersResponses, GetSearchProvidersByIdData, GetSearchProvidersByIdErrors, GetSearchProvidersByIdResponses, GetSearchProvidersData, GetSearchProvidersErrors, GetSearchProvidersMetaData, GetSearchProvidersMetaResponses, GetSearchProvidersResponses, GetTokenUsageAllData, GetTokenUsageAllResponses, GetTokenUsageDailyData, GetTokenUsageDailyResponses, GetUsersByIdData, GetUsersByIdErrors, GetUsersByIdResponses, GetUsersData, GetUsersErrors, GetUsersMeChannelsByPlatformData, GetUsersMeChannelsByPlatformErrors, GetUsersMeChannelsByPlatformResponses, GetUsersMeData, GetUsersMeErrors, GetUsersMeIdentitiesData, GetUsersMeIdentitiesErrors, GetUsersMeIdentitiesResponses, GetUsersMeResponses, GetUsersResponses, PostAuthLoginData, PostAuthLoginErrors, PostAuthLoginResponses, PostBotsByBotIdContainerData, PostBotsByBotIdContainerErrors, PostBotsByBotIdContainerResponses, PostBotsByBotIdContainerSkillsData, PostBotsByBotIdContainerSkillsErrors, PostBotsByBotIdContainerSkillsResponses, PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreData, PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreErrors, PostBotsByBotIdContainerSnapshotsBySnapshotNameRestoreResponses, PostBotsByBotIdContainerSnapshotsData, PostBotsByBotIdContainerSnapshotsErrors, PostBotsByBotIdContainerSnapshotsResponses, PostBotsByBotIdContainerStartData, PostBotsByBotIdContainerStartErrors, PostBotsByBotIdContainerStartResponses, PostBotsByBotIdContainerStopData, PostBotsByBotIdContainerStopErrors, PostBotsByBotIdContainerStopResponses, PostBotsByBotIdHeartbeatByIdTriggerData, PostBotsByBotIdHeartbeatByIdTriggerErrors, PostBotsByBotIdHeartbeatByIdTriggerResponses, PostBotsByBotIdHeartbeatData, PostBotsByBotIdHeartbeatErrors, PostBotsByBotIdHeartbeatResponses, PostBotsByBotIdMcpData, PostBotsByBotIdMcpErrors, PostBotsByBotIdMcpOpsBatchDeleteData, PostBotsByBotIdMcpOpsBatchDeleteErrors, PostBotsByBotIdMcpOpsBatchDeleteResponses, PostBotsByBotIdMcpResponses, PostBotsByBotIdMcpStdioByConnectionIdData, PostBotsByBotIdMcpStdioByConnectionIdErrors, PostBotsByBotIdMcpStdioByConnectionIdResponses, PostBotsByBotIdMcpStdioData, PostBotsByBotIdMcpStdioErrors, PostBotsByBotIdMcpStdioResponses, PostBotsByBotIdMemoryCompactData, PostBotsByBotIdMemoryCompactErrors, PostBotsByBotIdMemoryCompactResponses, PostBotsByBotIdMemoryData, PostBotsByBotIdMemoryErrors, PostBotsByBotIdMemoryRebuildData, PostBotsByBotIdMemoryRebuildErrors, PostBotsByBotIdMemoryRebuildResponses, PostBotsByBotIdMemoryResponses, PostBotsByBotIdMemorySearchData, PostBotsByBotIdMemorySearchErrors, PostBotsByBotIdMemorySearchResponses, PostBotsByBotIdScheduleData, PostBotsByBotIdScheduleErrors, PostBotsByBotIdScheduleResponses, PostBotsByBotIdSettingsData, PostBotsByBotIdSettingsErrors, PostBotsByBotIdSettingsResponses, PostBotsByBotIdSubagentsByIdSkillsData, PostBotsByBotIdSubagentsByIdSkillsErrors, PostBotsByBotIdSubagentsByIdSkillsResponses, PostBotsByBotIdSubagentsData, PostBotsByBotIdSubagentsErrors, PostBotsByBotIdSubagentsResponses, PostBotsByBotIdToolsData, PostBotsByBotIdToolsErrors, PostBotsByBotIdToolsResponses, PostBotsByIdChannelByPlatformSendChatData, PostBotsByIdChannelByPlatformSendChatErrors, PostBotsByIdChannelByPlatformSendChatResponses, PostBotsByIdChannelByPlatformSendData, PostBotsByIdChannelByPlatformSendErrors, PostBotsByIdChannelByPlatformSendResponses, PostBotsData, PostBotsErrors, PostBotsResponses, PostEmbeddingsData, PostEmbeddingsErrors, PostEmbeddingsResponses, PostModelsData, PostModelsErrors, PostModelsResponses, PostProvidersData, PostProvidersErrors, PostProvidersResponses, PostSearchProvidersData, PostSearchProvidersErrors, PostSearchProvidersResponses, PostUsersData, PostUsersErrors, PostUsersResponses, PutBotsByBotIdFilesByFilenameData, PutBotsByBotIdFilesByFilenameErrors, PutBotsByBotIdFilesByFilenameResponses, PutBotsByBotIdHeartbeatByIdData, PutBotsByBotIdHeartbeatByIdErrors, PutBotsByBotIdHeartbeatByIdResponses, PutBotsByBotIdMcpByIdData, PutBotsByBotIdMcpByIdErrors, PutBotsByBotIdMcpByIdResponses, PutBotsByBotIdMcpImportData, PutBotsByBotIdMcpImportErrors, PutBotsByBotIdMcpImportResponses, PutBotsByBotIdPromptsData, PutBotsByBotIdPromptsErrors, PutBotsByBotIdPromptsResponses, PutBotsByBotIdScheduleByIdData, PutBotsByBotIdScheduleByIdErrors, PutBotsByBotIdScheduleByIdResponses, PutBotsByBotIdSettingsData, PutBotsByBotIdSettingsErrors, PutBotsByBotIdSettingsResponses, PutBotsByBotIdSubagentsByIdContextData, PutBotsByBotIdSubagentsByIdContextErrors, PutBotsByBotIdSubagentsByIdContextResponses, PutBotsByBotIdSubagentsByIdData, PutBotsByBotIdSubagentsByIdErrors, PutBotsByBotIdSubagentsByIdResponses, PutBotsByBotIdSubagentsByIdSkillsData, PutBotsByBotIdSubagentsByIdSkillsErrors, PutBotsByBotIdSubagentsByIdSkillsResponses, PutBotsByIdChannelByPlatformData, PutBotsByIdChannelByPlatformErrors, PutBotsByIdChannelByPlatformResponses, PutBotsByIdData, PutBotsByIdErrors, PutBotsByIdMembersData, PutBotsByIdMembersErrors, PutBotsByIdMembersResponses, PutBotsByIdOwnerData, PutBotsByIdOwnerErrors, PutBotsByIdOwnerResponses, PutBotsByIdResponses, PutModelsByIdData, PutModelsByIdErrors, PutModelsByIdResponses, PutModelsModelByModelIdData, PutModelsModelByModelIdErrors, PutModelsModelByModelIdResponses, PutProvidersByIdData, PutProvidersByIdErrors, PutProvidersByIdResponses, PutSearchProvidersByIdData, PutSearchProvidersByIdErrors, PutSearchProvidersByIdResponses, PutUsersByIdData, PutUsersByIdErrors, PutUsersByIdPasswordData, PutUsersByIdPasswordErrors, PutUsersByIdPasswordResponses, PutUsersByIdResponses, PutUsersMeChannelsByPlatformData, PutUsersMeChannelsByPlatformErrors, PutUsersMeChannelsByPlatformResponses, PutUsersMeData, PutUsersMeErrors, PutUsersMePasswordData, PutUsersMePasswordErrors, PutUsersMePasswordResponses, PutUsersMeResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -140,6 +140,97 @@ export const postBotsByBotIdContainerStart = <ThrowOnError extends boolean = fal
  * Stop container task for bot
  */
 export const postBotsByBotIdContainerStop = <ThrowOnError extends boolean = false>(options: Options<PostBotsByBotIdContainerStopData, ThrowOnError>) => (options.client ?? client).post<PostBotsByBotIdContainerStopResponses, PostBotsByBotIdContainerStopErrors, ThrowOnError>({ url: '/bots/{bot_id}/container/stop', ...options });
+
+/**
+ * List text files in bot data directory
+ *
+ * Returns a list of text/markdown files in the bot's data directory (non-recursive, top-level only)
+ */
+export const getBotsByBotIdFiles = <ThrowOnError extends boolean = false>(options: Options<GetBotsByBotIdFilesData, ThrowOnError>) => (options.client ?? client).get<GetBotsByBotIdFilesResponses, GetBotsByBotIdFilesErrors, ThrowOnError>({ url: '/bots/{bot_id}/files', ...options });
+
+/**
+ * Delete a text file from bot data directory
+ *
+ * Removes the specified text/markdown file from the bot's data directory
+ */
+export const deleteBotsByBotIdFilesByFilename = <ThrowOnError extends boolean = false>(options: Options<DeleteBotsByBotIdFilesByFilenameData, ThrowOnError>) => (options.client ?? client).delete<DeleteBotsByBotIdFilesByFilenameResponses, DeleteBotsByBotIdFilesByFilenameErrors, ThrowOnError>({ url: '/bots/{bot_id}/files/{filename}', ...options });
+
+/**
+ * Read a text file from bot data directory
+ *
+ * Returns the content of the specified text/markdown file
+ */
+export const getBotsByBotIdFilesByFilename = <ThrowOnError extends boolean = false>(options: Options<GetBotsByBotIdFilesByFilenameData, ThrowOnError>) => (options.client ?? client).get<GetBotsByBotIdFilesByFilenameResponses, GetBotsByBotIdFilesByFilenameErrors, ThrowOnError>({ url: '/bots/{bot_id}/files/{filename}', ...options });
+
+/**
+ * Write/update a text file in bot data directory
+ *
+ * Creates or updates the specified text/markdown file with the given content
+ */
+export const putBotsByBotIdFilesByFilename = <ThrowOnError extends boolean = false>(options: Options<PutBotsByBotIdFilesByFilenameData, ThrowOnError>) => (options.client ?? client).put<PutBotsByBotIdFilesByFilenameResponses, PutBotsByBotIdFilesByFilenameErrors, ThrowOnError>({
+    url: '/bots/{bot_id}/files/{filename}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List heartbeat configs
+ *
+ * List heartbeat configurations for a bot
+ */
+export const getBotsByBotIdHeartbeat = <ThrowOnError extends boolean = false>(options?: Options<GetBotsByBotIdHeartbeatData, ThrowOnError>) => (options?.client ?? client).get<GetBotsByBotIdHeartbeatResponses, GetBotsByBotIdHeartbeatErrors, ThrowOnError>({ url: '/bots/{bot_id}/heartbeat', ...options });
+
+/**
+ * Create heartbeat config
+ *
+ * Create a heartbeat configuration for a bot
+ */
+export const postBotsByBotIdHeartbeat = <ThrowOnError extends boolean = false>(options: Options<PostBotsByBotIdHeartbeatData, ThrowOnError>) => (options.client ?? client).post<PostBotsByBotIdHeartbeatResponses, PostBotsByBotIdHeartbeatErrors, ThrowOnError>({
+    url: '/bots/{bot_id}/heartbeat',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete heartbeat config
+ *
+ * Delete a heartbeat configuration by ID
+ */
+export const deleteBotsByBotIdHeartbeatById = <ThrowOnError extends boolean = false>(options: Options<DeleteBotsByBotIdHeartbeatByIdData, ThrowOnError>) => (options.client ?? client).delete<DeleteBotsByBotIdHeartbeatByIdResponses, DeleteBotsByBotIdHeartbeatByIdErrors, ThrowOnError>({ url: '/bots/{bot_id}/heartbeat/{id}', ...options });
+
+/**
+ * Get heartbeat config
+ *
+ * Get a heartbeat configuration by ID
+ */
+export const getBotsByBotIdHeartbeatById = <ThrowOnError extends boolean = false>(options: Options<GetBotsByBotIdHeartbeatByIdData, ThrowOnError>) => (options.client ?? client).get<GetBotsByBotIdHeartbeatByIdResponses, GetBotsByBotIdHeartbeatByIdErrors, ThrowOnError>({ url: '/bots/{bot_id}/heartbeat/{id}', ...options });
+
+/**
+ * Update heartbeat config
+ *
+ * Update a heartbeat configuration by ID
+ */
+export const putBotsByBotIdHeartbeatById = <ThrowOnError extends boolean = false>(options: Options<PutBotsByBotIdHeartbeatByIdData, ThrowOnError>) => (options.client ?? client).put<PutBotsByBotIdHeartbeatByIdResponses, PutBotsByBotIdHeartbeatByIdErrors, ThrowOnError>({
+    url: '/bots/{bot_id}/heartbeat/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Trigger heartbeat manually
+ *
+ * Manually trigger a heartbeat configuration to fire immediately
+ */
+export const postBotsByBotIdHeartbeatByIdTrigger = <ThrowOnError extends boolean = false>(options: Options<PostBotsByBotIdHeartbeatByIdTriggerData, ThrowOnError>) => (options.client ?? client).post<PostBotsByBotIdHeartbeatByIdTriggerResponses, PostBotsByBotIdHeartbeatByIdTriggerErrors, ThrowOnError>({ url: '/bots/{bot_id}/heartbeat/{id}/trigger', ...options });
 
 /**
  * List MCP connections
@@ -569,6 +660,16 @@ export const putBotsByBotIdSubagentsByIdSkills = <ThrowOnError extends boolean =
 });
 
 /**
+ * Get daily token usage series for a bot
+ */
+export const getBotsByBotIdTokenUsageDaily = <ThrowOnError extends boolean = false>(options: Options<GetBotsByBotIdTokenUsageDailyData, ThrowOnError>) => (options.client ?? client).get<GetBotsByBotIdTokenUsageDailyResponses, unknown, ThrowOnError>({ url: '/bots/{bot_id}/token-usage/daily', ...options });
+
+/**
+ * Get total token usage for a bot
+ */
+export const getBotsByBotIdTokenUsageTotal = <ThrowOnError extends boolean = false>(options: Options<GetBotsByBotIdTokenUsageTotalData, ThrowOnError>) => (options.client ?? client).get<GetBotsByBotIdTokenUsageTotalResponses, unknown, ThrowOnError>({ url: '/bots/{bot_id}/token-usage/total', ...options });
+
+/**
  * Unified MCP tools gateway
  *
  * MCP endpoint for tool discovery and invocation.
@@ -959,6 +1060,16 @@ export const putSearchProvidersById = <ThrowOnError extends boolean = false>(opt
         ...options.headers
     }
 });
+
+/**
+ * Get token usage totals for all bots
+ */
+export const getTokenUsageAll = <ThrowOnError extends boolean = false>(options?: Options<GetTokenUsageAllData, ThrowOnError>) => (options?.client ?? client).get<GetTokenUsageAllResponses, unknown, ThrowOnError>({ url: '/token-usage/all', ...options });
+
+/**
+ * Get daily token usage series for all bots
+ */
+export const getTokenUsageDaily = <ThrowOnError extends boolean = false>(options?: Options<GetTokenUsageDailyData, ThrowOnError>) => (options?.client ?? client).get<GetTokenUsageDailyResponses, unknown, ThrowOnError>({ url: '/token-usage/daily', ...options });
 
 /**
  * List users (admin only)

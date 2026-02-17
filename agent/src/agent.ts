@@ -241,6 +241,21 @@ export const createAgent = (
       })
   }
 
+  // Normalize AI SDK v6 usage fields to the legacy names expected by the
+  // Go backend (gatewayUsage) and the web frontend (promptTokens, etc.).
+  const normalizeUsage = (usage: LanguageModelUsage | null) => {
+    if (!usage) return { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    const input = (usage as Record<string, unknown>).inputTokens as number | undefined
+    const output = (usage as Record<string, unknown>).outputTokens as number | undefined
+    const prompt = (usage as Record<string, unknown>).promptTokens as number | undefined
+    const completion = (usage as Record<string, unknown>).completionTokens as number | undefined
+    return {
+      promptTokens: prompt ?? input ?? 0,
+      completionTokens: completion ?? output ?? 0,
+      totalTokens: usage.totalTokens ?? 0,
+    }
+  }
+
   const ask = async (input: AgentInput) => {
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
@@ -268,7 +283,7 @@ export const createAgent = (
     return {
       messages: strippedMessages,
       reasoning: reasoning.map((part) => part.text),
-      usage,
+      usage: normalizeUsage(usage),
       text: cleanedText,
       attachments: allAttachments,
       skills: getEnabledSkills(),
@@ -309,7 +324,7 @@ export const createAgent = (
     return {
       messages: [userPrompt, ...response.messages],
       reasoning: reasoning.map((part) => part.text),
-      usage,
+      usage: normalizeUsage(usage),
       text,
       skills: getEnabledSkills(),
     }
@@ -345,7 +360,7 @@ export const createAgent = (
     return {
       messages: [scheduleMessage, ...response.messages],
       reasoning: reasoning.map((part) => part.text),
-      usage,
+      usage: normalizeUsage(usage),
       text,
       skills: getEnabledSkills(),
     }
@@ -520,7 +535,7 @@ export const createAgent = (
       type: 'agent_end',
       messages: strippedMessages,
       reasoning: result.reasoning,
-      usage: result.usage!,
+      usage: normalizeUsage(result.usage),
       skills: getEnabledSkills(),
     }
   }
