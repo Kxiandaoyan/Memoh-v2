@@ -334,7 +334,15 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		messages = append([]conversation.ModelMessage{summaryMsg}, messages...)
 	}
 
+	memSearchStart := time.Now()
 	if memoryMsg := r.loadMemoryContextMessage(ctx, req); memoryMsg != nil {
+		// Log memory searched
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepMemorySearched, processlog.LevelInfo, "Memory searched",
+			map[string]any{
+				"query":    truncate(req.Query, 200),
+				"duration": time.Since(memSearchStart).Milliseconds(),
+			}, time.Since(memSearchStart))
 		// Log memory loaded
 		contentStr := string(memoryMsg.Content)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
@@ -343,6 +351,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 				"memory_content": truncate(contentStr, 500),
 			}, 0)
 		messages = append(messages, *memoryMsg)
+	} else {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepMemorySearched, processlog.LevelInfo, "Memory searched (no results)",
+			map[string]any{
+				"query":    truncate(req.Query, 200),
+				"duration": time.Since(memSearchStart).Milliseconds(),
+			}, time.Since(memSearchStart))
 	}
 	messages = append(messages, req.Messages...)
 	messages = sanitizeMessages(messages)
@@ -434,6 +449,18 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		AllowSelfEvolution: allowSelfEvolution,
 	}
 
+	// Log prompt built
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepPromptBuilt, processlog.LevelInfo, "Prompt built",
+		map[string]any{
+			"model":         chatModel.ModelID,
+			"message_count": len(messages),
+			"has_identity":  botIdentity != "",
+			"has_soul":      botSoul != "",
+			"has_task":      botTask != "",
+			"skills_count":  len(usableSkills),
+		}, 0)
+
 	return resolvedContext{payload: payload, model: chatModel, provider: provider, traceID: traceID}, nil
 }
 
@@ -490,6 +517,19 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 		return conversation.ChatResponse{}, err
 	}
 	r.recordTokenUsage(ctx, req.BotID, resp.Usage, rc.model.ModelID, "chat")
+
+	// Log response sent
+	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+		processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
+		map[string]any{
+			"message_count": len(resp.Messages),
+		}, 0)
+
+	// Log memory stored (async in storeRound)
+	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+		processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
+		nil, 0)
+
 	return conversation.ChatResponse{
 		Messages: resp.Messages,
 		Skills:   resp.Skills,
@@ -693,6 +733,14 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			return
 		}
 
+		// Log LLM request sent (stream)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+			processlog.StepLLMRequestSent, processlog.LevelInfo, "LLM request sent (stream)",
+			map[string]any{
+				"model":         rc.model.ModelID,
+				"message_count": len(rc.payload.Messages),
+			}, 0)
+
 		// Log stream started
 		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 			processlog.StepStreamStarted, processlog.LevelInfo, "Stream started",
@@ -728,6 +776,12 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			} else {
 				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 					processlog.StepStreamCompleted, processlog.LevelInfo, "Stream completed",
+					nil, 0)
+				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+					processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
+					nil, 0)
+				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+					processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
 					nil, 0)
 			}
 			close(streamCompleteCh)

@@ -213,6 +213,11 @@ func (r *IdentityResolver) Resolve(ctx context.Context, cfg channel.ChannelConfi
 			return state, err
 		}
 		if strings.EqualFold(strings.TrimSpace(botType), "personal") {
+			// Personal bots only work in direct (private) conversations.
+			if isGroupConversationType(msg.Conversation.Type) {
+				state.Decision = &IdentityDecision{Stop: true}
+				return state, nil
+			}
 			ownerUserID, err := r.policy.BotOwnerUserID(ctx, botID)
 			if err != nil {
 				return state, err
@@ -220,12 +225,9 @@ func (r *IdentityResolver) Resolve(ctx context.Context, cfg channel.ChannelConfi
 			isOwner := strings.TrimSpace(state.Identity.UserID) != "" &&
 				strings.TrimSpace(ownerUserID) == strings.TrimSpace(state.Identity.UserID)
 			if !isOwner {
-				// Ignore all non-owner messages for personal bots.
 				state.Decision = &IdentityDecision{Stop: true}
 				return state, nil
 			}
-			// Owner is authorized, but group trigger policy is still decided by
-			// shouldTriggerAssistantResponse in channel routing.
 			return state, nil
 		}
 	}

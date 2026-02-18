@@ -17,6 +17,7 @@ type Bot struct {
 	Status          string         `json:"status"`
 	CheckState      string         `json:"check_state"`
 	CheckIssueCount int32          `json:"check_issue_count"`
+	ChatModelID     string         `json:"chat_model_id,omitempty"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`

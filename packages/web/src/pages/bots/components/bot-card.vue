@@ -33,19 +33,28 @@
             {{ statusLabel }}
           </Badge>
         </div>
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
           <span
             v-if="bot.type"
-            class="truncate"
+            class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium"
+            :class="bot.type === 'personal'
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+              : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'"
           >
             {{ botTypeLabel }}
           </span>
           <span
-            v-if="bot.type && formattedDate"
-            class="text-muted-foreground/60"
-          >·</span>
-          <span v-if="formattedDate">
-            {{ $t('common.createdAt') }} {{ formattedDate }}
+            v-if="(bot as any).chat_model_id"
+            class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+          >
+            <FontAwesomeIcon :icon="['fas', 'microchip']" class="mr-1 size-2.5" />
+            {{ (bot as any).chat_model_id }}
+          </span>
+          <span
+            v-if="formattedDate"
+            class="text-muted-foreground"
+          >
+            {{ formattedDate }}
           </span>
         </div>
       </div>

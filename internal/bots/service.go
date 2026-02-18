@@ -274,7 +274,37 @@ func (s *Service) ListAccessible(ctx context.Context, channelIdentityID string) 
 	for _, item := range seen {
 		items = append(items, item)
 	}
+	s.attachChatModelIDs(ctx, items)
 	return items, nil
+}
+
+// attachChatModelIDs fills ChatModelID for each bot from bot_settings + models table.
+func (s *Service) attachChatModelIDs(ctx context.Context, items []Bot) {
+	if s.queries == nil {
+		return
+	}
+	for i := range items {
+		pgID, err := db.ParseUUID(items[i].ID)
+		if err != nil {
+			continue
+		}
+		row, err := s.queries.GetSettingsByBotID(ctx, pgID)
+		if err != nil {
+			continue
+		}
+		if !row.ChatModelID.Valid || row.ChatModelID.String == "" {
+			continue
+		}
+		modelUUID, err := db.ParseUUID(row.ChatModelID.String)
+		if err != nil {
+			continue
+		}
+		model, err := s.queries.GetModelByID(ctx, modelUUID)
+		if err != nil {
+			continue
+		}
+		items[i].ChatModelID = model.ModelID
+	}
 }
 
 // Update updates bot profile fields.
