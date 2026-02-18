@@ -216,6 +216,8 @@ const stepLabels: Record<string, string> = {
   prompt_built: t('logs.steps.prompt_built'),
   llm_request_sent: t('logs.steps.llm_request_sent'),
   llm_response_received: t('logs.steps.llm_response_received'),
+  tool_call_started: t('logs.steps.tool_call_started'),
+  tool_call_completed: t('logs.steps.tool_call_completed'),
   response_sent: t('logs.steps.response_sent'),
   memory_stored: t('logs.steps.memory_stored'),
   stream_started: t('logs.steps.stream_started'),

@@ -798,7 +798,9 @@
       "memory_stored": "Memory Stored",
       "stream_started": "Stream Started",
       "stream_completed": "Stream Completed",
-      "stream_error": "Stream Error"
+      "stream_error": "Stream Error",
+      "tool_call_started": "Tool Call Started",
+      "tool_call_completed": "Tool Call Completed"
     }
   }
 }

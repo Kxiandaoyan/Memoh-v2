@@ -28,6 +28,8 @@
 | prompt_built | 构建提示词 |
 | llm_request_sent | 发送 LLM 请求 |
 | llm_response_received | 收到 LLM 回复 |
+| tool_call_started | 工具调用开始（显示工具名和输入参数） |
+| tool_call_completed | 工具调用完成（显示工具名、执行结果和耗时） |
 | response_sent | 发送回复给用户 |
 | memory_stored | 存储新记忆 |
 | stream_started | 开始流式响应 |
@@ -71,11 +73,16 @@
 4. **prompt_built** — 将系统提示词、记忆、历史和用户消息组装成完整的 Prompt。
 5. **llm_request_sent** — 将 Prompt 发送给 AI 模型。
 6. **stream_started** — 开始接收模型的流式响应。
-7. **stream_completed** — 流式响应接收完毕。
-8. **response_sent** — 将最终回复发送给用户。
-9. **memory_stored** — 从本轮对话中提取并存储新记忆。
+7. **tool_call_started** — Bot 决定调用工具（如 `web_search`、`exec`），记录工具名和输入参数。
+8. **tool_call_completed** — 工具执行完毕，记录返回结果和耗时（毫秒）。
+9. **stream_completed** — 流式响应接收完毕。
+10. **response_sent** — 将最终回复发送给用户。
+11. **memory_stored** — 从本轮对话中提取并存储新记忆。
+
+一轮对话中可能包含多次工具调用（步骤 7-8 会重复出现），每次工具调用都会独立记录。
 
 如果某些步骤没有出现，可能的原因包括：
 - 未配置嵌入模型 → `memory_searched` 不会触发。
 - 记忆库为空 → `memory_loaded` 可能被跳过。
+- Bot 未调用工具 → `tool_call_started` / `tool_call_completed` 不会出现。
 - 使用非流式响应 → `stream_started` / `stream_completed` 被替换为 `llm_response_received`。

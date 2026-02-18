@@ -15,6 +15,8 @@ const (
 	StepPromptBuilt          ProcessLogStep = "prompt_built"
 	StepLLMRequestSent       ProcessLogStep = "llm_request_sent"
 	StepLLMResponseReceived  ProcessLogStep = "llm_response_received"
+	StepToolCallStarted      ProcessLogStep = "tool_call_started"
+	StepToolCallCompleted    ProcessLogStep = "tool_call_completed"
 	StepResponseSent         ProcessLogStep = "response_sent"
 	StepMemoryStored         ProcessLogStep = "memory_stored"
 	StepStreamStarted        ProcessLogStep = "stream_started"

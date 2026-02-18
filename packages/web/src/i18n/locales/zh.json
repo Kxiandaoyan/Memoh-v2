@@ -794,7 +794,9 @@
       "memory_stored": "记忆存储",
       "stream_started": "流式开始",
       "stream_completed": "流式完成",
-      "stream_error": "流式错误"
+      "stream_error": "流式错误",
+      "tool_call_started": "工具调用开始",
+      "tool_call_completed": "工具调用完成"
     }
   }
 }

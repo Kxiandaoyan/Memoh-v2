@@ -766,7 +766,7 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 		streamCompleteCh := make(chan struct{})
 
 		go func() {
-			err := r.streamChat(ctx, rc.payload, streamReq, wrappedChunkCh, rc.model.ModelID)
+			err := r.streamChat(ctx, rc.payload, streamReq, wrappedChunkCh, rc.model.ModelID, rc.traceID)
 
 			// Log stream completed or error
 			if err != nil {
@@ -887,7 +887,7 @@ func (r *Resolver) postTriggerSchedule(ctx context.Context, payload triggerSched
 	return parsed, nil
 }
 
-func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req conversation.ChatRequest, chunkCh chan<- conversation.StreamChunk, modelID string) error {
+func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req conversation.ChatRequest, chunkCh chan<- conversation.StreamChunk, modelID, traceID string) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -923,6 +923,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	currentEvent := ""
 	stored := false
 	receivedChunks := 0
+	toolCallTimers := map[string]time.Time{}
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -942,6 +943,9 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		receivedChunks++
 		chunkCh <- conversation.StreamChunk([]byte(data))
 
+		// Parse tool call events for process logging.
+		r.logToolCallEvent(ctx, req, traceID, data, toolCallTimers)
+
 		if stored {
 			continue
 		}
@@ -953,9 +957,6 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	}
 	scanErr := scanner.Err()
 	if scanErr != nil && stored {
-		// The round was already persisted (agent_end received). The trailing
-		// EOF/unexpected-EOF is harmless — the gateway may close the connection
-		// right after the last SSE frame without a clean termination.
 		r.logger.Warn("gateway stream scanner error after store (ignored)",
 			slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
 		return nil
@@ -970,6 +971,53 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		return fmt.Errorf("agent gateway connection lost before any response was received")
 	}
 	return scanErr
+}
+
+// logToolCallEvent parses a stream chunk and logs tool_call_started / tool_call_completed.
+func (r *Resolver) logToolCallEvent(ctx context.Context, req conversation.ChatRequest, traceID, data string, timers map[string]time.Time) {
+	if r.processLogService == nil {
+		return
+	}
+	var envelope struct {
+		Type       string `json:"type"`
+		ToolName   string `json:"toolName"`
+		ToolCallID string `json:"toolCallId"`
+		Input      any    `json:"input,omitempty"`
+		Result     any    `json:"result,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+		return
+	}
+
+	switch envelope.Type {
+	case "tool_call_start":
+		timers[envelope.ToolCallID] = time.Now()
+		inputStr := truncate(fmt.Sprintf("%v", envelope.Input), 500)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepToolCallStarted, processlog.LevelInfo,
+			fmt.Sprintf("Tool call: %s", envelope.ToolName),
+			map[string]any{
+				"tool_name":    envelope.ToolName,
+				"tool_call_id": envelope.ToolCallID,
+				"input":        inputStr,
+			}, 0)
+
+	case "tool_call_end":
+		var durationMs int
+		if start, ok := timers[envelope.ToolCallID]; ok {
+			durationMs = int(time.Since(start).Milliseconds())
+			delete(timers, envelope.ToolCallID)
+		}
+		resultStr := truncate(fmt.Sprintf("%v", envelope.Result), 500)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepToolCallCompleted, processlog.LevelInfo,
+			fmt.Sprintf("Tool completed: %s (%dms)", envelope.ToolName, durationMs),
+			map[string]any{
+				"tool_name":    envelope.ToolName,
+				"tool_call_id": envelope.ToolCallID,
+				"result":       resultStr,
+			}, durationMs)
+	}
 }
 
 // tryStoreStream attempts to extract final messages from a stream event and persist them.
