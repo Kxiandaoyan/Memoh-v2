@@ -359,6 +359,11 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			Content: json.RawMessage(`"[Previous conversation summary]\n\n` + strings.ReplaceAll(summary, `"`, `\"`) + `"`),
 		}
 		messages = append([]conversation.ModelMessage{summaryMsg}, messages...)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepSummaryLoaded, processlog.LevelInfo, "Conversation summary loaded",
+			map[string]any{
+				"summary_length": len(summary),
+			}, 0)
 	}
 
 	memSearchStart := time.Now()
@@ -387,11 +392,26 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			}, memDur)
 	}
 	if r.ovContextLoader != nil {
+		ovStart := time.Now()
 		if ovText := r.ovContextLoader.LoadContext(ctx, req.BotID, req.Query); ovText != "" {
+			ovDur := int(time.Since(ovStart).Milliseconds())
 			messages = append(messages, conversation.ModelMessage{
 				Role:    "system",
 				Content: conversation.NewTextContent(ovText),
 			})
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepOpenVikingContext, processlog.LevelInfo, "OpenViking context loaded",
+				map[string]any{
+					"context_length": len(ovText),
+					"duration":       ovDur,
+				}, ovDur)
+		} else {
+			ovDur := int(time.Since(ovStart).Milliseconds())
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepOpenVikingContext, processlog.LevelInfo, "OpenViking context (no results)",
+				map[string]any{
+					"duration": ovDur,
+				}, ovDur)
 		}
 	}
 
@@ -402,16 +422,29 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	copy(allMessages, messages)
 	messages = pruneMessagesByTokenBudget(messages, chatModel.ContextWindow)
 
-	// If messages were pruned, asynchronously summarize the dropped portion.
 	if len(messages) < len(allMessages) {
 		droppedCount := len(allMessages) - len(messages)
 		dropped := allMessages[:droppedCount]
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepTokenTrimmed, processlog.LevelInfo, "Messages pruned by token budget",
+			map[string]any{
+				"before":         len(allMessages),
+				"after":          len(messages),
+				"dropped":        droppedCount,
+				"context_window": chatModel.ContextWindow,
+			}, 0)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepSummaryRequested, processlog.LevelInfo, "Async summarization requested",
+			map[string]any{
+				"dropped_messages": droppedCount,
+			}, 0)
 		r.asyncSummarize(req.BotID, req.ChatID, dropped, chatModel, provider, req.Token)
 	}
 
 	skills := dedup(req.Skills)
 	containerID := r.resolveContainerID(ctx, req.BotID, req.ContainerID)
 
+	skillStart := time.Now()
 	var usableSkills []gatewaySkill
 	if r.skillLoader != nil {
 		entries, err := r.skillLoader.LoadSkills(ctx, req.BotID)
@@ -434,6 +467,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 
 	usableSkills = filterSkillsByRelevance(usableSkills, req.Query, 10)
+	skillDur := int(time.Since(skillStart).Milliseconds())
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepSkillsLoaded, processlog.LevelInfo, "Skills loaded",
+		map[string]any{
+			"total_skills":    len(usableSkills),
+			"duration":        skillDur,
+		}, skillDur)
 
 	// Load bot persona/prompt configuration.
 	var botIdentity, botSoul, botTask string
@@ -605,6 +645,7 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 	}
 	rc, err := r.resolve(ctx, req)
 	if err != nil {
+		r.logger.Warn("executeTrigger: resolve failed", slog.String("bot_id", p.botID), slog.Any("error", err))
 		r.completeEvolutionLogOnError(ctx, p.evolutionLogID, err)
 		return err
 	}
@@ -620,23 +661,29 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 
 	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
 	if err != nil {
+		r.logger.Warn("executeTrigger: postTriggerSchedule failed", slog.String("bot_id", p.botID), slog.Any("error", err))
 		r.completeEvolutionLogOnError(ctx, p.evolutionLogID, err)
 		return err
 	}
 	r.recordTokenUsage(ctx, p.botID, resp.Usage, rc.model.ModelID, p.usageType)
 	r.completeEvolutionLogFromResponse(ctx, p.evolutionLogID, resp)
-	return r.storeRound(ctx, req, resp.Messages, resp.Usage)
+	if err := r.storeRound(ctx, req, resp.Messages, resp.Usage); err != nil {
+		r.logger.Warn("executeTrigger: storeRound failed", slog.String("bot_id", p.botID), slog.Any("error", err))
+		return err
+	}
+	return nil
 }
 
 // TriggerSchedule executes a scheduled command through the agent gateway trigger-schedule endpoint.
 func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload schedule.TriggerPayload, token string) error {
+	r.logger.Info("TriggerSchedule: starting", slog.String("bot_id", botID))
 	if strings.TrimSpace(botID) == "" {
 		return fmt.Errorf("bot id is required")
 	}
 	if strings.TrimSpace(payload.Command) == "" {
 		return fmt.Errorf("schedule command is required")
 	}
-	return r.executeTrigger(ctx, triggerParams{
+	err := r.executeTrigger(ctx, triggerParams{
 		botID:       botID,
 		query:       payload.Command,
 		ownerUserID: payload.OwnerUserID,
@@ -651,18 +698,24 @@ func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload sc
 		},
 		usageType: "schedule",
 	}, token)
+	if err != nil {
+		r.logger.Warn("TriggerSchedule: failed", slog.String("bot_id", botID), slog.Any("error", err))
+		return err
+	}
+	return nil
 }
 
 // TriggerHeartbeat executes a heartbeat command through the agent gateway trigger-schedule endpoint.
 // It reuses the schedule trigger pathway since a heartbeat is functionally identical to a scheduled command.
 func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload heartbeat.TriggerPayload, token string) error {
+	r.logger.Info("TriggerHeartbeat: starting", slog.String("bot_id", botID))
 	if strings.TrimSpace(botID) == "" {
 		return fmt.Errorf("bot id is required")
 	}
 	if strings.TrimSpace(payload.Prompt) == "" {
 		return fmt.Errorf("heartbeat prompt is required")
 	}
-	return r.executeTrigger(ctx, triggerParams{
+	err := r.executeTrigger(ctx, triggerParams{
 		botID:       botID,
 		query:       payload.Prompt,
 		ownerUserID: payload.OwnerUserID,
@@ -677,6 +730,11 @@ func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload h
 		evolutionLogID:       payload.EvolutionLogID,
 		historyLimitOverride: settings.DefaultEvolutionHistoryLimit,
 	}, token)
+	if err != nil {
+		r.logger.Warn("TriggerHeartbeat: failed", slog.String("bot_id", botID), slog.Any("error", err))
+		return err
+	}
+	return nil
 }
 
 // completeEvolutionLogFromResponse parses the agent response and completes the evolution log.
@@ -733,18 +791,22 @@ func (r *Resolver) completeEvolutionLogOnError(ctx context.Context, logID string
 	if logID == "" || r.queries == nil {
 		return
 	}
-	pgLogID, err := db.ParseUUID(logID)
-	if err != nil {
+	pgLogID, parseErr := db.ParseUUID(logID)
+	if parseErr != nil {
+		r.logger.Warn("completeEvolutionLogOnError: UUID parse failed", slog.String("log_id", logID), slog.Any("error", parseErr))
 		return
 	}
 	errMsg := triggerErr.Error()
-	_, _ = r.queries.CompleteEvolutionLog(ctx, sqlc.CompleteEvolutionLogParams{
+	_, dbErr := r.queries.CompleteEvolutionLog(ctx, sqlc.CompleteEvolutionLogParams{
 		ID:             pgLogID,
 		Status:         "failed",
 		ChangesSummary: pgtype.Text{String: "Error: " + errMsg, Valid: true},
 		FilesModified:  nil,
 		AgentResponse:  pgtype.Text{Valid: false},
 	})
+	if dbErr != nil {
+		r.logger.Warn("completeEvolutionLogOnError: DB update failed", slog.String("log_id", logID), slog.Any("error", dbErr))
+	}
 }
 
 // --- StreamChat ---
@@ -858,6 +920,9 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 				nil, 0)
 
 			if r.ovSessionExtractor != nil {
+				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+					processlog.StepOpenVikingSession, processlog.LevelInfo, "OpenViking session extraction queued",
+					nil, 0)
 				msgs := make([]conversation.ModelMessage, len(rc.payload.Messages))
 				copy(msgs, rc.payload.Messages)
 				go r.ovSessionExtractor.ExtractSession(context.Background(), req.BotID, req.ChatID, msgs)
@@ -1017,6 +1082,13 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		} else if handled {
 			stored = true
 		}
+	}
+	if !stored {
+		r.logger.Warn("streamChat: stream ended without storing round",
+			slog.String("bot_id", req.BotID),
+			slog.String("chat_id", req.ChatID),
+			slog.Int("chunks", receivedChunks),
+		)
 	}
 	scanErr := scanner.Err()
 	if scanErr != nil && stored {
@@ -1346,17 +1418,35 @@ func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest,
 		fullRound = append(fullRound, m)
 	}
 	if len(fullRound) == 0 {
+		r.logger.Warn("storeRound: fullRound is empty, skipping",
+			slog.String("bot_id", req.BotID),
+			slog.String("chat_id", req.ChatID),
+		)
 		return nil
 	}
+
+	r.logger.Info("storeRound: persisting round",
+		slog.String("bot_id", req.BotID),
+		slog.String("chat_id", req.ChatID),
+		slog.Int("message_count", len(fullRound)),
+	)
 
 	var usagePtr *gatewayUsage
 	if len(usage) > 0 {
 		usagePtr = usage[0]
 	}
 	r.storeMessages(ctx, req, fullRound, usagePtr)
-	// Run memory extraction in the background so that the SSE stream can
-	// finish immediately after messages are persisted.
-	go r.storeMemory(context.WithoutCancel(ctx), req.BotID, fullRound)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.logger.Error("storeMemory panic recovered",
+					slog.String("bot_id", req.BotID),
+					slog.Any("panic", rec),
+				)
+			}
+		}()
+		r.storeMemory(context.WithoutCancel(ctx), req.BotID, fullRound)
+	}()
 	return nil
 }
 
@@ -1557,15 +1647,33 @@ func (r *Resolver) resolveDisplayName(ctx context.Context, req conversation.Chat
 
 func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []conversation.ModelMessage) {
 	if r.memoryService == nil {
+		if r.logger != nil {
+			r.logger.Warn("storeMemory: memoryService is nil, skipping")
+		}
 		return
 	}
 	if strings.TrimSpace(botID) == "" {
+		if r.logger != nil {
+			r.logger.Warn("storeMemory: botID is empty, skipping")
+		}
 		return
+	}
+	if r.logger != nil {
+		r.logger.Info("storeMemory: called",
+			slog.String("bot_id", botID),
+			slog.Int("input_messages", len(messages)),
+		)
 	}
 	memMsgs := make([]memory.Message, 0, len(messages))
 	for _, msg := range messages {
 		text := strings.TrimSpace(msg.TextContent())
 		if text == "" {
+			if r.logger != nil {
+				r.logger.Debug("storeMemory: skipping empty text message",
+					slog.String("role", msg.Role),
+					slog.Int("content_len", len(msg.Content)),
+				)
+			}
 			continue
 		}
 		role := msg.Role
@@ -1575,6 +1683,12 @@ func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []con
 		memMsgs = append(memMsgs, memory.Message{Role: role, Content: text})
 	}
 	if len(memMsgs) == 0 {
+		if r.logger != nil {
+			r.logger.Warn("storeMemory: no text messages after filtering, skipping",
+				slog.String("bot_id", botID),
+				slog.Int("input_messages", len(messages)),
+			)
+		}
 		return
 	}
 
@@ -1989,6 +2103,7 @@ func (r *Resolver) loadSummary(ctx context.Context, botID, chatID string) string
 	}
 	pgBotID, err := db.ParseUUID(botID)
 	if err != nil {
+		r.logger.Debug("loadSummary: UUID parse failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ""
 	}
 	row, err := r.queries.GetConversationSummary(ctx, sqlc.GetConversationSummaryParams{
@@ -1996,9 +2111,17 @@ func (r *Resolver) loadSummary(ctx context.Context, botID, chatID string) string
 		ChatID: chatID,
 	})
 	if err != nil {
+		r.logger.Debug("loadSummary: query failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ""
 	}
-	return strings.TrimSpace(row.Summary)
+	summary := strings.TrimSpace(row.Summary)
+	if summary != "" {
+		r.logger.Info("loadSummary: found",
+			slog.String("bot_id", botID),
+			slog.Int("length", len(summary)),
+		)
+	}
+	return summary
 }
 
 // asyncSummarize sends dropped messages to the Agent Gateway /chat/summarize
@@ -2071,6 +2194,7 @@ type summarizeResponse struct {
 
 // postSummarize calls the Agent Gateway /chat/summarize endpoint.
 func (r *Resolver) postSummarize(ctx context.Context, model gatewayModelConfig, messages []conversation.ModelMessage, token string) (string, *gatewayUsage, error) {
+	r.logger.Info("postSummarize: calling gateway", slog.Int("message_count", len(messages)), slog.String("model", model.ModelID))
 	payload := summarizeRequest{Model: model, Messages: messages}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -2087,6 +2211,7 @@ func (r *Resolver) postSummarize(ctx context.Context, model gatewayModelConfig, 
 	}
 	resp, err := r.httpClient.Do(httpReq)
 	if err != nil {
+		r.logger.Warn("postSummarize: http request failed", slog.Any("error", err))
 		return "", nil, err
 	}
 	defer resp.Body.Close()
@@ -2095,12 +2220,15 @@ func (r *Resolver) postSummarize(ctx context.Context, model gatewayModelConfig, 
 		return "", nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		r.logger.Warn("postSummarize: gateway error", slog.Int("status", resp.StatusCode))
 		return "", nil, fmt.Errorf("summarize gateway error %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}
 	var parsed summarizeResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		r.logger.Warn("postSummarize: parse failed", slog.Any("error", err))
 		return "", nil, fmt.Errorf("parse summarize response: %w", err)
 	}
+	r.logger.Info("postSummarize: completed", slog.Int("summary_length", len(parsed.Summary)))
 	return parsed.Summary, parsed.Usage, nil
 }
 

@@ -37,17 +37,24 @@ func NewSessionExtractor(log *slog.Logger, execRunner ExecRunner, queries *dbsql
 
 func (s *SessionExtractor) isEnabled(ctx context.Context, botID string) bool {
 	if s.queries == nil {
+		s.logger.Debug("openviking.session.isEnabled: disabled", slog.String("reason", "queries is nil"))
 		return false
 	}
 	botUUID, err := db.ParseUUID(botID)
 	if err != nil {
+		s.logger.Debug("openviking.session.isEnabled: disabled", slog.Any("reason", err))
 		return false
 	}
 	row, err := s.queries.GetBotPrompts(ctx, botUUID)
 	if err != nil {
+		s.logger.Debug("openviking.session.isEnabled: disabled", slog.Any("reason", err))
 		return false
 	}
-	return row.EnableOpenviking
+	if !row.EnableOpenviking {
+		s.logger.Debug("openviking.session.isEnabled: disabled", slog.String("reason", "EnableOpenviking is false"))
+		return false
+	}
+	return true
 }
 
 // ExtractSession commits the conversation messages to an OpenViking session,

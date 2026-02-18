@@ -61,14 +61,17 @@ func NewExecutor(log *slog.Logger, execRunner ExecRunner, queries *dbsqlc.Querie
 
 func (e *Executor) isEnabled(ctx context.Context, botID string) bool {
 	if e.queries == nil {
+		e.logger.Debug("openviking.isEnabled: queries is nil")
 		return false
 	}
 	botUUID, err := db.ParseUUID(botID)
 	if err != nil {
+		e.logger.Debug("openviking.isEnabled: UUID parse failed", slog.Any("error", err))
 		return false
 	}
 	row, err := e.queries.GetBotPrompts(ctx, botUUID)
 	if err != nil {
+		e.logger.Debug("openviking.isEnabled: GetBotPrompts failed", slog.Any("error", err))
 		return false
 	}
 	return row.EnableOpenviking
@@ -343,6 +346,7 @@ func (e *Executor) InitializeBot(ctx context.Context, botID string) {
 }
 
 func (e *Executor) callInitialize(ctx context.Context, botID string) (map[string]any, error) {
+	e.logger.Debug("openviking.callInitialize")
 	script := fmt.Sprintf(`import openviking as ov, json
 client = ov.SyncOpenViking(path='%s', config_file='%s')
 client.initialize()
@@ -352,6 +356,7 @@ print(json.dumps({"status": "initialized"}))`, ovDataPath, ovConfPath)
 }
 
 func (e *Executor) callFind(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callFind")
 	query := mcpgw.StringArg(args, "query")
 	if query == "" {
 		return mcpgw.BuildToolErrorResult("query is required"), nil
@@ -376,6 +381,7 @@ finally:
 }
 
 func (e *Executor) callSearch(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callSearch")
 	query := mcpgw.StringArg(args, "query")
 	if query == "" {
 		return mcpgw.BuildToolErrorResult("query is required"), nil
@@ -400,6 +406,7 @@ finally:
 }
 
 func (e *Executor) callRead(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callRead")
 	uri := mcpgw.StringArg(args, "uri")
 	if uri == "" {
 		return mcpgw.BuildToolErrorResult("uri is required"), nil
@@ -417,6 +424,7 @@ finally:
 }
 
 func (e *Executor) callAbstract(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callAbstract")
 	uri := mcpgw.StringArg(args, "uri")
 	if uri == "" {
 		return mcpgw.BuildToolErrorResult("uri is required"), nil
@@ -434,6 +442,7 @@ finally:
 }
 
 func (e *Executor) callOverview(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callOverview")
 	uri := mcpgw.StringArg(args, "uri")
 	if uri == "" {
 		return mcpgw.BuildToolErrorResult("uri is required"), nil
@@ -451,6 +460,7 @@ finally:
 }
 
 func (e *Executor) callLs(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callLs")
 	uri := mcpgw.StringArg(args, "uri")
 	if uri == "" {
 		return mcpgw.BuildToolErrorResult("uri is required"), nil
@@ -469,6 +479,7 @@ finally:
 }
 
 func (e *Executor) callTree(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callTree")
 	uri := mcpgw.StringArg(args, "uri")
 	if uri == "" {
 		return mcpgw.BuildToolErrorResult("uri is required"), nil
@@ -486,6 +497,7 @@ finally:
 }
 
 func (e *Executor) callAddResource(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callAddResource")
 	path := mcpgw.StringArg(args, "path")
 	if path == "" {
 		return mcpgw.BuildToolErrorResult("path is required"), nil
@@ -508,6 +520,7 @@ finally:
 }
 
 func (e *Executor) callRm(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callRm")
 	uri := mcpgw.StringArg(args, "uri")
 	if uri == "" {
 		return mcpgw.BuildToolErrorResult("uri is required"), nil
@@ -526,6 +539,7 @@ finally:
 }
 
 func (e *Executor) callSessionCommit(ctx context.Context, botID string, args map[string]any) (map[string]any, error) {
+	e.logger.Debug("openviking.callSessionCommit")
 	messagesRaw := mcpgw.StringArg(args, "messages")
 	if messagesRaw == "" {
 		return mcpgw.BuildToolErrorResult("messages is required"), nil

@@ -3,6 +3,7 @@ package heartbeat
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -44,6 +45,7 @@ type ListEvolutionLogsResponse struct {
 func (e *Engine) ListEvolutionLogs(ctx context.Context, botID string, limit, offset int) (ListEvolutionLogsResponse, error) {
 	pgBotID, err := db.ParseUUID(botID)
 	if err != nil {
+		e.logger.Warn("list evolution logs failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ListEvolutionLogsResponse{}, err
 	}
 	rows, err := e.queries.ListEvolutionLogsByBot(ctx, sqlc.ListEvolutionLogsByBotParams{
@@ -52,10 +54,12 @@ func (e *Engine) ListEvolutionLogs(ctx context.Context, botID string, limit, off
 		Offset: int32(offset),
 	})
 	if err != nil {
+		e.logger.Warn("list evolution logs failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ListEvolutionLogsResponse{}, err
 	}
 	total, err := e.queries.CountEvolutionLogsByBot(ctx, pgBotID)
 	if err != nil {
+		e.logger.Warn("list evolution logs failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ListEvolutionLogsResponse{}, err
 	}
 	items := make([]EvolutionLog, 0, len(rows))
@@ -69,10 +73,12 @@ func (e *Engine) ListEvolutionLogs(ctx context.Context, botID string, limit, off
 func (e *Engine) GetEvolutionLog(ctx context.Context, logID string) (EvolutionLog, error) {
 	pgID, err := db.ParseUUID(logID)
 	if err != nil {
+		e.logger.Warn("get evolution log failed", slog.String("log_id", logID), slog.Any("error", err))
 		return EvolutionLog{}, err
 	}
 	row, err := e.queries.GetEvolutionLog(ctx, pgID)
 	if err != nil {
+		e.logger.Warn("get evolution log failed", slog.String("log_id", logID), slog.Any("error", err))
 		return EvolutionLog{}, err
 	}
 	return toEvolutionLog(row), nil
@@ -82,6 +88,7 @@ func (e *Engine) GetEvolutionLog(ctx context.Context, logID string) (EvolutionLo
 func (e *Engine) CompleteEvolutionLog(ctx context.Context, logID string, req CompleteEvolutionLogRequest) (EvolutionLog, error) {
 	pgID, err := db.ParseUUID(logID)
 	if err != nil {
+		e.logger.Warn("complete evolution log failed", slog.String("log_id", logID), slog.Any("error", err))
 		return EvolutionLog{}, err
 	}
 	validStatuses := map[string]bool{"completed": true, "failed": true, "skipped": true}
@@ -96,6 +103,7 @@ func (e *Engine) CompleteEvolutionLog(ctx context.Context, logID string, req Com
 		AgentResponse:  pgtype.Text{String: req.AgentResponse, Valid: req.AgentResponse != ""},
 	})
 	if err != nil {
+		e.logger.Warn("complete evolution log failed", slog.String("log_id", logID), slog.Any("error", err))
 		return EvolutionLog{}, err
 	}
 	return toEvolutionLog(row), nil

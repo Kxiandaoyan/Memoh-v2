@@ -727,6 +727,7 @@ import {
   postBotsByBotIdContainerSnapshotsBySnapshotNameRestore,
   getBotsByBotIdHeartbeat,
 } from '@memoh/sdk'
+import { getBotsQueryKey } from '@memoh/sdk/colada'
 import { client } from '@memoh/sdk/client'
 import type {
   BotsBotCheck, HandlersGetContainerResponse,
@@ -769,7 +770,7 @@ const { mutateAsync: updateBot, isLoading: updateBotLoading } = useMutation({
     return data
   },
   onSettled: () => {
-    queryCache.invalidateQueries({ key: ['bots'] })
+    queryCache.invalidateQueries({ key: getBotsQueryKey() })
     queryCache.invalidateQueries({ key: ['bot'] })
   },
 })

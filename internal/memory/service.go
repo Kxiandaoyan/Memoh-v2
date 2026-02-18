@@ -51,6 +51,10 @@ func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, erro
 
 	messages := normalizeMessages(req)
 	filters := buildFilters(req)
+	s.logger.Info("memory.Add: starting",
+		slog.String("bot_id", req.BotID),
+		slog.Int("message_count", len(messages)),
+	)
 
 	embeddingEnabled := req.EmbeddingEnabled != nil && *req.EmbeddingEnabled
 	if req.Infer != nil && !*req.Infer {
@@ -63,14 +67,17 @@ func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, erro
 		Metadata: req.Metadata,
 	})
 	if err != nil {
+		s.logger.Warn("memory.Add: extract failed", slog.String("bot_id", req.BotID), slog.Any("error", err))
 		return SearchResponse{}, err
 	}
 	if len(extractResp.Facts) == 0 {
+		s.logger.Info("memory.Add: no facts extracted", slog.String("bot_id", req.BotID))
 		return SearchResponse{Results: []MemoryItem{}}, nil
 	}
 
 	candidates, err := s.collectCandidates(ctx, extractResp.Facts, filters)
 	if err != nil {
+		s.logger.Warn("memory.Add: collect candidates failed", slog.String("bot_id", req.BotID), slog.Any("error", err))
 		return SearchResponse{}, err
 	}
 
@@ -81,6 +88,7 @@ func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, erro
 		Metadata:   req.Metadata,
 	})
 	if err != nil {
+		s.logger.Warn("memory.Add: decide failed", slog.String("bot_id", req.BotID), slog.Any("error", err))
 		return SearchResponse{}, err
 	}
 
@@ -131,6 +139,11 @@ func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, erro
 		}
 	}
 
+	s.logger.Info("memory.Add: completed",
+		slog.String("bot_id", req.BotID),
+		slog.Int("facts_extracted", len(extractResp.Facts)),
+		slog.Int("actions_applied", len(results)),
+	)
 	return SearchResponse{Results: results}, nil
 }
 
@@ -142,6 +155,7 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse
 		return SearchResponse{}, fmt.Errorf("qdrant store not configured")
 	}
 	filters := buildSearchFilters(req)
+	s.logger.Debug("memory.Search", slog.String("query_prefix", truncateStr(req.Query, 80)), slog.String("bot_id", req.BotID))
 	modality := ""
 	if raw, ok := filters["modality"].(string); ok {
 		modality = strings.ToLower(strings.TrimSpace(raw))
@@ -451,11 +465,13 @@ func (s *Service) GetAll(ctx context.Context, req GetAllRequest) (SearchResponse
 		return SearchResponse{}, fmt.Errorf("bot_id, agent_id or run_id is required")
 	}
 
+	s.logger.Debug("memory.GetAll", slog.Int("filter_count", len(filters)))
 	wantStats := !req.NoStats
 	points, err := s.store.List(ctx, req.Limit, filters, wantStats)
 	if err != nil {
 		return SearchResponse{}, err
 	}
+	s.logger.Debug("memory.GetAll: results", slog.Int("count", len(points)))
 	results := make([]MemoryItem, 0, len(points))
 	for _, point := range points {
 		item := payloadToMemoryItem(point.ID, point.Payload)
@@ -702,6 +718,7 @@ func (s *Service) WarmupBM25(ctx context.Context, batchSize int) error {
 	if s.bm25 == nil || s.store == nil {
 		return nil
 	}
+	s.logger.Info("bm25 warmup starting")
 	var offset *qdrant.PointId
 	for {
 		points, next, err := s.store.Scroll(ctx, batchSize, nil, offset)
@@ -732,6 +749,7 @@ func (s *Service) WarmupBM25(ctx context.Context, batchSize int) error {
 		}
 		offset = next
 	}
+	s.logger.Info("bm25 warmup completed")
 	return nil
 }
 
@@ -787,6 +805,7 @@ func (s *Service) collectCandidates(ctx context.Context, facts []string, filters
 }
 
 func (s *Service) applyAdd(ctx context.Context, text string, filters map[string]any, metadata map[string]any, embeddingEnabled bool) (MemoryItem, error) {
+	s.logger.Debug("memory.applyAdd", slog.String("text_prefix", truncateStr(text, 80)))
 	if s.store == nil {
 		return MemoryItem{}, fmt.Errorf("qdrant store not configured")
 	}
@@ -795,10 +814,12 @@ func (s *Service) applyAdd(ctx context.Context, text string, filters map[string]
 	}
 	lang, err := s.detectLanguage(ctx, text)
 	if err != nil {
+		s.logger.Warn("memory.applyAdd: detect language failed", slog.Any("error", err))
 		return MemoryItem{}, err
 	}
 	termFreq, docLen, err := s.bm25.TermFrequencies(lang, text)
 	if err != nil {
+		s.logger.Warn("memory.applyAdd: term frequencies failed", slog.Any("error", err))
 		return MemoryItem{}, err
 	}
 	sparseIndices, sparseValues := s.bm25.AddDocument(lang, termFreq, docLen)
@@ -824,6 +845,7 @@ func (s *Service) applyAdd(ctx context.Context, text string, filters map[string]
 		point.VectorName = s.vectorNameForText()
 	}
 	if err := s.store.Upsert(ctx, []qdrantPoint{point}); err != nil {
+		s.logger.Warn("memory.applyAdd: qdrant upsert failed", slog.Any("error", err))
 		return MemoryItem{}, err
 	}
 	return payloadToMemoryItem(id, payload), nil
@@ -1296,4 +1318,11 @@ func fuseByRankFusion(pointsBySource map[string][]qdrantPoint, _ map[string][]fl
 		return items[i].Score > items[j].Score
 	})
 	return items
+}
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

@@ -126,6 +126,7 @@ func (h *ContainerdHandler) UpsertSkills(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	h.logger.Info("UpsertSkills: starting", slog.String("bot_id", botID))
 	var req SkillsUpsertRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -136,6 +137,7 @@ func (h *ContainerdHandler) UpsertSkills(c echo.Context) error {
 
 	skillsDir, err := h.ensureSkillsDirHost(botID)
 	if err != nil {
+		h.logger.Warn("UpsertSkills: ensure skills dir failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	for _, skill := range req.Skills {
@@ -149,14 +151,17 @@ func (h *ContainerdHandler) UpsertSkills(c echo.Context) error {
 		}
 		dirPath := filepath.Join(skillsDir, name)
 		if err := os.MkdirAll(dirPath, 0o755); err != nil {
+			h.logger.Warn("UpsertSkills: mkdir failed", slog.String("skill", skill.Name), slog.Any("error", err))
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		filePath := filepath.Join(dirPath, "SKILL.md")
 		if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+			h.logger.Warn("UpsertSkills: write file failed", slog.String("skill", skill.Name), slog.Any("error", err))
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 	}
 
+	h.logger.Info("UpsertSkills: completed", slog.String("bot_id", botID), slog.Int("count", len(req.Skills)))
 	return c.JSON(http.StatusOK, skillsOpResponse{OK: true})
 }
 
@@ -175,6 +180,7 @@ func (h *ContainerdHandler) DeleteSkills(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	h.logger.Info("DeleteSkills: starting", slog.String("bot_id", botID))
 	var req SkillsDeleteRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -185,6 +191,7 @@ func (h *ContainerdHandler) DeleteSkills(c echo.Context) error {
 
 	skillsDir, err := h.ensureSkillsDirHost(botID)
 	if err != nil {
+		h.logger.Warn("DeleteSkills: ensure skills dir failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -195,10 +202,12 @@ func (h *ContainerdHandler) DeleteSkills(c echo.Context) error {
 		}
 		deletePath := filepath.Join(skillsDir, skillName)
 		if err := os.RemoveAll(deletePath); err != nil {
+			h.logger.Warn("DeleteSkills: remove failed", slog.String("skill", name), slog.Any("error", err))
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 	}
 
+	h.logger.Info("DeleteSkills: completed", slog.String("bot_id", botID), slog.Int("count", len(req.Names)))
 	return c.JSON(http.StatusOK, skillsOpResponse{OK: true})
 }
 
@@ -207,11 +216,13 @@ func (h *ContainerdHandler) DeleteSkills(c echo.Context) error {
 func (h *ContainerdHandler) LoadSkills(ctx context.Context, botID string) ([]SkillItem, error) {
 	skillsDir, err := h.ensureSkillsDirHost(botID)
 	if err != nil {
+		h.logger.Warn("LoadSkills: ensure skills dir failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return nil, err
 	}
 
 	entries, err := listSkillEntries(skillsDir)
 	if err != nil {
+		h.logger.Warn("LoadSkills: list entries failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return nil, err
 	}
 
@@ -219,6 +230,7 @@ func (h *ContainerdHandler) LoadSkills(ctx context.Context, botID string) ([]Ski
 	for _, entry := range entries {
 		skillPath, name := skillPathForEntry(entry)
 		if skillPath == "" {
+			h.logger.Debug("LoadSkills: no skill file found", slog.String("entry", entry.Path))
 			continue
 		}
 		raw, err := h.readSkillFile(skillsDir, skillPath)
@@ -237,6 +249,7 @@ func (h *ContainerdHandler) LoadSkills(ctx context.Context, botID string) ([]Ski
 			Metadata:    parsed.Metadata,
 		})
 	}
+	h.logger.Info("LoadSkills: completed", slog.String("bot_id", botID), slog.Int("count", len(skills)))
 	return skills, nil
 }
 
@@ -488,6 +501,7 @@ func (h *ContainerdHandler) ClawHubSearch(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	h.logger.Info("ClawHubSearch: starting")
 
 	var req clawHubSearchRequest
 	if err := c.Bind(&req); err != nil {
@@ -507,9 +521,11 @@ func (h *ContainerdHandler) ClawHubSearch(c echo.Context) error {
 		Stderr: &stderr,
 	})
 	if err != nil {
+		h.logger.Warn("ClawHubSearch: exec failed", slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, "exec failed: "+err.Error())
 	}
 	if result.ExitCode != 0 {
+		h.logger.Warn("ClawHubSearch: non-zero exit", slog.Uint64("exit_code", uint64(result.ExitCode)))
 		errMsg := strings.TrimSpace(stderr.String())
 		if errMsg == "" {
 			errMsg = strings.TrimSpace(stdout.String())
@@ -520,6 +536,7 @@ func (h *ContainerdHandler) ClawHubSearch(c echo.Context) error {
 	// Try to parse as JSON array; if it fails, return raw output
 	var results []clawHubSearchResult
 	if err := json.Unmarshal(stdout.Bytes(), &results); err != nil {
+		h.logger.Warn("ClawHubSearch: parse failed", slog.Any("error", err))
 		return c.JSON(http.StatusOK, map[string]any{
 			"results": []any{},
 			"raw":     strings.TrimSpace(stdout.String()),
@@ -554,6 +571,7 @@ func (h *ContainerdHandler) ClawHubInstall(c echo.Context) error {
 	if strings.ContainsAny(slug, ";|&$`") {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid slug")
 	}
+	h.logger.Info("ClawHubInstall: starting", slog.String("slug", slug))
 
 	containerID := mcp.ContainerPrefix + botID
 
@@ -564,9 +582,11 @@ func (h *ContainerdHandler) ClawHubInstall(c echo.Context) error {
 		Stderr: &stderr,
 	})
 	if err != nil {
+		h.logger.Warn("ClawHubInstall: exec failed", slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, "exec failed: "+err.Error())
 	}
 	if result.ExitCode != 0 {
+		h.logger.Warn("ClawHubInstall: non-zero exit", slog.Uint64("exit_code", uint64(result.ExitCode)))
 		errMsg := strings.TrimSpace(stderr.String())
 		if errMsg == "" {
 			errMsg = strings.TrimSpace(stdout.String())
@@ -574,6 +594,7 @@ func (h *ContainerdHandler) ClawHubInstall(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "clawhub install failed: "+errMsg)
 	}
 
+	h.logger.Info("ClawHubInstall: completed", slog.String("slug", slug))
 	return c.JSON(http.StatusOK, map[string]any{
 		"ok":      true,
 		"message": strings.TrimSpace(stdout.String()),

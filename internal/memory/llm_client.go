@@ -51,6 +51,7 @@ func (c *LLMClient) Extract(ctx context.Context, req ExtractRequest) (ExtractRes
 	if len(req.Messages) == 0 {
 		return ExtractResponse{}, fmt.Errorf("messages is required")
 	}
+	c.logger.Debug("memory.llm.Extract: starting", slog.Int("message_count", len(req.Messages)))
 	parsedMessages := strings.Join(formatMessages(req.Messages), "\n")
 	systemPrompt, userPrompt := getFactRetrievalMessages(parsedMessages)
 	content, err := c.callChat(ctx, []chatMessage{
@@ -58,13 +59,16 @@ func (c *LLMClient) Extract(ctx context.Context, req ExtractRequest) (ExtractRes
 		{Role: "user", Content: userPrompt},
 	})
 	if err != nil {
+		c.logger.Warn("memory.llm.Extract: call failed", slog.Any("error", err))
 		return ExtractResponse{}, err
 	}
 
 	var parsed ExtractResponse
 	if err := json.Unmarshal([]byte(removeCodeBlocks(content)), &parsed); err != nil {
+		c.logger.Warn("memory.llm.Extract: parse failed", slog.Any("error", err), slog.String("content_prefix", truncateStr(content, 200)))
 		return ExtractResponse{}, err
 	}
+	c.logger.Info("memory.llm.Extract: completed", slog.Int("facts", len(parsed.Facts)))
 	return parsed, nil
 }
 
@@ -72,6 +76,7 @@ func (c *LLMClient) Decide(ctx context.Context, req DecideRequest) (DecideRespon
 	if len(req.Facts) == 0 {
 		return DecideResponse{}, fmt.Errorf("facts is required")
 	}
+	c.logger.Debug("memory.llm.Decide: starting", slog.Int("facts", len(req.Facts)), slog.Int("candidates", len(req.Candidates)))
 	retrieved := make([]map[string]string, 0, len(req.Candidates))
 	for _, candidate := range req.Candidates {
 		retrieved = append(retrieved, map[string]string{
@@ -84,6 +89,7 @@ func (c *LLMClient) Decide(ctx context.Context, req DecideRequest) (DecideRespon
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		c.logger.Warn("memory.llm.Decide: call failed", slog.Any("error", err))
 		return DecideResponse{}, err
 	}
 
@@ -98,6 +104,7 @@ func (c *LLMClient) Decide(ctx context.Context, req DecideRequest) (DecideRespon
 		// If object parsing fails, try parsing as array directly
 		var arr []any
 		if err := json.Unmarshal([]byte(cleaned), &arr); err != nil {
+			c.logger.Warn("memory.llm.Decide: parse failed", slog.Any("error", err))
 			return DecideResponse{}, fmt.Errorf("failed to parse LLM response: %w", err)
 		}
 		memoryItems = normalizeMemoryItems(arr)
@@ -127,6 +134,7 @@ func (c *LLMClient) Decide(ctx context.Context, req DecideRequest) (DecideRespon
 			OldMemory: asString(item["old_memory"]),
 		})
 	}
+	c.logger.Info("memory.llm.Decide: completed", slog.Int("actions", len(actions)))
 	return DecideResponse{Actions: actions}, nil
 }
 
@@ -134,6 +142,7 @@ func (c *LLMClient) Compact(ctx context.Context, req CompactRequest) (CompactRes
 	if len(req.Memories) == 0 {
 		return CompactResponse{}, fmt.Errorf("memories is required")
 	}
+	c.logger.Debug("memory.llm.Compact: starting", slog.Int("memories", len(req.Memories)), slog.Int("target", req.TargetCount))
 	memories := make([]map[string]string, 0, len(req.Memories))
 	for _, m := range req.Memories {
 		entry := map[string]string{
@@ -151,12 +160,15 @@ func (c *LLMClient) Compact(ctx context.Context, req CompactRequest) (CompactRes
 		{Role: "user", Content: userPrompt},
 	})
 	if err != nil {
+		c.logger.Warn("memory.llm.Compact: call failed", slog.Any("error", err))
 		return CompactResponse{}, err
 	}
 	var parsed CompactResponse
 	if err := json.Unmarshal([]byte(removeCodeBlocks(content)), &parsed); err != nil {
+		c.logger.Warn("memory.llm.Compact: parse failed", slog.Any("error", err))
 		return CompactResponse{}, fmt.Errorf("failed to parse compact response: %w", err)
 	}
+	c.logger.Info("memory.llm.Compact: completed", slog.Int("facts", len(parsed.Facts)))
 	return parsed, nil
 }
 
@@ -170,6 +182,7 @@ func (c *LLMClient) DetectLanguage(ctx context.Context, text string) (string, er
 		{Role: "user", Content: userPrompt},
 	})
 	if err != nil {
+		c.logger.Debug("memory.llm.DetectLanguage: call failed", slog.Any("error", err))
 		return "", err
 	}
 	var parsed struct {
@@ -225,13 +238,16 @@ func (c *LLMClient) callChat(ctx context.Context, messages []chatMessage) (strin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+	c.logger.Debug("memory.llm: calling chat API", slog.String("model", c.model), slog.String("url", c.baseURL+"/chat/completions"))
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.logger.Warn("memory.llm: http request failed", slog.String("model", c.model), slog.Any("error", err))
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.logger.Warn("memory.llm: api error", slog.String("model", c.model), slog.Int("status", resp.StatusCode))
 		b, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("llm error: %s", strings.TrimSpace(string(b)))
 	}
@@ -241,6 +257,7 @@ func (c *LLMClient) callChat(ctx context.Context, messages []chatMessage) (strin
 		return "", err
 	}
 	if len(parsed.Choices) == 0 || parsed.Choices[0].Message.Content == "" {
+		c.logger.Warn("memory.llm: empty response", slog.String("model", c.model))
 		return "", fmt.Errorf("llm response missing content")
 	}
 	return parsed.Choices[0].Message.Content, nil

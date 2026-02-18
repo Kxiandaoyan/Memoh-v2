@@ -50,17 +50,24 @@ func NewContextLoader(log *slog.Logger, execRunner ExecRunner, queries *dbsqlc.Q
 
 func (c *ContextLoader) isEnabled(ctx context.Context, botID string) bool {
 	if c.queries == nil {
+		c.logger.Debug("openviking.context.isEnabled: disabled", slog.String("reason", "queries is nil"))
 		return false
 	}
 	botUUID, err := db.ParseUUID(botID)
 	if err != nil {
+		c.logger.Debug("openviking.context.isEnabled: disabled", slog.Any("reason", err))
 		return false
 	}
 	row, err := c.queries.GetBotPrompts(ctx, botUUID)
 	if err != nil {
+		c.logger.Debug("openviking.context.isEnabled: disabled", slog.Any("reason", err))
 		return false
 	}
-	return row.EnableOpenviking
+	if !row.EnableOpenviking {
+		c.logger.Debug("openviking.context.isEnabled: disabled", slog.String("reason", "EnableOpenviking is false"))
+		return false
+	}
+	return true
 }
 
 // LoadContext runs a quick OpenViking search for the given query and returns
@@ -68,9 +75,11 @@ func (c *ContextLoader) isEnabled(ctx context.Context, botID string) bool {
 // Returns empty string if OpenViking is disabled, has no data, or times out.
 func (c *ContextLoader) LoadContext(ctx context.Context, botID, query string) string {
 	if !c.isEnabled(ctx, botID) {
+		c.logger.Debug("openviking.LoadContext: disabled, skipping")
 		return ""
 	}
 	if strings.TrimSpace(query) == "" {
+		c.logger.Debug("openviking.LoadContext: empty query, skipping")
 		return ""
 	}
 
@@ -112,18 +121,20 @@ else:
 		WorkDir: "/data",
 	})
 	if err != nil {
-		c.logger.Debug("OV context query failed", slog.String("bot_id", botID), slog.Any("error", err))
+		c.logger.Warn("openviking.LoadContext: exec failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ""
 	}
 	if result.ExitCode != 0 {
-		c.logger.Debug("OV context query python error",
+		c.logger.Warn("openviking.LoadContext: exec failed",
 			slog.String("bot_id", botID),
+			slog.Any("exit_code", result.ExitCode),
 			slog.String("stderr", truncate(result.Stderr, 200)))
 		return ""
 	}
 
 	stdout := strings.TrimSpace(result.Stdout)
 	if stdout == "" {
+		c.logger.Debug("openviking.LoadContext: empty stdout")
 		return ""
 	}
 
@@ -135,9 +146,11 @@ else:
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &parsed); err != nil {
+		c.logger.Warn("openviking.LoadContext: JSON parse failed", slog.Any("error", err))
 		return ""
 	}
 	if len(parsed.Items) == 0 {
+		c.logger.Debug("openviking.LoadContext: no results")
 		return ""
 	}
 

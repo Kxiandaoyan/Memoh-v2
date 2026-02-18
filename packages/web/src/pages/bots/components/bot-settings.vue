@@ -257,6 +257,7 @@ import ModelSelect from './model-select.vue'
 import SearchProviderSelect from './search-provider-select.vue'
 import { useQuery, useMutation, useQueryCache } from '@pinia/colada'
 import { getBotsByBotIdSettings, putBotsByBotIdSettings, deleteBotsById, getModels, getProviders, getSearchProviders } from '@memoh/sdk'
+import { getBotsQueryKey } from '@memoh/sdk/colada'
 import { client } from '@memoh/sdk/client'
 import type { SettingsSettings } from '@memoh/sdk'
 import type { Ref } from 'vue'
@@ -371,8 +372,7 @@ const { mutateAsync: deleteBot, isLoading: deleteLoading } = useMutation({
     await deleteBotsById({ path: { id: botIdRef.value }, throwOnError: true })
   },
   onSettled: () => {
-    queryCache.invalidateQueries({ key: ['bots'] })
-    queryCache.invalidateQueries({ key: ['bot'] })
+    queryCache.invalidateQueries({ key: getBotsQueryKey() })
   },
 })
 

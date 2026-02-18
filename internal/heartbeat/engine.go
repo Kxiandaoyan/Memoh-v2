@@ -113,9 +113,17 @@ func (e *Engine) Create(ctx context.Context, botID string, req CreateRequest) (C
 		EventTriggers:   triggers,
 	})
 	if err != nil {
+		e.logger.Warn("heartbeat config create failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return Config{}, err
 	}
 	cfg := toConfig(row)
+	hbType := "heartbeat"
+	if strings.Contains(cfg.Prompt, EvolutionPromptMarker) {
+		hbType = "evolution"
+	} else if strings.Contains(cfg.Prompt, MemoryCompactPromptMarker) {
+		hbType = "memory_compact"
+	}
+	e.logger.Info("heartbeat config created", slog.String("bot_id", botID), slog.String("type", hbType))
 	if cfg.Enabled {
 		e.startConfig(cfg)
 	}
@@ -191,9 +199,11 @@ func (e *Engine) Update(ctx context.Context, id string, req UpdateRequest) (Conf
 		EventTriggers:   triggers,
 	})
 	if err != nil {
+		e.logger.Warn("heartbeat config update failed", slog.String("config_id", id), slog.Any("error", err))
 		return Config{}, err
 	}
 	cfg := toConfig(updated)
+	e.logger.Info("heartbeat config updated", slog.String("config_id", id))
 	e.restartConfig(cfg)
 	return cfg, nil
 }
@@ -205,8 +215,10 @@ func (e *Engine) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if err := e.queries.DeleteHeartbeatConfig(ctx, pgID); err != nil {
+		e.logger.Warn("heartbeat config delete failed", slog.String("config_id", id), slog.Any("error", err))
 		return err
 	}
+	e.logger.Info("heartbeat config deleted", slog.String("config_id", id))
 	e.stopConfig(id)
 	return nil
 }
@@ -215,9 +227,14 @@ func (e *Engine) Delete(ctx context.Context, id string) error {
 func (e *Engine) Fire(ctx context.Context, configID, reason string) error {
 	cfg, err := e.Get(ctx, configID)
 	if err != nil {
+		e.logger.Warn("heartbeat fire: get config failed", slog.String("config_id", configID), slog.Any("error", err))
 		return err
 	}
-	return e.fire(ctx, cfg, reason)
+	if err := e.fire(ctx, cfg, reason); err != nil {
+		e.logger.Warn("heartbeat fire failed", slog.String("config_id", configID), slog.Any("error", err))
+		return err
+	}
+	return nil
 }
 
 // SeedEvolutionConfig creates (or enables) the system evolution heartbeat for a bot.
@@ -273,6 +290,7 @@ func (e *Engine) SetMemoryCompactor(c MemoryCompactor) {
 func (e *Engine) SeedMemoryCompactConfig(ctx context.Context, botID string) error {
 	existing, err := e.List(ctx, botID)
 	if err != nil {
+		e.logger.Warn("memory compact config seed failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return fmt.Errorf("list heartbeat configs: %w", err)
 	}
 	for _, cfg := range existing {
@@ -280,8 +298,12 @@ func (e *Engine) SeedMemoryCompactConfig(ctx context.Context, botID string) erro
 			if !cfg.Enabled {
 				enabled := true
 				_, err := e.Update(ctx, cfg.ID, UpdateRequest{Enabled: &enabled})
-				return err
+				if err != nil {
+					e.logger.Warn("memory compact config seed failed", slog.String("bot_id", botID), slog.Any("error", err))
+					return err
+				}
 			}
+			e.logger.Info("memory compact config seeded", slog.String("bot_id", botID))
 			return nil
 		}
 	}
@@ -292,22 +314,34 @@ func (e *Engine) SeedMemoryCompactConfig(ctx context.Context, botID string) erro
 		Prompt:          MemoryCompactPromptMarker + " Automatic memory compaction.",
 		EventTriggers:   nil,
 	})
-	return err
+	if err != nil {
+		e.logger.Warn("memory compact config seed failed", slog.String("bot_id", botID), slog.Any("error", err))
+		return err
+	}
+	e.logger.Info("memory compact config seeded", slog.String("bot_id", botID))
+	return nil
 }
 
 // DisableMemoryCompactConfig disables the system memory compaction heartbeat for a bot.
 func (e *Engine) DisableMemoryCompactConfig(ctx context.Context, botID string) error {
 	existing, err := e.List(ctx, botID)
 	if err != nil {
+		e.logger.Warn("memory compact config disable failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return fmt.Errorf("list heartbeat configs: %w", err)
 	}
 	for _, cfg := range existing {
 		if strings.Contains(cfg.Prompt, MemoryCompactPromptMarker) && cfg.Enabled {
 			enabled := false
 			_, err := e.Update(ctx, cfg.ID, UpdateRequest{Enabled: &enabled})
-			return err
+			if err != nil {
+				e.logger.Warn("memory compact config disable failed", slog.String("bot_id", botID), slog.Any("error", err))
+				return err
+			}
+			e.logger.Info("memory compact config disabled", slog.String("bot_id", botID))
+			return nil
 		}
 	}
+	e.logger.Info("memory compact config disabled", slog.String("bot_id", botID))
 	return nil
 }
 
@@ -428,10 +462,12 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 	}
 	ownerUserID, err := automation.ResolveBotOwner(ctx, e.queries, cfg.BotID)
 	if err != nil {
+		e.logger.Warn("heartbeat fire: resolve bot owner failed", slog.String("bot_id", cfg.BotID), slog.Any("error", err))
 		return fmt.Errorf("resolve bot owner: %w", err)
 	}
 	token, err := automation.GenerateTriggerToken(ownerUserID, e.jwtSecret, automation.DefaultTriggerTokenTTL)
 	if err != nil {
+		e.logger.Warn("heartbeat fire: generate token failed", slog.String("bot_id", cfg.BotID), slog.Any("error", err))
 		return fmt.Errorf("generate token: %w", err)
 	}
 
@@ -461,7 +497,11 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 		}
 	}
 
-	return e.triggerer.TriggerHeartbeat(ctx, cfg.BotID, payload, token)
+	if err := e.triggerer.TriggerHeartbeat(ctx, cfg.BotID, payload, token); err != nil {
+		e.logger.Warn("heartbeat fire: trigger failed", slog.String("bot_id", cfg.BotID), slog.Any("error", err))
+		return err
+	}
+	return nil
 }
 
 // fireMemoryCompact directly invokes the memory compactor without going through the bot conversation flow.

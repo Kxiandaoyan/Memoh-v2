@@ -22,6 +22,19 @@ const (
 	StepStreamStarted        ProcessLogStep = "stream_started"
 	StepStreamCompleted      ProcessLogStep = "stream_completed"
 	StepStreamError          ProcessLogStep = "stream_error"
+
+	StepMemoryExtractStarted   ProcessLogStep = "memory_extract_started"
+	StepMemoryExtractCompleted ProcessLogStep = "memory_extract_completed"
+	StepMemoryExtractFailed    ProcessLogStep = "memory_extract_failed"
+	StepTokenTrimmed           ProcessLogStep = "token_trimmed"
+	StepSummaryLoaded          ProcessLogStep = "summary_loaded"
+	StepSummaryRequested       ProcessLogStep = "summary_requested"
+	StepSkillsLoaded           ProcessLogStep = "skills_loaded"
+	StepOpenVikingContext      ProcessLogStep = "openviking_context"
+	StepOpenVikingSession      ProcessLogStep = "openviking_session"
+	StepEvolutionStarted       ProcessLogStep = "evolution_started"
+	StepEvolutionCompleted     ProcessLogStep = "evolution_completed"
+	StepEvolutionFailed        ProcessLogStep = "evolution_failed"
 )
 
 // ProcessLogLevel represents the log level
