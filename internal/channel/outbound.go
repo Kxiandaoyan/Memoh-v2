@@ -236,12 +236,14 @@ func buildOutboundMessages(msg OutboundMessage, policy OutboundPolicy) ([]Outbou
 	attachments := normalized.Attachments
 	attachmentMessages := make([]OutboundMessage, 0)
 	if len(attachments) > 0 {
-		media := normalized
-		media.Format = ""
-		media.Text = ""
-		media.Parts = nil
-		media.Actions = nil
-		media.Attachments = attachments
+		// Create a new Message to avoid modifying normalized via shallow copy
+		// Preserve Reply, Metadata, Thread from the original message
+		media := Message{
+			Attachments: attachments,
+			Reply:      normalized.Reply,
+			Metadata:    normalized.Metadata,
+			Thread:     normalized.Thread,
+		}
 		attachmentMessages = append(attachmentMessages, OutboundMessage{Target: msg.Target, Message: media})
 	}
 

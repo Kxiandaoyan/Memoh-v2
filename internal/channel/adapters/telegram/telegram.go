@@ -294,8 +294,15 @@ func (a *TelegramAdapter) Send(ctx context.Context, cfg channel.ChannelConfig, m
 	}
 	text := strings.TrimSpace(msg.Message.PlainText())
 	text, parseMode := formatTelegramOutput(text, msg.Message.Format)
-	// Bot 自动回复时不引用原消息
-	replyTo := 0
+	// Distinguish between Bot auto-reply (Reply is nil) and explicit send tool reply
+	var replyTo int
+	if msg.Message.Reply != nil {
+		// Send tool explicitly specified reply - preserve it
+		replyTo = parseReplyToMessageID(msg.Message.Reply)
+	} else {
+		// Bot auto-reply - don't quote original message
+		replyTo = 0
+	}
 	if len(msg.Message.Attachments) > 0 {
 		usedCaption := false
 		for i, att := range msg.Message.Attachments {
