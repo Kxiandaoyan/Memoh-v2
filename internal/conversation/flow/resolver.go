@@ -336,14 +336,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 
 	memSearchStart := time.Now()
 	if memoryMsg := r.loadMemoryContextMessage(ctx, req); memoryMsg != nil {
-		// Log memory searched
+		memDur := int(time.Since(memSearchStart).Milliseconds())
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemorySearched, processlog.LevelInfo, "Memory searched",
 			map[string]any{
 				"query":    truncate(req.Query, 200),
-				"duration": time.Since(memSearchStart).Milliseconds(),
-			}, time.Since(memSearchStart))
-		// Log memory loaded
+				"duration": memDur,
+			}, memDur)
 		contentStr := string(memoryMsg.Content)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemoryLoaded, processlog.LevelInfo, "Memory loaded",
@@ -352,12 +351,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			}, 0)
 		messages = append(messages, *memoryMsg)
 	} else {
+		memDur := int(time.Since(memSearchStart).Milliseconds())
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemorySearched, processlog.LevelInfo, "Memory searched (no results)",
 			map[string]any{
 				"query":    truncate(req.Query, 200),
-				"duration": time.Since(memSearchStart).Milliseconds(),
-			}, time.Since(memSearchStart))
+				"duration": memDur,
+			}, memDur)
 	}
 	messages = append(messages, req.Messages...)
 	messages = sanitizeMessages(messages)

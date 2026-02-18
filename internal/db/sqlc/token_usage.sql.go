@@ -47,7 +47,13 @@ func (q *Queries) GetAllBotsTokenDailySeries(ctx context.Context, arg GetAllBots
 	var items []GetAllBotsTokenDailySeriesRow
 	for rows.Next() {
 		var i GetAllBotsTokenDailySeriesRow
-		if err := rows.Scan(&i.BotID, &i.Day, &i.TotalTokens, &i.PromptTokens, &i.CompletionTokens); err != nil {
+		if err := rows.Scan(
+			&i.BotID,
+			&i.Day,
+			&i.TotalTokens,
+			&i.PromptTokens,
+			&i.CompletionTokens,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -174,44 +180,6 @@ func (q *Queries) GetBotTokenTotal(ctx context.Context, botID pgtype.UUID) (GetB
 	return i, err
 }
 
-const recordTokenUsage = `-- name: RecordTokenUsage :one
-INSERT INTO token_usage (bot_id, prompt_tokens, completion_tokens, total_tokens, model, source)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, bot_id, prompt_tokens, completion_tokens, total_tokens, model, source, created_at
-`
-
-type RecordTokenUsageParams struct {
-	BotID            pgtype.UUID `json:"bot_id"`
-	PromptTokens     int32       `json:"prompt_tokens"`
-	CompletionTokens int32       `json:"completion_tokens"`
-	TotalTokens      int32       `json:"total_tokens"`
-	Model            string      `json:"model"`
-	Source           string      `json:"source"`
-}
-
-func (q *Queries) RecordTokenUsage(ctx context.Context, arg RecordTokenUsageParams) (TokenUsage, error) {
-	row := q.db.QueryRow(ctx, recordTokenUsage,
-		arg.BotID,
-		arg.PromptTokens,
-		arg.CompletionTokens,
-		arg.TotalTokens,
-		arg.Model,
-		arg.Source,
-	)
-	var i TokenUsage
-	err := row.Scan(
-		&i.ID,
-		&i.BotID,
-		&i.PromptTokens,
-		&i.CompletionTokens,
-		&i.TotalTokens,
-		&i.Model,
-		&i.Source,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getTokenTotalsByModel = `-- name: GetTokenTotalsByModel :many
 SELECT
   model,
@@ -253,4 +221,42 @@ func (q *Queries) GetTokenTotalsByModel(ctx context.Context) ([]GetTokenTotalsBy
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordTokenUsage = `-- name: RecordTokenUsage :one
+INSERT INTO token_usage (bot_id, prompt_tokens, completion_tokens, total_tokens, model, source)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, bot_id, prompt_tokens, completion_tokens, total_tokens, model, source, created_at
+`
+
+type RecordTokenUsageParams struct {
+	BotID            pgtype.UUID `json:"bot_id"`
+	PromptTokens     int32       `json:"prompt_tokens"`
+	CompletionTokens int32       `json:"completion_tokens"`
+	TotalTokens      int32       `json:"total_tokens"`
+	Model            string      `json:"model"`
+	Source           string      `json:"source"`
+}
+
+func (q *Queries) RecordTokenUsage(ctx context.Context, arg RecordTokenUsageParams) (TokenUsage, error) {
+	row := q.db.QueryRow(ctx, recordTokenUsage,
+		arg.BotID,
+		arg.PromptTokens,
+		arg.CompletionTokens,
+		arg.TotalTokens,
+		arg.Model,
+		arg.Source,
+	)
+	var i TokenUsage
+	err := row.Scan(
+		&i.ID,
+		&i.BotID,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.Model,
+		&i.Source,
+		&i.CreatedAt,
+	)
+	return i, err
 }
