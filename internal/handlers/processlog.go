@@ -32,11 +32,11 @@ func NewProcessLogHandler(botService *bots.Service, service *processlog.Service,
 }
 
 // Register registers process log routes
-func (h *ProcessLogHandler) Register(g *echo.Group) {
-	g.GET("/logs/recent", h.GetRecentLogs)
-	g.GET("/logs/trace/:traceId", h.GetLogsByTrace)
-	g.GET("/logs/chat/:chatId", h.GetLogsByChat)
-	g.GET("/logs/stats", h.GetStats)
+func (h *ProcessLogHandler) Register(e *echo.Echo) {
+	e.GET("/logs/recent", h.GetRecentLogs)
+	e.GET("/logs/trace/:traceId", h.GetLogsByTrace)
+	e.GET("/logs/chat/:chatId", h.GetLogsByChat)
+	e.GET("/logs/stats", h.GetStats)
 }
 
 // GetRecentLogs returns recent process logs for the current user's bots
