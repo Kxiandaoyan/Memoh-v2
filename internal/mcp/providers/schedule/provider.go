@@ -156,6 +156,8 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 			Description: description,
 			Pattern:     pattern,
 			Command:     command,
+			Platform:    strings.TrimSpace(session.CurrentPlatform),
+			ReplyTarget: strings.TrimSpace(session.ReplyTarget),
 		}
 		maxCalls, err := parseNullableIntArg(arguments, "max_calls")
 		if err != nil {

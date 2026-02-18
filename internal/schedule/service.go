@@ -94,6 +94,8 @@ func (s *Service) Create(ctx context.Context, botID string, req CreateRequest) (
 		Enabled:     enabled,
 		Command:     req.Command,
 		BotID:       pgBotID,
+		Platform:    req.Platform,
+		ReplyTarget: req.ReplyTarget,
 	})
 	if err != nil {
 		return Schedule{}, err
@@ -244,6 +246,8 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 		MaxCalls:    schedule.MaxCalls,
 		Command:     schedule.Command,
 		OwnerUserID: ownerUserID,
+		Platform:    schedule.Platform,
+		ReplyTarget: schedule.ReplyTarget,
 	}, token)
 	if err != nil {
 		return err
@@ -306,6 +310,8 @@ func toSchedule(row sqlc.Schedule) Schedule {
 		Enabled:      row.Enabled,
 		Command:      row.Command,
 		BotID:        row.BotID.String(),
+		Platform:     row.Platform,
+		ReplyTarget:  row.ReplyTarget,
 	}
 	if row.MaxCalls.Valid {
 		max := int(row.MaxCalls.Int32)

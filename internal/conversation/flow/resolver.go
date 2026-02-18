@@ -629,6 +629,8 @@ type triggerParams struct {
 	usageType            string          // "schedule" or "heartbeat"
 	evolutionLogID       string          // non-empty only for evolution heartbeats
 	historyLimitOverride int             // when > 0, override default history turn limit
+	platform             string          // channel platform for message delivery
+	replyTarget          string          // chat/group target for message delivery
 }
 
 // executeTrigger is the shared execution path for both schedule and heartbeat triggers.
@@ -653,6 +655,13 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 	gwPayload := rc.payload
 	gwPayload.Identity.ChannelIdentityID = strings.TrimSpace(p.ownerUserID)
 	gwPayload.Identity.DisplayName = p.displayName
+	if p.platform != "" {
+		gwPayload.Identity.CurrentPlatform = p.platform
+		gwPayload.CurrentChannel = p.platform
+	}
+	if p.replyTarget != "" {
+		gwPayload.Identity.ReplyTarget = p.replyTarget
+	}
 
 	triggerReq := triggerScheduleRequest{
 		gatewayRequest: gwPayload,
@@ -696,7 +705,9 @@ func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload sc
 			MaxCalls:    payload.MaxCalls,
 			Command:     payload.Command,
 		},
-		usageType: "schedule",
+		usageType:   "schedule",
+		platform:    payload.Platform,
+		replyTarget: payload.ReplyTarget,
 	}, token)
 	if err != nil {
 		r.logger.Warn("TriggerSchedule: failed", slog.String("bot_id", botID), slog.Any("error", err))

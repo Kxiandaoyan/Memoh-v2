@@ -273,17 +273,31 @@ func (s *QdrantStore) SearchBySources(ctx context.Context, vector []float32, lim
 	if len(sources) == 0 {
 		return pointsBySource, scoresBySource, nil
 	}
-	for _, source := range sources {
-		merged := cloneFilters(filters)
-		if source != "" {
-			merged["source"] = source
+
+	type result struct {
+		source string
+		points []qdrantPoint
+		scores []float64
+		err    error
+	}
+	ch := make(chan result, len(sources))
+	for _, src := range sources {
+		go func(source string) {
+			merged := cloneFilters(filters)
+			if source != "" {
+				merged["source"] = source
+			}
+			pts, scs, err := s.Search(ctx, vector, limit, merged, vectorName)
+			ch <- result{source: source, points: pts, scores: scs, err: err}
+		}(src)
+	}
+	for range sources {
+		r := <-ch
+		if r.err != nil {
+			return nil, nil, r.err
 		}
-		points, scores, err := s.Search(ctx, vector, limit, merged, vectorName)
-		if err != nil {
-			return nil, nil, err
-		}
-		pointsBySource[source] = points
-		scoresBySource[source] = scores
+		pointsBySource[r.source] = r.points
+		scoresBySource[r.source] = r.scores
 	}
 	return pointsBySource, scoresBySource, nil
 }
@@ -294,17 +308,31 @@ func (s *QdrantStore) SearchSparseBySources(ctx context.Context, indices []uint3
 	if len(sources) == 0 {
 		return pointsBySource, scoresBySource, nil
 	}
-	for _, source := range sources {
-		merged := cloneFilters(filters)
-		if source != "" {
-			merged["source"] = source
+
+	type result struct {
+		source string
+		points []qdrantPoint
+		scores []float64
+		err    error
+	}
+	ch := make(chan result, len(sources))
+	for _, src := range sources {
+		go func(source string) {
+			merged := cloneFilters(filters)
+			if source != "" {
+				merged["source"] = source
+			}
+			pts, scs, err := s.SearchSparse(ctx, indices, values, limit, merged, withSparseVectors)
+			ch <- result{source: source, points: pts, scores: scs, err: err}
+		}(src)
+	}
+	for range sources {
+		r := <-ch
+		if r.err != nil {
+			return nil, nil, r.err
 		}
-		points, scores, err := s.SearchSparse(ctx, indices, values, limit, merged, withSparseVectors)
-		if err != nil {
-			return nil, nil, err
-		}
-		pointsBySource[source] = points
-		scoresBySource[source] = scores
+		pointsBySource[r.source] = r.points
+		scoresBySource[r.source] = r.scores
 	}
 	return pointsBySource, scoresBySource, nil
 }

@@ -5,7 +5,21 @@
         <h1 class="text-2xl font-bold">{{ $t('logs.title') }}</h1>
         <p class="text-sm text-muted-foreground mt-1">{{ $t('logs.subtitle') }}</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-2 items-center">
+        <select
+          v-model="selectedBotId"
+          class="px-3 py-1.5 text-sm rounded-md border bg-background"
+          @change="loadLogs"
+        >
+          <option value="">{{ $t('logs.allBots') }}</option>
+          <option
+            v-for="bot in botList"
+            :key="bot.id"
+            :value="bot.id"
+          >
+            {{ bot.display_name || bot.name || bot.id.slice(0, 8) }}
+          </option>
+        </select>
         <button
           class="px-3 py-1.5 text-xs rounded-md border transition-colors hover:bg-accent"
           @click="refresh"
@@ -16,166 +30,155 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-      <div class="lg:col-span-1">
-        <div class="rounded-xl border bg-card p-4">
-          <div class="space-y-4">
-            <div>
-              <label class="text-sm font-medium">{{ $t('logs.selectBot') }}</label>
-              <select
-                v-model="selectedBotId"
-                class="w-full mt-1 px-3 py-2 rounded-md border bg-background"
-                @change="loadLogs"
-              >
-                <option value="">{{ $t('common.none') }}</option>
-                <option
-                  v-for="bot in botList"
-                  :key="bot.id"
-                  :value="bot.id"
-                >
-                  {{ bot.display_name || bot.name || bot.id.slice(0, 8) }}
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label class="text-sm font-medium">{{ $t('logs.allSteps') }}</label>
-              <select
-                v-model="selectedStep"
-                class="w-full mt-1 px-3 py-2 rounded-md border bg-background"
-                @change="loadLogs"
-              >
-                <option value="">{{ $t('logs.allSteps') }}</option>
-                <option
-                  v-for="(label, step) in stepLabels"
-                  :key="step"
-                  :value="step"
-                >
-                  {{ label }}
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label class="text-sm font-medium">{{ $t('common.search') }}</label>
-              <input
-                v-model="searchQuery"
-                :placeholder="$t('logs.searchPlaceholder')"
-                class="w-full mt-1 px-3 py-2 rounded-md border bg-background"
-                @input="debounceSearch"
-              >
-            </div>
-          </div>
-        </div>
-
-        <div class="mt-4 rounded-xl border bg-card p-4">
-          <h3 class="font-semibold mb-3">{{ $t('logs.title') }}</h3>
-          <div class="space-y-2">
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">{{ $t('common.loading') }}</span>
-              <span>{{ logs.length }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">Error</span>
-              <span class="text-red-500">{{ errorCount }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">Warn</span>
-              <span class="text-yellow-500">{{ warnCount }}</span>
-            </div>
-          </div>
-        </div>
+    <!-- Stats Bar -->
+    <div class="flex gap-4 text-sm">
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-blue-500" />
+        <span class="text-muted-foreground">{{ $t('logs.traces') }}:</span>
+        <span class="font-medium">{{ traceGroups.length }}</span>
       </div>
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-red-500" />
+        <span class="text-muted-foreground">{{ $t('logs.errors') }}:</span>
+        <span class="font-medium text-red-500">{{ errorTraceCount }}</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-yellow-500" />
+        <span class="text-muted-foreground">{{ $t('logs.warnings') }}:</span>
+        <span class="font-medium text-yellow-500">{{ warnTraceCount }}</span>
+      </div>
+    </div>
 
-      <div class="lg:col-span-3">
-        <div class="rounded-xl border bg-card">
-          <div
-            v-if="loading"
-            class="flex items-center justify-center h-96 text-muted-foreground"
-          >
-            <FontAwesomeIcon
-              :icon="['fas', 'spinner']"
-              class="animate-spin mr-2"
-            />
-            {{ $t('common.loading') }}
-          </div>
+    <!-- Loading -->
+    <div
+      v-if="loading"
+      class="flex items-center justify-center h-64 text-muted-foreground rounded-xl border bg-card"
+    >
+      <FontAwesomeIcon :icon="['fas', 'spinner']" class="animate-spin mr-2" />
+      {{ $t('common.loading') }}
+    </div>
 
-          <div
-            v-else-if="filteredLogs.length === 0"
-            class="flex flex-col items-center justify-center h-96 text-muted-foreground"
-          >
-            <FontAwesomeIcon
-              :icon="['fas', 'list-check']"
-              class="text-4xl mb-4 opacity-50"
-            />
-            {{ $t('logs.noLogs') }}
-          </div>
+    <!-- Empty -->
+    <div
+      v-else-if="traceGroups.length === 0"
+      class="flex flex-col items-center justify-center h-64 text-muted-foreground rounded-xl border bg-card"
+    >
+      <FontAwesomeIcon :icon="['fas', 'list-check']" class="text-4xl mb-4 opacity-50" />
+      {{ $t('logs.noLogs') }}
+    </div>
 
-          <div
-            v-else
-            class="overflow-auto"
-            style="max-height: calc(100vh - 200px)"
+    <!-- Trace List -->
+    <div v-else class="space-y-2">
+      <div
+        v-for="group in traceGroups"
+        :key="group.traceId"
+        class="rounded-xl border bg-card overflow-hidden"
+      >
+        <!-- Trace Header (Level 1) -->
+        <button
+          class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
+          @click="toggleTrace(group.traceId)"
+        >
+          <FontAwesomeIcon
+            :icon="['fas', 'chevron-right']"
+            class="text-xs text-muted-foreground transition-transform shrink-0"
+            :class="{ 'rotate-90': expandedTraces.has(group.traceId) }"
+          />
+          <!-- Status indicator -->
+          <span
+            class="w-2 h-2 rounded-full shrink-0"
+            :class="traceStatusColor(group)"
+          />
+          <!-- Time -->
+          <span class="text-xs text-muted-foreground w-16 shrink-0">
+            {{ formatTime(group.startTime) }}
+          </span>
+          <!-- Bot name -->
+          <span
+            v-if="!selectedBotId"
+            class="text-xs px-1.5 py-0.5 rounded bg-accent text-muted-foreground shrink-0 max-w-24 truncate"
           >
-            <table class="w-full text-sm">
-              <thead class="sticky top-0 bg-card border-b">
-                <tr class="text-muted-foreground text-left">
-                  <th class="px-4 py-3 font-medium w-32">{{ $t('common.createdAt') }}</th>
-                  <th class="px-4 py-3 font-medium w-24">Level</th>
-                  <th class="px-4 py-3 font-medium w-40">Step</th>
-                  <th class="px-4 py-3 font-medium">Message</th>
-                  <th class="px-4 py-3 font-medium w-24 text-right">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="log in filteredLogs"
-                  :key="log.id"
-                  class="border-b hover:bg-accent/50 transition-colors"
+            {{ getBotName(group.botId) }}
+          </span>
+          <!-- Query preview -->
+          <span class="text-sm truncate flex-1 min-w-0">
+            {{ group.query || group.traceId.slice(0, 8) }}
+          </span>
+          <!-- Step count -->
+          <span class="text-xs text-muted-foreground shrink-0">
+            {{ group.steps.length }} {{ $t('logs.stepsLabel') }}
+          </span>
+          <!-- Total duration -->
+          <span class="text-xs font-mono shrink-0 w-20 text-right" :class="durationColor(group.totalDuration)">
+            {{ group.totalDuration > 0 ? formatDuration(group.totalDuration) : '-' }}
+          </span>
+        </button>
+
+        <!-- Step Details (Level 2) -->
+        <div
+          v-if="expandedTraces.has(group.traceId)"
+          class="border-t"
+        >
+          <div class="divide-y">
+            <div
+              v-for="(step, idx) in group.steps"
+              :key="step.id"
+              class="flex items-start gap-3 px-4 py-2.5 text-sm hover:bg-accent/30 transition-colors"
+            >
+              <!-- Timeline connector -->
+              <div class="flex flex-col items-center pt-1 shrink-0 w-4">
+                <span
+                  class="w-2 h-2 rounded-full"
+                  :class="levelDotClass(step.level)"
+                />
+                <span
+                  v-if="idx < group.steps.length - 1"
+                  class="w-px flex-1 bg-border mt-1"
+                />
+              </div>
+              <!-- Time -->
+              <span class="text-xs text-muted-foreground w-20 shrink-0 pt-0.5">
+                {{ formatTimeDetailed(step.created_at) }}
+              </span>
+              <!-- Level badge -->
+              <span
+                class="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 w-12 text-center"
+                :class="levelClass(step.level)"
+              >
+                {{ step.level.toUpperCase() }}
+              </span>
+              <!-- Step label -->
+              <span class="text-xs font-medium w-32 shrink-0 pt-0.5 truncate" :title="step.step">
+                {{ stepLabels[step.step] || step.step }}
+              </span>
+              <!-- Message + Data -->
+              <div class="flex-1 min-w-0">
+                <p
+                  v-if="step.message"
+                  class="text-sm text-foreground/80 truncate"
+                  :class="{ 'text-red-500': step.level === 'error', 'text-yellow-600 dark:text-yellow-400': step.level === 'warn' }"
+                  :title="step.message"
                 >
-                  <td class="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                    {{ formatTime(log.created_at) }}
-                  </td>
-                  <td class="px-4 py-3">
-                    <span
-                      class="px-2 py-1 rounded text-xs font-medium"
-                      :class="levelClass(log.level)"
-                    >
-                      {{ log.level.toUpperCase() }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3">
-                    <span class="truncate" :title="log.step">
-                      {{ stepLabels[log.step] || log.step }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3">
-                    <div class="max-w-md">
-                      <p class="truncate" :title="log.message">
-                        {{ log.message }}
-                      </p>
-                      <div
-                        v-if="log.data"
-                        class="mt-1"
-                      >
-                        <button
-                          class="text-xs text-muted-foreground hover:text-foreground"
-                          @click="toggleData(log.id)"
-                        >
-                          {{ expandedData.has(log.id) ? '隐藏数据' : '显示数据' }}
-                        </button>
-                        <pre
-                          v-if="expandedData.has(log.id)"
-                          class="mt-1 p-2 bg-muted rounded text-xs overflow-auto max-h-40"
-                        >{{ JSON.stringify(log.data, null, 2) }}</pre>
-                      </div>
-                    </div>
-                  </td>
-                  <td class="px-4 py-3 text-right text-muted-foreground">
-                    {{ log.duration_ms ? `${log.duration_ms}ms` : '-' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  {{ step.message }}
+                </p>
+                <div v-if="step.data && Object.keys(step.data).length > 0">
+                  <button
+                    class="text-[11px] text-muted-foreground hover:text-foreground mt-0.5"
+                    @click.stop="toggleData(step.id)"
+                  >
+                    {{ expandedData.has(step.id) ? $t('logs.hideData') : $t('logs.showData') }}
+                  </button>
+                  <pre
+                    v-if="expandedData.has(step.id)"
+                    class="mt-1 p-2 bg-muted rounded text-xs overflow-auto max-h-40 text-foreground/70"
+                  >{{ JSON.stringify(step.data, null, 2) }}</pre>
+                </div>
+              </div>
+              <!-- Duration -->
+              <span class="text-xs font-mono text-muted-foreground w-16 text-right shrink-0 pt-0.5">
+                {{ step.duration_ms ? `${step.duration_ms}ms` : '-' }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -198,15 +201,23 @@ interface BotInfo {
   name?: string
 }
 
+interface TraceGroup {
+  traceId: string
+  botId: string
+  startTime: string
+  query: string
+  steps: ProcessLog[]
+  totalDuration: number
+  hasError: boolean
+  hasWarn: boolean
+}
+
 const loading = ref(false)
 const logs = ref<ProcessLog[]>([])
 const botList = ref<BotInfo[]>([])
 const selectedBotId = ref('')
-const selectedStep = ref('')
-const searchQuery = ref('')
+const expandedTraces = ref<Set<string>>(new Set())
 const expandedData = ref<Set<string>>(new Set())
-
-let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
 const stepLabels: Record<string, string> = {
   user_message_received: t('logs.steps.user_message_received'),
@@ -223,46 +234,122 @@ const stepLabels: Record<string, string> = {
   stream_started: t('logs.steps.stream_started'),
   stream_completed: t('logs.steps.stream_completed'),
   stream_error: t('logs.steps.stream_error'),
+  memory_extract_started: t('logs.steps.memory_extract_started'),
+  memory_extract_completed: t('logs.steps.memory_extract_completed'),
+  memory_extract_failed: t('logs.steps.memory_extract_failed'),
+  token_trimmed: t('logs.steps.token_trimmed'),
+  summary_loaded: t('logs.steps.summary_loaded'),
+  summary_requested: t('logs.steps.summary_requested'),
+  skills_loaded: t('logs.steps.skills_loaded'),
+  openviking_context: t('logs.steps.openviking_context'),
+  openviking_session: t('logs.steps.openviking_session'),
+  evolution_started: t('logs.steps.evolution_started'),
+  evolution_completed: t('logs.steps.evolution_completed'),
+  evolution_failed: t('logs.steps.evolution_failed'),
 }
 
-const filteredLogs = computed(() => {
-  let result = logs.value
-
-  if (selectedStep.value) {
-    result = result.filter(log => log.step === selectedStep.value)
+const traceGroups = computed<TraceGroup[]>(() => {
+  const groups = new Map<string, ProcessLog[]>()
+  for (const log of logs.value) {
+    const key = log.trace_id || log.id
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(log)
   }
-
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.toLowerCase()
-    result = result.filter(log =>
-      log.message?.toLowerCase().includes(q) ||
-      log.step.toLowerCase().includes(q) ||
-      log.trace_id?.toLowerCase().includes(q)
-    )
+  const result: TraceGroup[] = []
+  for (const [traceId, steps] of groups) {
+    steps.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    const userMsg = steps.find(s => s.step === 'user_message_received')
+    let query = ''
+    if (userMsg?.data?.query) {
+      query = String(userMsg.data.query)
+    } else if (userMsg?.message) {
+      query = userMsg.message
+    }
+    const totalDuration = steps.reduce((sum, s) => sum + (s.duration_ms || 0), 0)
+    result.push({
+      traceId,
+      botId: steps[0]?.bot_id || '',
+      startTime: steps[0]?.created_at || '',
+      query: query.length > 100 ? query.slice(0, 100) + '...' : query,
+      steps,
+      totalDuration,
+      hasError: steps.some(s => s.level === 'error'),
+      hasWarn: steps.some(s => s.level === 'warn'),
+    })
   }
-
+  result.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
   return result
 })
 
-const errorCount = computed(() => logs.value.filter(l => l.level === 'error').length)
-const warnCount = computed(() => logs.value.filter(l => l.level === 'warn').length)
+const errorTraceCount = computed(() => traceGroups.value.filter(g => g.hasError).length)
+const warnTraceCount = computed(() => traceGroups.value.filter(g => g.hasWarn && !g.hasError).length)
+
+function traceStatusColor(group: TraceGroup) {
+  if (group.hasError) return 'bg-red-500'
+  if (group.hasWarn) return 'bg-yellow-500'
+  return 'bg-green-500'
+}
+
+function durationColor(ms: number) {
+  if (ms > 10000) return 'text-red-500'
+  if (ms > 5000) return 'text-yellow-500'
+  return 'text-muted-foreground'
+}
+
+function formatDuration(ms: number) {
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+  return `${ms}ms`
+}
 
 function levelClass(level: string) {
   switch (level.toLowerCase()) {
-    case 'error':
-      return 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
-    case 'warn':
-      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300'
-    case 'info':
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-    default:
-      return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300'
+    case 'error': return 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+    case 'warn': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300'
+    case 'info': return 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+    default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300'
+  }
+}
+
+function levelDotClass(level: string) {
+  switch (level.toLowerCase()) {
+    case 'error': return 'bg-red-500'
+    case 'warn': return 'bg-yellow-500'
+    case 'info': return 'bg-blue-400'
+    default: return 'bg-gray-400'
   }
 }
 
 function formatTime(dateStr: string) {
-  const date = new Date(dateStr)
-  return date.toLocaleTimeString()
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatTimeDetailed(dateStr: string) {
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function getBotName(botId: string) {
+  const bot = botList.value.find(b => b.id === botId)
+  return bot?.display_name || bot?.name || botId.slice(0, 8)
+}
+
+function toggleTrace(traceId: string) {
+  if (expandedTraces.value.has(traceId)) {
+    expandedTraces.value.delete(traceId)
+  } else {
+    expandedTraces.value.add(traceId)
+  }
+  expandedTraces.value = new Set(expandedTraces.value)
+}
+
+function toggleData(logId: string) {
+  if (expandedData.value.has(logId)) {
+    expandedData.value.delete(logId)
+  } else {
+    expandedData.value.add(logId)
+  }
+  expandedData.value = new Set(expandedData.value)
 }
 
 async function loadBots() {
@@ -277,13 +364,9 @@ async function loadBots() {
 async function loadLogs() {
   loading.value = true
   try {
-    let url = '/logs/recent'
-    const params: Record<string, string> = {}
-    if (selectedBotId.value) {
-      params.botId = selectedBotId.value
-    }
-    params.limit = '500'
-    const response = await client.get({ url, query: params }) as Promise<{ data: ProcessLog[] }>
+    const params: Record<string, string> = { limit: '500' }
+    if (selectedBotId.value) params.botId = selectedBotId.value
+    const response = await client.get({ url: '/logs/recent', query: params }) as Promise<{ data: ProcessLog[] }>
     logs.value = (response as any).json ? await (response as any).json() : (response as any).data || []
   } catch (e) {
     console.error('Failed to load logs', e)
@@ -295,23 +378,6 @@ async function loadLogs() {
 
 function refresh() {
   loadLogs()
-}
-
-function toggleData(logId: string) {
-  if (expandedData.value.has(logId)) {
-    expandedData.value.delete(logId)
-  } else {
-    expandedData.value.add(logId)
-  }
-  expandedData.value = new Set(expandedData.value)
-}
-
-function debounceSearch() {
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
-  }
-  searchTimeout = setTimeout(() => {
-  }, 300)
 }
 
 onMounted(async () => {

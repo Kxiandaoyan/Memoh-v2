@@ -1004,19 +1004,32 @@ func normalizeMessages(req AddRequest) []Message {
 	return []Message{{Role: "user", Content: req.Message}}
 }
 
-func (s *Service) detectLanguage(ctx context.Context, text string) (string, error) {
-	if s.llm == nil {
-		return "", fmt.Errorf("language detector not configured")
+func (s *Service) detectLanguage(_ context.Context, text string) (string, error) {
+	return fastDetectLanguage(text), nil
+}
+
+// fastDetectLanguage uses a character-frequency heuristic that runs in
+// microseconds instead of calling the LLM (which adds seconds of latency).
+// BM25 only needs to distinguish CJK vs Latin tokenisation, so a simple
+// rune-level check is sufficient.
+func fastDetectLanguage(text string) string {
+	var cjk, total int
+	for _, r := range text {
+		if r <= ' ' {
+			continue
+		}
+		total++
+		if isCJKRune(r) {
+			cjk++
+		}
 	}
-	lang, err := s.llm.DetectLanguage(ctx, text)
-	if err == nil && lang != "" {
-		return lang, nil
+	if total == 0 {
+		return "en"
 	}
-	fallback := fallbackLanguageCode(text)
-	if s.logger != nil {
-		s.logger.Warn("language detection failed; using fallback", slog.Any("error", err), slog.String("fallback", fallback))
+	if float64(cjk)/float64(total) > 0.15 {
+		return "cjk"
 	}
-	return fallback, nil
+	return "en"
 }
 
 func fallbackLanguageCode(text string) string {

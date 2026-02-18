@@ -332,7 +332,9 @@ CREATE TABLE IF NOT EXISTS schedule (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   enabled BOOLEAN NOT NULL DEFAULT true,
   command TEXT NOT NULL,
-  bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE
+  bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL DEFAULT '',
+  reply_target TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_schedule_bot_id ON schedule(bot_id);

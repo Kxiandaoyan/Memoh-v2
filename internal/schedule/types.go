@@ -17,6 +17,8 @@ type Schedule struct {
 	Enabled      bool      `json:"enabled"`
 	Command      string    `json:"command"`
 	BotID        string    `json:"bot_id"`
+	Platform     string    `json:"platform,omitempty"`
+	ReplyTarget  string    `json:"reply_target,omitempty"`
 }
 
 type NullableInt struct {
@@ -56,6 +58,8 @@ type CreateRequest struct {
 	MaxCalls    NullableInt `json:"max_calls,omitempty"`
 	Command     string      `json:"command"`
 	Enabled     *bool       `json:"enabled,omitempty"`
+	Platform    string      `json:"platform,omitempty"`
+	ReplyTarget string      `json:"reply_target,omitempty"`
 }
 
 type UpdateRequest struct {

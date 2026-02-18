@@ -269,6 +269,8 @@ type Schedule struct {
 	Enabled      bool               `json:"enabled"`
 	Command      string             `json:"command"`
 	BotID        pgtype.UUID        `json:"bot_id"`
+	Platform     string             `json:"platform"`
+	ReplyTarget  string             `json:"reply_target"`
 }
 
 type SearchProvider struct {
