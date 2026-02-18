@@ -26,7 +26,7 @@ out/
 
 # Logs
 *.log
-logs/
+/logs/
 
 # Environment
 .env
