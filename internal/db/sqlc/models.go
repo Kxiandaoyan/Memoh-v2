@@ -168,6 +168,12 @@ type EvolutionLog struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
+type GlobalSetting struct {
+	Key       string             `json:"key"`
+	Value     string             `json:"value"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type HeartbeatConfig struct {
 	ID              pgtype.UUID        `json:"id"`
 	BotID           pgtype.UUID        `json:"bot_id"`
@@ -233,6 +239,21 @@ type ModelVariant struct {
 	Metadata  []byte             `json:"metadata"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProcessLog struct {
+	ID         pgtype.UUID        `json:"id"`
+	BotID      pgtype.UUID        `json:"bot_id"`
+	ChatID     pgtype.UUID        `json:"chat_id"`
+	TraceID    pgtype.UUID        `json:"trace_id"`
+	UserID     pgtype.Text        `json:"user_id"`
+	Channel    pgtype.Text        `json:"channel"`
+	Step       interface{}        `json:"step"`
+	Level      interface{}        `json:"level"`
+	Message    pgtype.Text        `json:"message"`
+	Data       []byte             `json:"data"`
+	DurationMs pgtype.Int4        `json:"duration_ms"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type Schedule struct {
@@ -315,10 +336,4 @@ type UserChannelBinding struct {
 	Config      []byte             `json:"config"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-type GlobalSetting struct {
-	Key       string             `json:"key"`
-	Value     string             `json:"value"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

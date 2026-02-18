@@ -20,25 +20,6 @@ func (q *Queries) GetGlobalSetting(ctx context.Context, key string) (GlobalSetti
 	return i, err
 }
 
-const upsertGlobalSetting = `-- name: UpsertGlobalSetting :one
-INSERT INTO global_settings (key, value, updated_at)
-VALUES ($1, $2, now())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-RETURNING key, value, updated_at
-`
-
-type UpsertGlobalSettingParams struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-func (q *Queries) UpsertGlobalSetting(ctx context.Context, arg UpsertGlobalSettingParams) (GlobalSetting, error) {
-	row := q.db.QueryRow(ctx, upsertGlobalSetting, arg.Key, arg.Value)
-	var i GlobalSetting
-	err := row.Scan(&i.Key, &i.Value, &i.UpdatedAt)
-	return i, err
-}
-
 const listGlobalSettings = `-- name: ListGlobalSettings :many
 SELECT key, value, updated_at FROM global_settings ORDER BY key
 `
@@ -61,4 +42,23 @@ func (q *Queries) ListGlobalSettings(ctx context.Context) ([]GlobalSetting, erro
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertGlobalSetting = `-- name: UpsertGlobalSetting :one
+INSERT INTO global_settings (key, value, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+RETURNING key, value, updated_at
+`
+
+type UpsertGlobalSettingParams struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func (q *Queries) UpsertGlobalSetting(ctx context.Context, arg UpsertGlobalSettingParams) (GlobalSetting, error) {
+	row := q.db.QueryRow(ctx, upsertGlobalSetting, arg.Key, arg.Value)
+	var i GlobalSetting
+	err := row.Scan(&i.Key, &i.Value, &i.UpdatedAt)
+	return i, err
 }

@@ -79,7 +79,8 @@ FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
 WHERE m.bot_id = sqlc.arg(bot_id)
   AND m.created_at >= sqlc.arg(created_at)
-ORDER BY m.created_at ASC;
+ORDER BY m.created_at ASC
+LIMIT sqlc.arg(max_count);
 
 -- name: ListMessagesBefore :many
 SELECT

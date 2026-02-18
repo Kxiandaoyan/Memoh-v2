@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/conversation"
@@ -23,6 +24,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
 	messagepkg "github.com/Kxiandaoyan/Memoh-v2/internal/message"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/models"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/processlog"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/schedule"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/settings"
 )
@@ -34,6 +36,11 @@ const (
 	memoryContextItemMaxChars  = 220
 	sharedMemoryNamespace      = "bot"
 )
+
+// generateTraceID creates a new UUID trace ID for request tracking
+func generateTraceID() string {
+	return uuid.New().String()
+}
 
 // SkillEntry represents a skill loaded from the container.
 type SkillEntry struct {
@@ -55,19 +62,20 @@ type ConversationSettingsReader interface {
 
 // Resolver orchestrates chat with the agent gateway.
 type Resolver struct {
-	modelsService   *models.Service
-	queries         *sqlc.Queries
-	memoryService   *memory.Service
+	modelsService    *models.Service
+	queries          *sqlc.Queries
+	memoryService    *memory.Service
 	conversationSvc ConversationSettingsReader
-	messageService  messagepkg.Service
-	settingsService *settings.Service
-	skillLoader     SkillLoader
-	gatewayBaseURL  string
-	timezone        string
-	timeout         time.Duration
-	logger          *slog.Logger
-	httpClient      *http.Client
-	streamingClient *http.Client
+	messageService   messagepkg.Service
+	settingsService  *settings.Service
+	processLogService *processlog.Service
+	skillLoader      SkillLoader
+	gatewayBaseURL   string
+	timezone         string
+	timeout          time.Duration
+	logger           *slog.Logger
+	httpClient       *http.Client
+	streamingClient  *http.Client
 }
 
 // NewResolver creates a Resolver that communicates with the agent gateway.
@@ -79,6 +87,7 @@ func NewResolver(
 	conversationSvc ConversationSettingsReader,
 	messageService messagepkg.Service,
 	settingsService *settings.Service,
+	processLogService *processlog.Service,
 	gatewayBaseURL string,
 	timeout time.Duration,
 ) *Resolver {
@@ -90,15 +99,16 @@ func NewResolver(
 		timeout = 60 * time.Second
 	}
 	return &Resolver{
-		modelsService:   modelsService,
-		queries:         queries,
-		memoryService:   memoryService,
-		conversationSvc: conversationSvc,
-		messageService:  messageService,
-		settingsService: settingsService,
-		gatewayBaseURL:  gatewayBaseURL,
-		timeout:         timeout,
-		logger:          log.With(slog.String("service", "conversation_resolver")),
+		modelsService:      modelsService,
+		queries:            queries,
+		memoryService:      memoryService,
+		conversationSvc:   conversationSvc,
+		messageService:     messageService,
+		settingsService:    settingsService,
+		processLogService:   processLogService,
+		gatewayBaseURL:    gatewayBaseURL,
+		timeout:           timeout,
+		logger:            log.With(slog.String("service", "conversation_resolver")),
 		httpClient:      &http.Client{Timeout: timeout},
 		streamingClient: &http.Client{},
 	}
@@ -112,6 +122,38 @@ func (r *Resolver) SetSkillLoader(sl SkillLoader) {
 // SetTimezone sets the IANA timezone name used in gateway requests.
 func (r *Resolver) SetTimezone(tz string) {
 	r.timezone = tz
+}
+
+// --- Process Logging Helpers ---
+
+// logProcessStep records a process log entry for debugging and monitoring
+func (r *Resolver) logProcessStep(
+	ctx context.Context,
+	botID, chatID, traceID, userID, channel string,
+	step processlog.ProcessLogStep,
+	level processlog.ProcessLogLevel,
+	message string,
+	data map[string]any,
+	durationMs int,
+) {
+	if r.processLogService == nil {
+		return
+	}
+	// Run in background to not block main flow
+	go func() {
+		_, _ = r.processLogService.Create(ctx, processlog.CreateProcessLogParams{
+			BotID:      botID,
+			ChatID:     chatID,
+			TraceID:    traceID,
+			UserID:     userID,
+			Channel:    channel,
+			Step:       step,
+			Level:      level,
+			Message:    message,
+			Data:       data,
+			DurationMs: durationMs,
+		})
+	}()
 }
 
 // --- gateway payload ---
@@ -198,9 +240,22 @@ type resolvedContext struct {
 	payload  gatewayRequest
 	model    models.GetResponse
 	provider sqlc.LlmProvider
+	traceID  string
 }
 
 func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (resolvedContext, error) {
+	// Generate trace ID for this request
+	traceID := generateTraceID()
+
+	// Log user message received
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepUserMessageReceived, processlog.LevelInfo, "User message received",
+		map[string]any{
+			"query":     truncate(req.Query, 500),
+			"channels":  req.Channels,
+			"timestamp": time.Now().Unix(),
+		}, 0)
+
 	if strings.TrimSpace(req.Query) == "" {
 		return resolvedContext{}, fmt.Errorf("query is required")
 	}
@@ -237,12 +292,37 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 	maxCtx := coalescePositiveInt(req.MaxContextLoadTime, botSettings.MaxContextLoadTime, defaultMaxContextMinutes)
 
+	// Determine history limit based on conversation type (DM vs Channel/Group)
+	// DM conversations get more history, channel/group get less
+	historyLimit := settings.DefaultChannelHistoryLimit
+	if isDirectConversationType(req.ConversationType) {
+		historyLimit = settings.DefaultDMHistoryLimit
+	}
+	// Allow bot settings to override defaults
+	if botSettings.DMHistoryLimit > 0 && isDirectConversationType(req.ConversationType) {
+		historyLimit = botSettings.DMHistoryLimit
+	}
+	if botSettings.ChannelHistoryLimit > 0 && !isDirectConversationType(req.ConversationType) {
+		historyLimit = botSettings.ChannelHistoryLimit
+	}
+
 	var messages []conversation.ModelMessage
 	if !skipHistory && r.conversationSvc != nil {
-		messages, err = r.loadMessages(ctx, req.ChatID, maxCtx)
+		msgs, err := r.loadMessages(ctx, req.ChatID, maxCtx)
 		if err != nil {
 			return resolvedContext{}, err
 		}
+		// Apply turn-based limit (more accurate than message count)
+		messages = limitHistoryTurns(msgs, historyLimit)
+
+		// Log history loaded
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepHistoryLoaded, processlog.LevelInfo, "History loaded",
+			map[string]any{
+				"message_count": len(msgs),
+				"after_limit":   len(messages),
+				"history_limit": historyLimit,
+			}, 0)
 	}
 
 	// Inject existing conversation summary as the first message.
@@ -255,6 +335,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 
 	if memoryMsg := r.loadMemoryContextMessage(ctx, req); memoryMsg != nil {
+		// Log memory loaded
+		contentStr := string(memoryMsg.Content)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepMemoryLoaded, processlog.LevelInfo, "Memory loaded",
+			map[string]any{
+				"memory_content": truncate(contentStr, 500),
+			}, 0)
 		messages = append(messages, *memoryMsg)
 	}
 	messages = append(messages, req.Messages...)
@@ -347,7 +434,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		AllowSelfEvolution: allowSelfEvolution,
 	}
 
-	return resolvedContext{payload: payload, model: chatModel, provider: provider}, nil
+	return resolvedContext{payload: payload, model: chatModel, provider: provider, traceID: traceID}, nil
 }
 
 // --- Chat ---
@@ -358,8 +445,22 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 	if err != nil {
 		return conversation.ChatResponse{}, err
 	}
+
+	// Log LLM request being sent
+	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+		processlog.StepLLMRequestSent, processlog.LevelInfo, "LLM request sent",
+		map[string]any{
+			"model":         rc.model.ModelID,
+			"message_count": len(rc.payload.Messages),
+		}, 0)
+
 	resp, err := r.postChat(ctx, rc.payload, req.Token)
 	if err != nil {
+		// Log LLM error
+		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+			processlog.StepLLMResponseReceived, processlog.LevelError, "LLM request failed",
+			map[string]any{"error": err.Error()}, 0)
+
 		// Attempt failover if primary model fails
 		if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
 			r.logger.Warn("primary model failed, using fallback",
@@ -375,6 +476,16 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 			return conversation.ChatResponse{}, err
 		}
 	}
+
+	// Log LLM response received
+	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+		processlog.StepLLMResponseReceived, processlog.LevelInfo, "LLM response received",
+		map[string]any{
+			"model":           rc.model.ModelID,
+			"response_length": len(resp.Messages),
+			"usage":           resp.Usage,
+		}, 0)
+
 	if err := r.storeRound(ctx, req, resp.Messages, resp.Usage); err != nil {
 		return conversation.ChatResponse{}, err
 	}
@@ -581,6 +692,14 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			errCh <- err
 			return
 		}
+
+		// Log stream started
+		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+			processlog.StepStreamStarted, processlog.LevelInfo, "Stream started",
+			map[string]any{
+				"model": rc.model.ModelID,
+			}, 0)
+
 		if !streamReq.UserMessagePersisted {
 			if err := r.persistUserMessage(ctx, streamReq); err != nil {
 				r.logger.Error("gateway stream persist user message failed",
@@ -593,28 +712,38 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			}
 			streamReq.UserMessagePersisted = true
 		}
-		if err := r.streamChat(ctx, rc.payload, streamReq, chunkCh, rc.model.ModelID); err != nil {
-			// Attempt failover if primary model stream fails
-			if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
-				r.logger.Warn("primary model stream failed, using fallback",
-					slog.String("primary", rc.model.ModelID),
-					slog.String("fallback", fbCtx.model.ModelID),
-					slog.Any("primary_error", err))
-				if retryErr := r.streamChat(ctx, fbCtx.payload, streamReq, chunkCh, fbCtx.model.ModelID); retryErr != nil {
-					r.logger.Error("gateway stream fallback also failed",
-						slog.String("bot_id", streamReq.BotID),
-						slog.String("chat_id", streamReq.ChatID),
-						slog.Any("error", retryErr),
-					)
-					errCh <- retryErr
-				}
+
+		// Wrap streamChat to capture completion
+		wrappedChunkCh := make(chan conversation.StreamChunk)
+		streamCompleteCh := make(chan struct{})
+
+		go func() {
+			err := r.streamChat(ctx, rc.payload, streamReq, wrappedChunkCh, rc.model.ModelID)
+
+			// Log stream completed or error
+			if err != nil {
+				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+					processlog.StepStreamError, processlog.LevelError, "Stream error",
+					map[string]any{"error": err.Error()}, 0)
 			} else {
-				r.logger.Error("gateway stream request failed",
-					slog.String("bot_id", streamReq.BotID),
-					slog.String("chat_id", streamReq.ChatID),
-					slog.Any("error", err),
-				)
-				errCh <- err
+				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+					processlog.StepStreamCompleted, processlog.LevelInfo, "Stream completed",
+					nil, 0)
+			}
+			close(streamCompleteCh)
+		}()
+
+		// Forward chunks to main channel
+		for {
+			select {
+			case chunk, ok := <-wrappedChunkCh:
+				if !ok {
+					<-streamCompleteCh
+					return
+				}
+				chunkCh <- chunk
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
@@ -907,10 +1036,21 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 	if err != nil {
 		r.logger.Warn("memory search for context failed",
 			slog.String("namespace", sharedMemoryNamespace),
+			slog.String("query", truncate(req.Query, 100)),
 			slog.Any("error", err),
 		)
 		return nil
 	}
+
+	// Log search results for debugging
+	if r.logger != nil {
+		r.logger.Info("memory search completed",
+			slog.String("query", truncate(req.Query, 100)),
+			slog.Int("results_found", len(resp.Results)),
+			slog.String("namespace", sharedMemoryNamespace),
+		)
+	}
+
 	for _, item := range resp.Results {
 		key := strings.TrimSpace(item.ID)
 		if key == "" {
@@ -924,8 +1064,23 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		}
 		seen[key] = struct{}{}
 		results = append(results, memoryContextItem{Namespace: sharedMemoryNamespace, Item: item})
+
+		// Log each memory item for debugging
+		if r.logger != nil {
+			r.logger.Debug("memory item found",
+				slog.String("memory_id", item.ID),
+				slog.String("memory_text", truncate(item.Memory, 200)),
+				slog.Float64("score", item.Score),
+			)
+		}
 	}
 	if len(results) == 0 {
+		if r.logger != nil {
+			r.logger.Info("no memory found for query",
+				slog.String("query", truncate(req.Query, 100)),
+				slog.String("namespace", sharedMemoryNamespace),
+			)
+		}
 		return nil
 	}
 
@@ -1255,6 +1410,16 @@ func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []con
 	if len(memMsgs) == 0 {
 		return
 	}
+
+	// Log memory storage attempt
+	if r.logger != nil {
+		r.logger.Info("storing memory",
+			slog.String("bot_id", botID),
+			slog.Int("message_count", len(memMsgs)),
+			slog.String("namespace", sharedMemoryNamespace),
+		)
+	}
+
 	r.addMemory(ctx, botID, memMsgs, sharedMemoryNamespace, botID)
 }
 
@@ -1264,15 +1429,29 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 		"scopeId":   scopeID,
 		"bot_id":    botID,
 	}
-	if _, err := r.memoryService.Add(ctx, memory.AddRequest{
+	result, err := r.memoryService.Add(ctx, memory.AddRequest{
 		Messages: msgs,
 		BotID:    botID,
 		Filters:  filters,
-	}); err != nil {
-		r.logger.Warn("store memory failed",
+	})
+	if err != nil {
+		if r.logger != nil {
+			r.logger.Warn("store memory failed",
+				slog.String("namespace", namespace),
+				slog.String("scope_id", scopeID),
+				slog.Any("error", err),
+			)
+		}
+		return
+	}
+
+	// Log successful memory storage
+	if r.logger != nil {
+		r.logger.Info("memory processed",
+			slog.String("bot_id", botID),
 			slog.String("namespace", namespace),
-			slog.String("scope_id", scopeID),
-			slog.Any("error", err),
+			slog.Int("messages_processed", len(msgs)),
+			slog.Int("results_count", len(result.Results)),
 		)
 	}
 }
@@ -1483,13 +1662,6 @@ func nonNilModelMessages(m []conversation.ModelMessage) []conversation.ModelMess
 	return m
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
-}
-
 func truncateMemorySnippet(s string, n int) string {
 	trimmed := strings.TrimSpace(s)
 	if len(trimmed) <= n {
@@ -1498,11 +1670,48 @@ func truncateMemorySnippet(s string, n int) string {
 	return strings.TrimSpace(trimmed[:n]) + "..."
 }
 
+// truncate returns the first n characters of s, adding "..." if truncated.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 func parseResolverUUID(id string) (pgtype.UUID, error) {
 	if strings.TrimSpace(id) == "" {
 		return pgtype.UUID{}, fmt.Errorf("empty id")
 	}
 	return db.ParseUUID(id)
+}
+
+// isDirectConversationType returns true for DM/private conversations.
+func isDirectConversationType(conversationType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(conversationType))
+	return ct == "" || ct == "p2p" || ct == "private" || ct == "direct"
+}
+
+// limitHistoryTurns limits conversation history to the last N user turns (and their associated
+// assistant responses). This reduces token usage for long-running sessions.
+// Based on OpenClaw's implementation.
+func limitHistoryTurns(messages []conversation.ModelMessage, limit int) []conversation.ModelMessage {
+	if limit <= 0 || len(messages) == 0 {
+		return messages
+	}
+
+	userCount := 0
+	lastUserIndex := len(messages)
+
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			userCount++
+			if userCount > limit {
+				return messages[lastUserIndex:]
+			}
+			lastUserIndex = i
+		}
+	}
+	return messages
 }
 
 // pruneMessagesByTokenBudget trims oldest messages to fit within a token budget.

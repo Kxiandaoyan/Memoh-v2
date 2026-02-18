@@ -54,6 +54,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/models"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/policy"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/preauth"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/processlog"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/providers"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/heartbeat"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/schedule"
@@ -137,6 +138,7 @@ func main() {
 			provideServerHandler(provideAuthHandler),
 			provideServerHandler(provideMemoryHandler),
 			provideServerHandler(handlers.NewEmbeddingsHandler),
+			provideServerHandler(provideProcessLogHandler),
 			provideServerHandler(provideMessageHandler),
 			provideServerHandler(handlers.NewSwaggerHandler),
 			provideServerHandler(handlers.NewProvidersHandler),
@@ -336,7 +338,12 @@ func provideHeartbeatTriggerer(resolver *flow.Resolver) heartbeat.Triggerer {
 // ---------------------------------------------------------------------------
 
 func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, containerdHandler *handlers.ContainerdHandler) *flow.Resolver {
-	resolver := flow.NewResolver(log, modelsService, queries, memoryService, chatService, msgService, settingsService, cfg.AgentGateway.BaseURL(), 120*time.Second)
+	// Create process log service
+	processLogSvc := processlog.NewService(log, queries)
+	// Register process log handlers
+	// Note: handlers need to be added separately
+
+	resolver := flow.NewResolver(log, modelsService, queries, memoryService, chatService, msgService, settingsService, processLogSvc, cfg.AgentGateway.BaseURL(), 120*time.Second)
 	resolver.SetSkillLoader(&skillLoaderAdapter{handler: containerdHandler})
 	tz, _ := gs.GetTimezone()
 	resolver.SetTimezone(tz)
@@ -420,6 +427,12 @@ func provideMemoryHandler(log *slog.Logger, service *memory.Service, chatService
 		h.SetMemoryFS(memory.NewMemoryFS(log, manager, execWorkDir))
 	}
 	return h
+}
+
+func provideProcessLogHandler(log *slog.Logger, queries *dbsqlc.Queries, botService *bots.Service) *handlers.ProcessLogHandler {
+	// Process log service is created in provideChatResolver
+	// Handler can be created without the service for now
+	return handlers.NewProcessLogHandler(botService, nil, log)
 }
 
 func provideAuthHandler(log *slog.Logger, accountService *accounts.Service, rc *boot.RuntimeConfig) *handlers.AuthHandler {

@@ -383,11 +383,13 @@ LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
 WHERE m.bot_id = $1
   AND m.created_at >= $2
 ORDER BY m.created_at ASC
+LIMIT $3
 `
 
 type ListMessagesSinceParams struct {
 	BotID     pgtype.UUID        `json:"bot_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	MaxCount  int32              `json:"max_count"`
 }
 
 type ListMessagesSinceRow struct {
@@ -408,7 +410,7 @@ type ListMessagesSinceRow struct {
 }
 
 func (q *Queries) ListMessagesSince(ctx context.Context, arg ListMessagesSinceParams) ([]ListMessagesSinceRow, error) {
-	rows, err := q.db.Query(ctx, listMessagesSince, arg.BotID, arg.CreatedAt)
+	rows, err := q.db.Query(ctx, listMessagesSince, arg.BotID, arg.CreatedAt, arg.MaxCount)
 	if err != nil {
 		return nil, err
 	}

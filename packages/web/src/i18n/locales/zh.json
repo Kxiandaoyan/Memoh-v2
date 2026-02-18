@@ -62,7 +62,8 @@
     "mcp": "MCP",
     "sharedWorkspace": "共享工作区",
     "schedules": "定时任务",
-    "tokenUsage": "Token 用量"
+    "tokenUsage": "Token 用量",
+    "logs": "流程日志"
   },
   "breadcrumb": {
     "main": "主页"
@@ -785,5 +786,27 @@
     "daily": "每日用量",
     "botComparison": "Bot 对比",
     "tokens": "tokens"
+  },
+  "logs": {
+    "title": "流程日志",
+    "subtitle": "查看从用户输入到 LLM 回复的完整流程。",
+    "selectBot": "选择 Bot",
+    "allSteps": "所有步骤",
+    "searchPlaceholder": "搜索日志...",
+    "noLogs": "暂无日志记录",
+    "steps": {
+      "user_message_received": "用户消息接收",
+      "history_loaded": "历史加载",
+      "memory_searched": "记忆搜索",
+      "memory_loaded": "记忆加载",
+      "prompt_built": "Prompt 构建",
+      "llm_request_sent": "LLM 请求发送",
+      "llm_response_received": "LLM 响应接收",
+      "response_sent": "响应发送",
+      "memory_stored": "记忆存储",
+      "stream_started": "流式开始",
+      "stream_completed": "流式完成",
+      "stream_error": "流式错误"
+    }
   }
 }
