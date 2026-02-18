@@ -294,7 +294,8 @@ func (a *TelegramAdapter) Send(ctx context.Context, cfg channel.ChannelConfig, m
 	}
 	text := strings.TrimSpace(msg.Message.PlainText())
 	text, parseMode := formatTelegramOutput(text, msg.Message.Format)
-	replyTo := parseReplyToMessageID(msg.Message.Reply)
+	// Bot 自动回复时不引用原消息
+	replyTo := 0
 	if len(msg.Message.Attachments) > 0 {
 		usedCaption := false
 		for i, att := range msg.Message.Attachments {

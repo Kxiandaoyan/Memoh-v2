@@ -290,6 +290,7 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 	var (
 		finalMessages []conversation.ModelMessage
 		streamErr     error
+		collectedUsage *gatewayUsage
 	)
 	for chunkCh != nil || streamErrCh != nil {
 		select {
@@ -298,7 +299,7 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 				chunkCh = nil
 				continue
 			}
-			events, messages, parseErr := mapStreamChunkToChannelEvents(chunk)
+			events, messages, usage, parseErr := mapStreamChunkToChannelEvents(chunk)
 			if parseErr != nil {
 				if p.logger != nil {
 					p.logger.Warn(
@@ -310,6 +311,10 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 					)
 				}
 				continue
+			}
+			// Collect the latest usage data (prefer agent_end/done events)
+			if usage != nil && usage.TotalTokens > 0 {
+				collectedUsage = usage
 			}
 			for _, event := range events {
 				if pushErr := stream.Push(ctx, event); pushErr != nil {
@@ -373,7 +378,7 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 	}
 
 	outputs := flow.ExtractAssistantOutputs(finalMessages)
-	for _, output := range outputs {
+	for i, output := range outputs {
 		outMessage := buildChannelMessage(output, desc.Capabilities)
 		if outMessage.IsEmpty() {
 			continue
@@ -384,6 +389,14 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 		}
 		if isMessagingToolDuplicate(plainText, sentTexts) {
 			continue
+		}
+		// Append token usage to the last assistant message
+		isLastOutput := i == len(outputs)-1
+		if isLastOutput && collectedUsage != nil && collectedUsage.TotalTokens > 0 {
+			tokenText := formatTokenUsage(collectedUsage)
+			if tokenText != "" {
+				outMessage.Text = strings.TrimSpace(outMessage.Text) + "\n\n" + tokenText
+			}
 		}
 		if outMessage.Reply == nil && sourceMessageID != "" {
 			outMessage.Reply = &channel.ReplyRef{
@@ -654,19 +667,26 @@ type gatewayStreamEnvelope struct {
 	Message  string                      `json:"message"`
 	Data     json.RawMessage             `json:"data"`
 	Messages []conversation.ModelMessage `json:"messages"`
+	Usage    *gatewayUsage              `json:"usage,omitempty"`
+}
+
+type gatewayUsage struct {
+	PromptTokens     int `json:"promptTokens"`
+	CompletionTokens int `json:"completionTokens"`
+	TotalTokens      int `json:"totalTokens"`
 }
 
 type gatewayStreamDoneData struct {
 	Messages []conversation.ModelMessage `json:"messages"`
 }
 
-func mapStreamChunkToChannelEvents(chunk conversation.StreamChunk) ([]channel.StreamEvent, []conversation.ModelMessage, error) {
+func mapStreamChunkToChannelEvents(chunk conversation.StreamChunk) ([]channel.StreamEvent, []conversation.ModelMessage, *gatewayUsage, error) {
 	if len(chunk) == 0 {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	var envelope gatewayStreamEnvelope
 	if err := json.Unmarshal(chunk, &envelope); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	finalMessages := make([]conversation.ModelMessage, 0, len(envelope.Messages))
 	finalMessages = append(finalMessages, envelope.Messages...)
@@ -680,17 +700,17 @@ func mapStreamChunkToChannelEvents(chunk conversation.StreamChunk) ([]channel.St
 	switch eventType {
 	case "text_delta":
 		if envelope.Delta == "" {
-			return nil, finalMessages, nil
+			return nil, finalMessages, envelope.Usage, nil
 		}
 		return []channel.StreamEvent{
 			{
 				Type:  channel.StreamEventDelta,
 				Delta: envelope.Delta,
 			},
-		}, finalMessages, nil
+		}, finalMessages, envelope.Usage, nil
 	case "reasoning_delta":
 		if envelope.Delta == "" {
-			return nil, finalMessages, nil
+			return nil, finalMessages, envelope.Usage, nil
 		}
 		return []channel.StreamEvent{
 			{
@@ -700,7 +720,7 @@ func mapStreamChunkToChannelEvents(chunk conversation.StreamChunk) ([]channel.St
 					"phase": "reasoning",
 				},
 			},
-		}, finalMessages, nil
+		}, finalMessages, envelope.Usage, nil
 	case "error":
 		streamError := strings.TrimSpace(envelope.Error)
 		if streamError == "" {
@@ -714,9 +734,9 @@ func mapStreamChunkToChannelEvents(chunk conversation.StreamChunk) ([]channel.St
 				Type:  channel.StreamEventError,
 				Error: streamError,
 			},
-		}, finalMessages, nil
+		}, finalMessages, envelope.Usage, nil
 	default:
-		return nil, finalMessages, nil
+		return nil, finalMessages, envelope.Usage, nil
 	}
 }
 
@@ -1043,4 +1063,15 @@ func (p *ChannelInboundProcessor) logProcessingStatusError(
 		slog.String("user_id", identity.UserID),
 		slog.Any("error", err),
 	)
+}
+
+// formatTokenUsage formats token usage into a compact string like "⚡ X.Xk"
+// Only shows completion tokens as that's the main cost indicator.
+func formatTokenUsage(usage *gatewayUsage) string {
+	if usage == nil || usage.TotalTokens == 0 {
+		return ""
+	}
+	// Show completion tokens in k format (e.g., "⚡ 1.2k")
+	kTokens := float64(usage.CompletionTokens) / 1000.0
+	return fmt.Sprintf("⚡ %.1fk", kTokens)
 }

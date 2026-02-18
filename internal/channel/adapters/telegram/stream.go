@@ -44,7 +44,8 @@ func (s *telegramOutboundStream) getBotAndReply(ctx context.Context) (bot *tgbot
 	if err != nil {
 		return nil, 0, err
 	}
-	replyTo = parseReplyToMessageID(s.reply)
+	// Bot 自动回复时不引用原消息，避免消息引用链
+	replyTo = 0
 	return bot, replyTo, nil
 }
 
@@ -262,7 +263,8 @@ func (s *telegramOutboundStream) Push(ctx context.Context, event channel.StreamE
 			return err
 		}
 		if len(msg.Attachments) > 0 {
-			replyTo := parseReplyToMessageID(s.reply)
+			// Bot 自动回复时不引用原消息
+			replyTo := 0
 			telegramCfg, err := parseConfig(s.cfg.Credentials)
 			if err != nil {
 				return err
