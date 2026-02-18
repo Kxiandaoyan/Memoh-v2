@@ -51,9 +51,8 @@
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              class="justify-start px-2 py-2"
+              class="justify-start px-2 py-2 cursor-default hover:bg-transparent"
               :tooltip="displayTitle"
-              @click="router.push({ name: 'settings' })"
             >
               <Avatar class="size-7 shrink-0">
                 <AvatarImage
@@ -160,6 +159,11 @@ const sidebarInfo = computed(() => [
     title: t('sidebar.logs'),
     name: 'logs',
     icon: ['fas', 'list-check'],
+  },
+  {
+    title: t('sidebar.adminSettings'),
+    name: 'settings',
+    icon: ['fas', 'user-gear'],
   },
 ])
 

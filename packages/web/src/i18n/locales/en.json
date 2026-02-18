@@ -64,7 +64,8 @@
     "systemSettings": "System Settings",
     "schedules": "Schedules",
     "tokenUsage": "Token Usage",
-    "logs": "Process Logs"
+    "logs": "Process Logs",
+    "adminSettings": "Admin Settings"
   },
   "breadcrumb": {
     "main": "Home"

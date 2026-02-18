@@ -64,7 +64,8 @@
     "systemSettings": "系统设置",
     "schedules": "定时任务",
     "tokenUsage": "Token 用量",
-    "logs": "流程日志"
+    "logs": "流程日志",
+    "adminSettings": "管理员设置"
   },
   "breadcrumb": {
     "main": "主页"
