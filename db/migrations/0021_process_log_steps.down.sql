@@ -1,0 +1,4 @@
+-- 0021_process_log_steps (down)
+-- PostgreSQL does not support DROP VALUE from enums directly.
+-- To fully rollback, the enum would need to be recreated. This is a no-op.
+-- The extra enum values are harmless if unused.

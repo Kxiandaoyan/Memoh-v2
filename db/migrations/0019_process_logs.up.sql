@@ -18,11 +18,25 @@ DO $$ BEGIN
         'prompt_built',
         'llm_request_sent',
         'llm_response_received',
+        'tool_call_started',
+        'tool_call_completed',
         'response_sent',
         'memory_stored',
+        'memory_extract_started',
+        'memory_extract_completed',
+        'memory_extract_failed',
         'stream_started',
         'stream_completed',
-        'stream_error'
+        'stream_error',
+        'token_trimmed',
+        'summary_loaded',
+        'summary_requested',
+        'skills_loaded',
+        'openviking_context',
+        'openviking_session',
+        'evolution_started',
+        'evolution_completed',
+        'evolution_failed'
     );
 EXCEPTION
     WHEN duplicate_object THEN null;

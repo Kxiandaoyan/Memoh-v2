@@ -393,18 +393,21 @@ const form = reactive({
   group_require_mention: true,
 })
 
+let lastSettingsSnapshot = ''
 watch(settings, (val) => {
-  if (val) {
-    form.chat_model_id = val.chat_model_id ?? ''
-    form.memory_model_id = val.memory_model_id ?? ''
-    form.embedding_model_id = val.embedding_model_id ?? ''
-    form.vlm_model_id = val.vlm_model_id ?? ''
-    form.search_provider_id = val.search_provider_id ?? ''
-    form.max_context_load_time = val.max_context_load_time ?? 0
-    form.language = val.language ?? ''
-    form.allow_guest = val.allow_guest ?? false
-    form.group_require_mention = (val as any).group_require_mention ?? true
-  }
+  if (!val) return
+  const snapshot = JSON.stringify(val)
+  if (snapshot === lastSettingsSnapshot) return
+  lastSettingsSnapshot = snapshot
+  form.chat_model_id = val.chat_model_id ?? ''
+  form.memory_model_id = val.memory_model_id ?? ''
+  form.embedding_model_id = val.embedding_model_id ?? ''
+  form.vlm_model_id = val.vlm_model_id ?? ''
+  form.search_provider_id = val.search_provider_id ?? ''
+  form.max_context_load_time = val.max_context_load_time ?? 0
+  form.language = val.language ?? ''
+  form.allow_guest = val.allow_guest ?? false
+  form.group_require_mention = (val as any).group_require_mention ?? true
 }, { immediate: true })
 
 // ---- Form: Prompts (task, switches) ----
@@ -415,13 +418,16 @@ const promptsForm = reactive({
   is_privileged: false,
 })
 
+let lastPromptsSnapshot = ''
 watch(prompts, (val) => {
-  if (val) {
-    promptsForm.task = val.task ?? ''
-    promptsForm.allow_self_evolution = val.allow_self_evolution ?? true
-    promptsForm.enable_openviking = val.enable_openviking ?? false
-    promptsForm.is_privileged = val.is_privileged ?? false
-  }
+  if (!val) return
+  const snapshot = JSON.stringify(val)
+  if (snapshot === lastPromptsSnapshot) return
+  lastPromptsSnapshot = snapshot
+  promptsForm.task = val.task ?? ''
+  promptsForm.allow_self_evolution = val.allow_self_evolution ?? true
+  promptsForm.enable_openviking = val.enable_openviking ?? false
+  promptsForm.is_privileged = val.is_privileged ?? false
 }, { immediate: true })
 
 // ---- Change detection ----
