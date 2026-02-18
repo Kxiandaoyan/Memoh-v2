@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -251,7 +252,8 @@ func (s *Service) ListByMember(ctx context.Context, channelIdentityID string) ([
 	return items, nil
 }
 
-// ListAccessible returns all bots the user can access (owned or member).
+// ListAccessible returns all bots the user can access (owned or member),
+// sorted by creation time (newest first) for a stable display order.
 func (s *Service) ListAccessible(ctx context.Context, channelIdentityID string) ([]Bot, error) {
 	owned, err := s.ListByOwner(ctx, channelIdentityID)
 	if err != nil {
@@ -261,19 +263,23 @@ func (s *Service) ListAccessible(ctx context.Context, channelIdentityID string) 
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]Bot{}
+	seen := map[string]struct{}{}
+	items := make([]Bot, 0, len(owned)+len(members))
 	for _, item := range owned {
-		seen[item.ID] = item
+		if _, ok := seen[item.ID]; !ok {
+			seen[item.ID] = struct{}{}
+			items = append(items, item)
+		}
 	}
 	for _, item := range members {
 		if _, ok := seen[item.ID]; !ok {
-			seen[item.ID] = item
+			seen[item.ID] = struct{}{}
+			items = append(items, item)
 		}
 	}
-	items := make([]Bot, 0, len(seen))
-	for _, item := range seen {
-		items = append(items, item)
-	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
 	s.attachChatModelIDs(ctx, items)
 	return items, nil
 }
