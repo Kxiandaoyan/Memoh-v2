@@ -1,14 +1,13 @@
 package handlers
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/Kxiandaoyan/Memoh-v2/internal/auth"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/processlog"
 )
@@ -44,13 +43,11 @@ func (h *ProcessLogHandler) Register(g *echo.Group) {
 func (h *ProcessLogHandler) GetRecentLogs(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Get current user ID from context
-	userID := extractUserID(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "user not authenticated")
+	userID, err := auth.UserIDFromContext(c)
+	if err != nil {
+		return err
 	}
 
-	// Get user's bots
 	bots, err := h.botService.ListByOwner(ctx, userID)
 	if err != nil {
 		h.logger.Warn("failed to list user bots", slog.Any("error", err))
@@ -61,8 +58,6 @@ func (h *ProcessLogHandler) GetRecentLogs(c echo.Context) error {
 		return c.JSON(http.StatusOK, []processlog.ProcessLog{})
 	}
 
-	// Get recent logs from the first bot (simplified - could aggregate from all)
-	botID := bots[0].ID
 	limit := 500
 	if l := c.QueryParam("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
@@ -70,13 +65,26 @@ func (h *ProcessLogHandler) GetRecentLogs(c echo.Context) error {
 		}
 	}
 
-	logs, err := h.service.GetRecentLogs(ctx, botID, limit)
-	if err != nil {
-		h.logger.Warn("failed to get recent logs", slog.Any("error", err))
-		return err
+	botID := c.QueryParam("botId")
+	if botID != "" {
+		logs, err := h.service.GetRecentLogs(ctx, botID, limit)
+		if err != nil {
+			h.logger.Warn("failed to get recent logs", slog.Any("error", err))
+			return err
+		}
+		return c.JSON(http.StatusOK, logs)
 	}
 
-	return c.JSON(http.StatusOK, logs)
+	var allLogs []processlog.ProcessLog
+	for _, bot := range bots {
+		logs, err := h.service.GetRecentLogs(ctx, bot.ID, limit)
+		if err != nil {
+			h.logger.Warn("failed to get recent logs for bot", slog.String("bot_id", bot.ID), slog.Any("error", err))
+			continue
+		}
+		allLogs = append(allLogs, logs...)
+	}
+	return c.JSON(http.StatusOK, allLogs)
 }
 
 // GetLogsByTrace returns all logs for a specific trace
@@ -124,9 +132,9 @@ func (h *ProcessLogHandler) GetLogsByChat(c echo.Context) error {
 func (h *ProcessLogHandler) GetStats(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	userID := extractUserID(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "user not authenticated")
+	userID, err := auth.UserIDFromContext(c)
+	if err != nil {
+		return err
 	}
 
 	bots, err := h.botService.ListByOwner(ctx, userID)
@@ -149,76 +157,3 @@ func (h *ProcessLogHandler) GetStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-// Helper function to extract user ID from context
-func extractUserID(c echo.Context) string {
-	// Try to get from JWT claims
-	if claims := extractUserFromToken(c); claims != nil {
-		if claims.Subject != "" {
-			return claims.Subject
-		}
-	}
-	// Try to get from header (for testing)
-	if userID := c.Request().Header.Get("X-User-ID"); userID != "" {
-		return userID
-	}
-	return ""
-}
-
-type tokenClaims struct {
-	Subject string `json:"sub"`
-	Exp     int64  `json:"exp"`
-	Iat     int64  `json:"iat"`
-}
-
-func extractUserFromToken(c echo.Context) *tokenClaims {
-	// This is a simplified version - the actual implementation depends on your auth setup
-	return nil
-}
-
-// ProcessLogEntry is a helper to create process log entries
-type ProcessLogEntry struct {
-	BotID      string
-	ChatID     string
-	TraceID    string
-	UserID     string
-	Channel    string
-	Step       processlog.ProcessLogStep
-	Level      processlog.ProcessLogLevel
-	Message    string
-	Data       map[string]any
-	DurationMs int
-	Service    *processlog.Service
-	Logger     *slog.Logger
-}
-
-// Log creates a process log entry
-func (p *ProcessLogEntry) Log(ctx context.Context) error {
-	if p.Service == nil {
-		return nil
-	}
-
-	req := processlog.CreateProcessLogParams{
-		BotID:      p.BotID,
-		ChatID:     p.ChatID,
-		TraceID:    p.TraceID,
-		UserID:     p.UserID,
-		Channel:    p.Channel,
-		Step:       p.Step,
-		Level:      p.Level,
-		Message:    p.Message,
-		Data:       p.Data,
-		DurationMs: p.DurationMs,
-	}
-
-	_, err := p.Service.Create(ctx, req)
-	if err != nil && p.Logger != nil {
-		p.Logger.Warn("failed to create process log", slog.Any("error", err))
-	}
-	return err
-}
-
-// LogDuration logs with duration measurement
-func (p *ProcessLogEntry) LogDuration(ctx context.Context, startTime time.Time) {
-	p.DurationMs = int(time.Since(startTime).Milliseconds())
-	_ = p.Log(ctx)
-}

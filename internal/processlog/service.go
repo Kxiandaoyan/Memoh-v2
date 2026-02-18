@@ -8,7 +8,6 @@ import (
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -28,8 +27,8 @@ type CreateProcessLogParams struct {
 
 // Service provides process log operations
 type Service struct {
-	db     *pgxpool.Pool
-	logger *slog.Logger
+	queries *sqlc.Queries
+	logger  *slog.Logger
 }
 
 // NewService creates a new process log service
@@ -38,7 +37,8 @@ func NewService(log *slog.Logger, queries *sqlc.Queries) *Service {
 		log = slog.Default()
 	}
 	return &Service{
-		logger: log.With(slog.String("service", "processlog")),
+		queries: queries,
+		logger:  log.With(slog.String("service", "processlog")),
 	}
 }
 
@@ -101,7 +101,7 @@ func (s *Service) Create(ctx context.Context, params CreateProcessLogParams) (*P
 		DurationMs: pgtype.Int4{Int32: int32(params.DurationMs), Valid: params.DurationMs > 0},
 	}
 
-	result, err := sqlc.New(s.db).CreateProcessLog(ctx, dbParams)
+	result, err := s.queries.CreateProcessLog(ctx, dbParams)
 	if err != nil {
 		s.logger.Warn("create process log failed", slog.Any("error", err))
 		return nil, err
@@ -122,7 +122,7 @@ func (s *Service) GetRecentLogs(ctx context.Context, botID string, limit int) ([
 		limit = 500
 	}
 
-	rows, err := sqlc.New(s.db).GetRecentProcessLogs(ctx, sqlc.GetRecentProcessLogsParams{
+	rows, err := s.queries.GetRecentProcessLogs(ctx, sqlc.GetRecentProcessLogsParams{
 		BotID: pgtype.UUID{Bytes: botUUID, Valid: true},
 		Limit: int32(limit),
 	})
@@ -146,7 +146,7 @@ func (s *Service) GetLogsByTrace(ctx context.Context, traceID string) ([]Process
 		return nil, err
 	}
 
-	rows, err := sqlc.New(s.db).GetProcessLogsByTrace(ctx, pgtype.UUID{Bytes: traceUUID, Valid: true})
+	rows, err := s.queries.GetProcessLogsByTrace(ctx, pgtype.UUID{Bytes: traceUUID, Valid: true})
 	if err != nil {
 		s.logger.Warn("get logs by trace failed", slog.Any("error", err))
 		return nil, err
@@ -175,7 +175,7 @@ func (s *Service) GetLogsByChat(ctx context.Context, botID, chatID string, limit
 		limit = 500
 	}
 
-	rows, err := sqlc.New(s.db).GetProcessLogsByChat(ctx, sqlc.GetProcessLogsByChatParams{
+	rows, err := s.queries.GetProcessLogsByChat(ctx, sqlc.GetProcessLogsByChatParams{
 		BotID:  pgtype.UUID{Bytes: botUUID, Valid: true},
 		ChatID: pgtype.UUID{Bytes: chatUUID, Valid: true},
 		Limit:  int32(limit),
@@ -200,7 +200,7 @@ func (s *Service) GetStats(ctx context.Context, botID string) ([]ProcessLogStats
 		return nil, err
 	}
 
-	rows, err := sqlc.New(s.db).GetProcessLogStats(ctx, pgtype.UUID{Bytes: botUUID, Valid: true})
+	rows, err := s.queries.GetProcessLogStats(ctx, pgtype.UUID{Bytes: botUUID, Valid: true})
 	if err != nil {
 		s.logger.Warn("get process log stats failed", slog.Any("error", err))
 		return nil, err
@@ -221,7 +221,7 @@ func (s *Service) GetStats(ctx context.Context, botID string) ([]ProcessLogStats
 // CleanupOldLogs removes logs older than the specified duration
 func (s *Service) CleanupOldLogs(ctx context.Context, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan)
-	err := sqlc.New(s.db).DeleteProcessLogsOlderThan(ctx, pgtype.Timestamptz{Time: cutoff})
+	err := s.queries.DeleteProcessLogsOlderThan(ctx, pgtype.Timestamptz{Time: cutoff})
 	if err != nil {
 		s.logger.Warn("cleanup old process logs failed", slog.Any("error", err))
 		return 0, err

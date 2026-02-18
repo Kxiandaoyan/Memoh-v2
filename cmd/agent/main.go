@@ -119,6 +119,9 @@ func main() {
 			provideChannelRouter,
 			provideChannelManager,
 
+			// process log service
+			provideProcessLogService,
+
 			// shared cron pool for schedule + heartbeat
 			provideCronPool,
 
@@ -337,12 +340,11 @@ func provideHeartbeatTriggerer(resolver *flow.Resolver) heartbeat.Triggerer {
 // conversation flow
 // ---------------------------------------------------------------------------
 
-func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, containerdHandler *handlers.ContainerdHandler) *flow.Resolver {
-	// Create process log service
-	processLogSvc := processlog.NewService(log, queries)
-	// Register process log handlers
-	// Note: handlers need to be added separately
+func provideProcessLogService(log *slog.Logger, queries *dbsqlc.Queries) *processlog.Service {
+	return processlog.NewService(log, queries)
+}
 
+func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, processLogSvc *processlog.Service, containerdHandler *handlers.ContainerdHandler) *flow.Resolver {
 	resolver := flow.NewResolver(log, modelsService, queries, memoryService, chatService, msgService, settingsService, processLogSvc, cfg.AgentGateway.BaseURL(), 120*time.Second)
 	resolver.SetSkillLoader(&skillLoaderAdapter{handler: containerdHandler})
 	tz, _ := gs.GetTimezone()
@@ -429,10 +431,8 @@ func provideMemoryHandler(log *slog.Logger, service *memory.Service, chatService
 	return h
 }
 
-func provideProcessLogHandler(log *slog.Logger, queries *dbsqlc.Queries, botService *bots.Service) *handlers.ProcessLogHandler {
-	// Process log service is created in provideChatResolver
-	// Handler can be created without the service for now
-	return handlers.NewProcessLogHandler(botService, nil, log)
+func provideProcessLogHandler(log *slog.Logger, botService *bots.Service, processLogSvc *processlog.Service) *handlers.ProcessLogHandler {
+	return handlers.NewProcessLogHandler(botService, processLogSvc, log)
 }
 
 func provideAuthHandler(log *slog.Logger, accountService *accounts.Service, rc *boot.RuntimeConfig) *handlers.AuthHandler {
