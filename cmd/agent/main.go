@@ -566,7 +566,7 @@ func startContainerReconciliation(lc fx.Lifecycle, containerdHandler *handlers.C
 	})
 }
 
-func startServer(lc fx.Lifecycle, logger *slog.Logger, srv *server.Server, shutdowner fx.Shutdowner, cfg config.Config, queries *dbsqlc.Queries, botService *bots.Service, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, toolGateway *mcp.ToolGatewayService, heartbeatEngine *heartbeat.Engine) {
+func startServer(lc fx.Lifecycle, logger *slog.Logger, srv *server.Server, shutdowner fx.Shutdowner, cfg config.Config, queries *dbsqlc.Queries, botService *bots.Service, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, toolGateway *mcp.ToolGatewayService, heartbeatEngine *heartbeat.Engine, memoryService *memory.Service) {
 	fmt.Printf("Starting Memoh Agent %s\n", version.GetInfo())
 
 	lc.Append(fx.Hook{
@@ -576,6 +576,7 @@ func startServer(lc fx.Lifecycle, logger *slog.Logger, srv *server.Server, shutd
 			}
 			botService.SetContainerLifecycle(containerdHandler)
 			botService.SetHeartbeatSeeder(heartbeatEngine)
+			heartbeatEngine.SetMemoryCompactor(memoryService)
 			botService.AddRuntimeChecker(mcp.NewConnectionChecker(logger, mcpConnService, toolGateway))
 
 			go func() {

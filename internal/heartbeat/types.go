@@ -123,3 +123,20 @@ const DefaultEvolutionIntervalSeconds = 86400
 
 // EvolutionPromptMarker is a prefix used to identify system-created evolution heartbeats.
 const EvolutionPromptMarker = "[evolution-reflection]"
+
+// MemoryCompactPromptMarker identifies system-created memory compaction heartbeats.
+const MemoryCompactPromptMarker = "[memory-compact]"
+
+// DefaultMemoryCompactIntervalSeconds is the default interval for memory compaction (7 days).
+const DefaultMemoryCompactIntervalSeconds = 604800
+
+// DefaultMemoryCompactMinCount is the minimum number of memories before auto-compaction runs.
+const DefaultMemoryCompactMinCount = 50
+
+// DefaultMemoryCompactRatio is the default compaction ratio (keep ~80% of memories).
+const DefaultMemoryCompactRatio = 0.8
+
+// MemoryCompactor performs memory compaction for a bot without going through the conversation flow.
+type MemoryCompactor interface {
+	CompactBot(ctx context.Context, botID string, ratio float64, minCount int) error
+}

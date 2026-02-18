@@ -117,6 +117,18 @@ docker compose up -d
 
 ---
 
+## 界面预览
+
+<p align="center">
+  <img src="./doc/1.png" width="100%" />
+</p>
+
+<p align="center">
+  <a href="./doc/screenshots.md">👉 点击查看更多截图</a>
+</p>
+
+---
+
 ## 功能详解
 
 ### 1. Bot 管理与模板

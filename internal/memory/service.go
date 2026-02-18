@@ -666,6 +666,38 @@ func (s *Service) Usage(ctx context.Context, filters map[string]any) (UsageRespo
 	}, nil
 }
 
+// CompactBot performs memory compaction for a specific bot.
+// It skips compaction if the bot has fewer than minCount memories.
+func (s *Service) CompactBot(ctx context.Context, botID string, ratio float64, minCount int) error {
+	filters := map[string]any{
+		"namespace": "bot",
+		"scopeId":   botID,
+		"bot_id":    botID,
+	}
+	usage, err := s.Usage(ctx, filters)
+	if err != nil {
+		return fmt.Errorf("check memory usage: %w", err)
+	}
+	if usage.Count < minCount {
+		s.logger.Info("skipping memory compaction: below threshold",
+			slog.String("bot_id", botID),
+			slog.Int("count", usage.Count),
+			slog.Int("min_count", minCount),
+		)
+		return nil
+	}
+	result, err := s.Compact(ctx, filters, ratio, 0)
+	if err != nil {
+		return fmt.Errorf("compact: %w", err)
+	}
+	s.logger.Info("memory compaction done",
+		slog.String("bot_id", botID),
+		slog.Int("before", result.BeforeCount),
+		slog.Int("after", result.AfterCount),
+	)
+	return nil
+}
+
 func (s *Service) WarmupBM25(ctx context.Context, batchSize int) error {
 	if s.bm25 == nil || s.store == nil {
 		return nil

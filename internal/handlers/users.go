@@ -463,6 +463,12 @@ func (h *UsersHandler) CreateBot(c echo.Context) error {
 			h.logger.Warn("failed to create default heartbeat for new bot",
 				slog.String("bot_id", resp.ID), slog.Any("error", hbErr))
 		}
+
+		// Auto-create memory compaction heartbeat (runs weekly).
+		if seedErr := h.heartbeatEngine.SeedMemoryCompactConfig(c.Request().Context(), resp.ID); seedErr != nil {
+			h.logger.Warn("failed to create memory compact heartbeat for new bot",
+				slog.String("bot_id", resp.ID), slog.Any("error", seedErr))
+		}
 	}
 
 	// Apply template prompts if a template_id was specified.

@@ -26,6 +26,7 @@ type Engine struct {
 	pool      *automation.CronPool
 	jwtSecret string
 	logger    *slog.Logger
+	compactor MemoryCompactor
 
 	mu      sync.Mutex
 	cancels map[string]func() // config ID → event subscription cancel
@@ -263,6 +264,53 @@ func (e *Engine) DisableEvolutionConfig(ctx context.Context, botID string) error
 	return nil
 }
 
+// SetMemoryCompactor registers a MemoryCompactor for direct memory compaction.
+func (e *Engine) SetMemoryCompactor(c MemoryCompactor) {
+	e.compactor = c
+}
+
+// SeedMemoryCompactConfig creates (or enables) the system memory compaction heartbeat for a bot.
+func (e *Engine) SeedMemoryCompactConfig(ctx context.Context, botID string) error {
+	existing, err := e.List(ctx, botID)
+	if err != nil {
+		return fmt.Errorf("list heartbeat configs: %w", err)
+	}
+	for _, cfg := range existing {
+		if strings.Contains(cfg.Prompt, MemoryCompactPromptMarker) {
+			if !cfg.Enabled {
+				enabled := true
+				_, err := e.Update(ctx, cfg.ID, UpdateRequest{Enabled: &enabled})
+				return err
+			}
+			return nil
+		}
+	}
+	enabled := true
+	_, err = e.Create(ctx, botID, CreateRequest{
+		Enabled:         &enabled,
+		IntervalSeconds: DefaultMemoryCompactIntervalSeconds,
+		Prompt:          MemoryCompactPromptMarker + " Automatic memory compaction.",
+		EventTriggers:   nil,
+	})
+	return err
+}
+
+// DisableMemoryCompactConfig disables the system memory compaction heartbeat for a bot.
+func (e *Engine) DisableMemoryCompactConfig(ctx context.Context, botID string) error {
+	existing, err := e.List(ctx, botID)
+	if err != nil {
+		return fmt.Errorf("list heartbeat configs: %w", err)
+	}
+	for _, cfg := range existing {
+		if strings.Contains(cfg.Prompt, MemoryCompactPromptMarker) && cfg.Enabled {
+			enabled := false
+			_, err := e.Update(ctx, cfg.ID, UpdateRequest{Enabled: &enabled})
+			return err
+		}
+	}
+	return nil
+}
+
 // ── Internal lifecycle management ─────────────────────────────────────
 
 func (e *Engine) startConfig(cfg Config) {
@@ -370,6 +418,11 @@ func (e *Engine) eventLoop(cfg Config, ch <-chan msgEvent.Event) {
 
 // fire executes the heartbeat by calling the triggerer.
 func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
+	// Memory compaction heartbeats are handled directly, bypassing the conversation flow.
+	if strings.Contains(cfg.Prompt, MemoryCompactPromptMarker) {
+		return e.fireMemoryCompact(ctx, cfg, reason)
+	}
+
 	if e.triggerer == nil {
 		return fmt.Errorf("heartbeat triggerer not configured")
 	}
@@ -409,6 +462,28 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 	}
 
 	return e.triggerer.TriggerHeartbeat(ctx, cfg.BotID, payload, token)
+}
+
+// fireMemoryCompact directly invokes the memory compactor without going through the bot conversation flow.
+func (e *Engine) fireMemoryCompact(ctx context.Context, cfg Config, reason string) error {
+	if e.compactor == nil {
+		e.logger.Warn("memory compactor not configured, skipping memory compaction heartbeat",
+			slog.String("bot_id", cfg.BotID))
+		return nil
+	}
+	e.logger.Info("memory compaction heartbeat fired",
+		slog.String("bot_id", cfg.BotID),
+		slog.String("reason", reason),
+	)
+	if err := e.compactor.CompactBot(ctx, cfg.BotID, DefaultMemoryCompactRatio, DefaultMemoryCompactMinCount); err != nil {
+		e.logger.Error("memory compaction failed",
+			slog.String("bot_id", cfg.BotID),
+			slog.Any("error", err),
+		)
+		return err
+	}
+	e.logger.Info("memory compaction completed", slog.String("bot_id", cfg.BotID))
+	return nil
 }
 
 
