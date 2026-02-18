@@ -278,7 +278,7 @@ func (s *Service) ListAccessible(ctx context.Context, channelIdentityID string) 
 	return items, nil
 }
 
-// attachChatModelIDs fills ChatModelID for each bot from bot_settings + models table.
+// attachChatModelIDs fills ChatModelID for each bot from bot_settings (already joined with models).
 func (s *Service) attachChatModelIDs(ctx context.Context, items []Bot) {
 	if s.queries == nil {
 		return
@@ -292,18 +292,9 @@ func (s *Service) attachChatModelIDs(ctx context.Context, items []Bot) {
 		if err != nil {
 			continue
 		}
-		if !row.ChatModelID.Valid || row.ChatModelID.String == "" {
-			continue
+		if row.ChatModelID.Valid && row.ChatModelID.String != "" {
+			items[i].ChatModelID = row.ChatModelID.String
 		}
-		modelUUID, err := db.ParseUUID(row.ChatModelID.String)
-		if err != nil {
-			continue
-		}
-		model, err := s.queries.GetModelByID(ctx, modelUUID)
-		if err != nil {
-			continue
-		}
-		items[i].ChatModelID = model.ModelID
 	}
 }
 
