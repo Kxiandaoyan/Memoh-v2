@@ -43,6 +43,7 @@ type ChannelInboundProcessor struct {
 	jwtSecret     string
 	tokenTTL      time.Duration
 	identity      *IdentityResolver
+	policyService PolicyService
 }
 
 // NewChannelInboundProcessor creates a processor with channel identity-based resolution.
@@ -76,6 +77,7 @@ func NewChannelInboundProcessor(
 		jwtSecret:     strings.TrimSpace(jwtSecret),
 		tokenTTL:      tokenTTL,
 		identity:      identityResolver,
+		policyService: policyService,
 	}
 }
 
@@ -147,7 +149,13 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 	if activeChatID == "" {
 		activeChatID = strings.TrimSpace(resolved.ChatID)
 	}
-	if !shouldTriggerAssistantResponse(msg) && !identity.ForceReply {
+	groupRequireMention := true
+	if p.policyService != nil && strings.TrimSpace(identity.BotID) != "" {
+		if val, err := p.policyService.GroupRequireMention(ctx, identity.BotID); err == nil {
+			groupRequireMention = val
+		}
+	}
+	if !shouldTriggerAssistantResponse(msg, groupRequireMention) && !identity.ForceReply {
 		if p.logger != nil {
 			p.logger.Info(
 				"inbound not triggering assistant (group trigger condition not met)",
@@ -156,6 +164,7 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 				slog.String("route_id", strings.TrimSpace(resolved.RouteID)),
 				slog.Bool("is_mentioned", metadataBool(msg.Metadata, "is_mentioned")),
 				slog.Bool("is_reply_to_bot", metadataBool(msg.Metadata, "is_reply_to_bot")),
+				slog.Bool("group_require_mention", groupRequireMention),
 				slog.String("conversation_type", strings.TrimSpace(msg.Conversation.Type)),
 			)
 		}
@@ -427,17 +436,26 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 	return nil
 }
 
-func shouldTriggerAssistantResponse(msg channel.InboundMessage) bool {
+func shouldTriggerAssistantResponse(msg channel.InboundMessage, groupRequireMention bool) bool {
 	if isDirectConversationType(msg.Conversation.Type) {
 		return true
 	}
+	// Explicit @mention or direct reply always triggers, regardless of settings.
 	if metadataBool(msg.Metadata, "is_mentioned") {
 		return true
 	}
 	if metadataBool(msg.Metadata, "is_reply_to_bot") {
 		return true
 	}
-	return hasCommandPrefix(msg.Message.PlainText(), msg.Metadata)
+	if hasCommandPrefix(msg.Message.PlainText(), msg.Metadata) {
+		return true
+	}
+	if !groupRequireMention {
+		// Respond to all human messages, but skip other bots' messages
+		// to prevent infinite response loops.
+		return !metadataBool(msg.Metadata, "is_from_bot")
+	}
+	return false
 }
 
 func isDirectConversationType(conversationType string) bool {

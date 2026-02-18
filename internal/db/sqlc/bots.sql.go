@@ -14,7 +14,7 @@ import (
 const createBot = `-- name: CreateBot :one
 INSERT INTO bots (owner_user_id, type, display_name, avatar_url, is_active, metadata, status, is_privileged)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, group_require_mention, metadata, created_at, updated_at
 `
 
 type CreateBotParams struct {
@@ -62,6 +62,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
 		&i.IsPrivileged,
+		&i.GroupRequireMention,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -93,7 +94,7 @@ func (q *Queries) DeleteBotMember(ctx context.Context, arg DeleteBotMemberParams
 }
 
 const getBotByID = `-- name: GetBotByID :one
-SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
+SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, group_require_mention, metadata, created_at, updated_at
 FROM bots
 WHERE id = $1
 `
@@ -123,6 +124,7 @@ func (q *Queries) GetBotByID(ctx context.Context, id pgtype.UUID) (Bot, error) {
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
 		&i.IsPrivileged,
+		&i.GroupRequireMention,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -229,7 +231,7 @@ func (q *Queries) ListBotMembers(ctx context.Context, botID pgtype.UUID) ([]BotM
 }
 
 const listBotsByMember = `-- name: ListBotsByMember :many
-SELECT b.id, b.owner_user_id, b.type, b.display_name, b.avatar_url, b.is_active, b.status, b.max_context_load_time, b.language, b.allow_guest, b.chat_model_id, b.memory_model_id, b.embedding_model_id, b.vlm_model_id, b.search_provider_id, b.identity, b.soul, b.task, b.allow_self_evolution, b.enable_openviking, b.is_privileged, b.metadata, b.created_at, b.updated_at
+SELECT b.id, b.owner_user_id, b.type, b.display_name, b.avatar_url, b.is_active, b.status, b.max_context_load_time, b.language, b.allow_guest, b.chat_model_id, b.memory_model_id, b.embedding_model_id, b.vlm_model_id, b.search_provider_id, b.identity, b.soul, b.task, b.allow_self_evolution, b.enable_openviking, b.is_privileged, b.group_require_mention, b.metadata, b.created_at, b.updated_at
 FROM bots b
 JOIN bot_members m ON m.bot_id = b.id
 WHERE m.user_id = $1
@@ -267,6 +269,7 @@ func (q *Queries) ListBotsByMember(ctx context.Context, userID pgtype.UUID) ([]B
 			&i.AllowSelfEvolution,
 			&i.EnableOpenviking,
 			&i.IsPrivileged,
+			&i.GroupRequireMention,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -282,7 +285,7 @@ func (q *Queries) ListBotsByMember(ctx context.Context, userID pgtype.UUID) ([]B
 }
 
 const listBotsByOwner = `-- name: ListBotsByOwner :many
-SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
+SELECT id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, group_require_mention, metadata, created_at, updated_at
 FROM bots
 WHERE owner_user_id = $1
 ORDER BY created_at DESC
@@ -319,6 +322,7 @@ func (q *Queries) ListBotsByOwner(ctx context.Context, ownerUserID pgtype.UUID) 
 			&i.AllowSelfEvolution,
 			&i.EnableOpenviking,
 			&i.IsPrivileged,
+			&i.GroupRequireMention,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -338,7 +342,7 @@ UPDATE bots
 SET owner_user_id = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, group_require_mention, metadata, created_at, updated_at
 `
 
 type UpdateBotOwnerParams struct {
@@ -371,6 +375,7 @@ func (q *Queries) UpdateBotOwner(ctx context.Context, arg UpdateBotOwnerParams) 
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
 		&i.IsPrivileged,
+		&i.GroupRequireMention,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -386,7 +391,7 @@ SET display_name = $2,
     metadata = $5,
     updated_at = now()
 WHERE id = $1
-RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, metadata, created_at, updated_at
+RETURNING id, owner_user_id, type, display_name, avatar_url, is_active, status, max_context_load_time, language, allow_guest, chat_model_id, memory_model_id, embedding_model_id, vlm_model_id, search_provider_id, identity, soul, task, allow_self_evolution, enable_openviking, is_privileged, group_require_mention, metadata, created_at, updated_at
 `
 
 type UpdateBotProfileParams struct {
@@ -428,6 +433,7 @@ func (q *Queries) UpdateBotProfile(ctx context.Context, arg UpdateBotProfilePara
 		&i.AllowSelfEvolution,
 		&i.EnableOpenviking,
 		&i.IsPrivileged,
+		&i.GroupRequireMention,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,

@@ -4,6 +4,7 @@ SELECT
   bots.max_context_load_time,
   bots.language,
   bots.allow_guest,
+  bots.group_require_mention,
   chat_models.model_id AS chat_model_id,
   memory_models.model_id AS memory_model_id,
   embedding_models.model_id AS embedding_model_id,
@@ -23,6 +24,7 @@ WITH updated AS (
   SET max_context_load_time = sqlc.arg(max_context_load_time),
       language = sqlc.arg(language),
       allow_guest = sqlc.arg(allow_guest),
+      group_require_mention = sqlc.arg(group_require_mention),
       chat_model_id = COALESCE(sqlc.narg(chat_model_id)::uuid, bots.chat_model_id),
       memory_model_id = COALESCE(sqlc.narg(memory_model_id)::uuid, bots.memory_model_id),
       embedding_model_id = COALESCE(sqlc.narg(embedding_model_id)::uuid, bots.embedding_model_id),
@@ -30,13 +32,14 @@ WITH updated AS (
       search_provider_id = COALESCE(sqlc.narg(search_provider_id)::uuid, bots.search_provider_id),
       updated_at = now()
   WHERE bots.id = sqlc.arg(id)
-  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.search_provider_id
+  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.group_require_mention, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.search_provider_id
 )
 SELECT
   updated.id AS bot_id,
   updated.max_context_load_time,
   updated.language,
   updated.allow_guest,
+  updated.group_require_mention,
   chat_models.model_id AS chat_model_id,
   memory_models.model_id AS memory_model_id,
   embedding_models.model_id AS embedding_model_id,
@@ -54,6 +57,7 @@ UPDATE bots
 SET max_context_load_time = 1440,
     language = 'auto',
     allow_guest = false,
+    group_require_mention = true,
     chat_model_id = NULL,
     memory_model_id = NULL,
     embedding_model_id = NULL,

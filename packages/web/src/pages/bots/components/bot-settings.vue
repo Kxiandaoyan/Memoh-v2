@@ -173,6 +173,20 @@
             @update:model-value="(val) => form.allow_guest = !!val"
           />
         </div>
+
+        <!-- Group Require Mention -->
+        <div class="flex items-center justify-between p-4">
+          <div class="space-y-0.5 pr-4">
+            <Label>{{ $t('bots.settings.groupRequireMention') }}</Label>
+            <p class="text-xs text-muted-foreground">
+              {{ $t('bots.settings.groupRequireMentionDescription') }}
+            </p>
+          </div>
+          <Switch
+            :model-value="form.group_require_mention"
+            @update:model-value="(val) => form.group_require_mention = !!val"
+          />
+        </div>
       </div>
     </section>
 
@@ -345,7 +359,7 @@ const providers = computed(() => providerData.value ?? [])
 const searchProviders = computed(() => searchProviderData.value ?? [])
 
 // ---- Form: Settings ----
-const form = reactive<SettingsSettings>({
+const form = reactive({
   chat_model_id: '',
   memory_model_id: '',
   embedding_model_id: '',
@@ -354,6 +368,7 @@ const form = reactive<SettingsSettings>({
   max_context_load_time: 0,
   language: '',
   allow_guest: false,
+  group_require_mention: true,
 })
 
 watch(settings, (val) => {
@@ -366,6 +381,7 @@ watch(settings, (val) => {
     form.max_context_load_time = val.max_context_load_time ?? 0
     form.language = val.language ?? ''
     form.allow_guest = val.allow_guest ?? false
+    form.group_require_mention = (val as any).group_require_mention ?? true
   }
 }, { immediate: true })
 
@@ -389,7 +405,7 @@ watch(prompts, (val) => {
 // ---- Change detection ----
 const hasSettingsChanges = computed(() => {
   if (!settings.value) return true
-  const s = settings.value
+  const s = settings.value as any
   let changed =
     form.chat_model_id !== (s.chat_model_id ?? '')
     || form.memory_model_id !== (s.memory_model_id ?? '')
@@ -398,6 +414,7 @@ const hasSettingsChanges = computed(() => {
     || form.search_provider_id !== (s.search_provider_id ?? '')
     || form.max_context_load_time !== (s.max_context_load_time ?? 0)
     || form.language !== (s.language ?? '')
+    || form.group_require_mention !== (s.group_require_mention ?? true)
   if (isPublicBot.value) {
     changed = changed || form.allow_guest !== (s.allow_guest ?? false)
   }

@@ -54,7 +54,7 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 	}
 	isPersonalBot := strings.EqualFold(strings.TrimSpace(botRow.Type), "personal")
 
-	current := normalizeBotSetting(botRow.MaxContextLoadTime, botRow.Language, botRow.AllowGuest)
+	current := normalizeBotSetting(botRow.MaxContextLoadTime, botRow.Language, botRow.AllowGuest, botRow.GroupRequireMention)
 	if req.MaxContextLoadTime != nil && *req.MaxContextLoadTime > 0 {
 		current.MaxContextLoadTime = *req.MaxContextLoadTime
 	}
@@ -68,6 +68,9 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 		current.AllowGuest = false
 	} else if req.AllowGuest != nil {
 		current.AllowGuest = *req.AllowGuest
+	}
+	if req.GroupRequireMention != nil {
+		current.GroupRequireMention = *req.GroupRequireMention
 	}
 
 	chatModelUUID := pgtype.UUID{}
@@ -112,15 +115,16 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 	}
 
 	updated, err := s.queries.UpsertBotSettings(ctx, sqlc.UpsertBotSettingsParams{
-		ID:                 pgID,
-		MaxContextLoadTime: int32(current.MaxContextLoadTime),
-		Language:           current.Language,
-		AllowGuest:         current.AllowGuest,
-		ChatModelID:        chatModelUUID,
-		MemoryModelID:      memoryModelUUID,
-		EmbeddingModelID:   embeddingModelUUID,
-		VlmModelID:         vlmModelUUID,
-		SearchProviderID:   searchProviderUUID,
+		ID:                  pgID,
+		MaxContextLoadTime:  int32(current.MaxContextLoadTime),
+		Language:            current.Language,
+		AllowGuest:          current.AllowGuest,
+		GroupRequireMention: current.GroupRequireMention,
+		ChatModelID:         chatModelUUID,
+		MemoryModelID:       memoryModelUUID,
+		EmbeddingModelID:    embeddingModelUUID,
+		VlmModelID:          vlmModelUUID,
+		SearchProviderID:    searchProviderUUID,
 	})
 	if err != nil {
 		return Settings{}, err
@@ -139,11 +143,12 @@ func (s *Service) Delete(ctx context.Context, botID string) error {
 	return s.queries.DeleteSettingsByBotID(ctx, pgID)
 }
 
-func normalizeBotSetting(maxContextLoadTime int32, language string, allowGuest bool) Settings {
+func normalizeBotSetting(maxContextLoadTime int32, language string, allowGuest bool, groupRequireMention bool) Settings {
 	settings := Settings{
-		MaxContextLoadTime: int(maxContextLoadTime),
-		Language:           strings.TrimSpace(language),
-		AllowGuest:         allowGuest,
+		MaxContextLoadTime:  int(maxContextLoadTime),
+		Language:            strings.TrimSpace(language),
+		AllowGuest:          allowGuest,
+		GroupRequireMention: groupRequireMention,
 	}
 	if settings.MaxContextLoadTime <= 0 {
 		settings.MaxContextLoadTime = DefaultMaxContextLoadTime
@@ -159,6 +164,7 @@ func normalizeBotSettingsReadRow(row sqlc.GetSettingsByBotIDRow) Settings {
 		row.MaxContextLoadTime,
 		row.Language,
 		row.AllowGuest,
+		row.GroupRequireMention,
 		row.ChatModelID,
 		row.MemoryModelID,
 		row.EmbeddingModelID,
@@ -172,6 +178,7 @@ func normalizeBotSettingsWriteRow(row sqlc.UpsertBotSettingsRow) Settings {
 		row.MaxContextLoadTime,
 		row.Language,
 		row.AllowGuest,
+		row.GroupRequireMention,
 		row.ChatModelID,
 		row.MemoryModelID,
 		row.EmbeddingModelID,
@@ -184,13 +191,14 @@ func normalizeBotSettingsFields(
 	maxContextLoadTime int32,
 	language string,
 	allowGuest bool,
+	groupRequireMention bool,
 	chatModelID pgtype.Text,
 	memoryModelID pgtype.Text,
 	embeddingModelID pgtype.Text,
 	vlmModelID pgtype.Text,
 	searchProviderID pgtype.UUID,
 ) Settings {
-	settings := normalizeBotSetting(maxContextLoadTime, language, allowGuest)
+	settings := normalizeBotSetting(maxContextLoadTime, language, allowGuest, groupRequireMention)
 	settings.ChatModelID = strings.TrimSpace(chatModelID.String)
 	settings.MemoryModelID = strings.TrimSpace(memoryModelID.String)
 	settings.EmbeddingModelID = strings.TrimSpace(embeddingModelID.String)

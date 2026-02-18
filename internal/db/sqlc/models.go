@@ -9,30 +9,31 @@ import (
 )
 
 type Bot struct {
-	ID                 pgtype.UUID        `json:"id"`
-	OwnerUserID        pgtype.UUID        `json:"owner_user_id"`
-	Type               string             `json:"type"`
-	DisplayName        pgtype.Text        `json:"display_name"`
-	AvatarUrl          pgtype.Text        `json:"avatar_url"`
-	IsActive           bool               `json:"is_active"`
-	Status             string             `json:"status"`
-	MaxContextLoadTime int32              `json:"max_context_load_time"`
-	Language           string             `json:"language"`
-	AllowGuest         bool               `json:"allow_guest"`
-	ChatModelID        pgtype.UUID        `json:"chat_model_id"`
-	MemoryModelID      pgtype.UUID        `json:"memory_model_id"`
-	EmbeddingModelID   pgtype.UUID        `json:"embedding_model_id"`
-	VlmModelID         pgtype.UUID        `json:"vlm_model_id"`
-	SearchProviderID   pgtype.UUID        `json:"search_provider_id"`
-	Identity           pgtype.Text        `json:"identity"`
-	Soul               pgtype.Text        `json:"soul"`
-	Task               pgtype.Text        `json:"task"`
-	AllowSelfEvolution bool               `json:"allow_self_evolution"`
-	EnableOpenviking   bool               `json:"enable_openviking"`
-	IsPrivileged       bool               `json:"is_privileged"`
-	Metadata           []byte             `json:"metadata"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	OwnerUserID         pgtype.UUID        `json:"owner_user_id"`
+	Type                string             `json:"type"`
+	DisplayName         pgtype.Text        `json:"display_name"`
+	AvatarUrl           pgtype.Text        `json:"avatar_url"`
+	IsActive            bool               `json:"is_active"`
+	Status              string             `json:"status"`
+	MaxContextLoadTime  int32              `json:"max_context_load_time"`
+	Language            string             `json:"language"`
+	AllowGuest          bool               `json:"allow_guest"`
+	ChatModelID         pgtype.UUID        `json:"chat_model_id"`
+	MemoryModelID       pgtype.UUID        `json:"memory_model_id"`
+	EmbeddingModelID    pgtype.UUID        `json:"embedding_model_id"`
+	VlmModelID          pgtype.UUID        `json:"vlm_model_id"`
+	SearchProviderID    pgtype.UUID        `json:"search_provider_id"`
+	Identity            pgtype.Text        `json:"identity"`
+	Soul                pgtype.Text        `json:"soul"`
+	Task                pgtype.Text        `json:"task"`
+	AllowSelfEvolution  bool               `json:"allow_self_evolution"`
+	EnableOpenviking    bool               `json:"enable_openviking"`
+	IsPrivileged        bool               `json:"is_privileged"`
+	GroupRequireMention bool               `json:"group_require_mention"`
+	Metadata            []byte             `json:"metadata"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
 type BotChannelConfig struct {

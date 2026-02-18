@@ -206,6 +206,7 @@ func (a *TelegramAdapter) Connect(ctx context.Context, cfg channel.ChannelConfig
 					update.Message.ReplyToMessage.From != nil &&
 					update.Message.ReplyToMessage.From.ID == bot.Self.ID
 				isMentioned := isTelegramBotMentioned(update.Message, bot.Self.UserName)
+				isFromBot := update.Message.From != nil && update.Message.From.IsBot
 				msg := channel.InboundMessage{
 					Channel: Type,
 					Message: channel.Message{
@@ -232,6 +233,7 @@ func (a *TelegramAdapter) Connect(ctx context.Context, cfg channel.ChannelConfig
 					Metadata: map[string]any{
 						"is_mentioned":    isMentioned,
 						"is_reply_to_bot": isReplyToBot,
+						"is_from_bot":     isFromBot,
 					},
 				}
 				if a.logger != nil {

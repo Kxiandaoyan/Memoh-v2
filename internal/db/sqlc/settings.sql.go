@@ -16,6 +16,7 @@ UPDATE bots
 SET max_context_load_time = 1440,
     language = 'auto',
     allow_guest = false,
+    group_require_mention = true,
     chat_model_id = NULL,
     memory_model_id = NULL,
     embedding_model_id = NULL,
@@ -36,6 +37,7 @@ SELECT
   bots.max_context_load_time,
   bots.language,
   bots.allow_guest,
+  bots.group_require_mention,
   chat_models.model_id AS chat_model_id,
   memory_models.model_id AS memory_model_id,
   embedding_models.model_id AS embedding_model_id,
@@ -51,15 +53,16 @@ WHERE bots.id = $1
 `
 
 type GetSettingsByBotIDRow struct {
-	BotID              pgtype.UUID `json:"bot_id"`
-	MaxContextLoadTime int32       `json:"max_context_load_time"`
-	Language           string      `json:"language"`
-	AllowGuest         bool        `json:"allow_guest"`
-	ChatModelID        pgtype.Text `json:"chat_model_id"`
-	MemoryModelID      pgtype.Text `json:"memory_model_id"`
-	EmbeddingModelID   pgtype.Text `json:"embedding_model_id"`
-	VlmModelID         pgtype.Text `json:"vlm_model_id"`
-	SearchProviderID   pgtype.UUID `json:"search_provider_id"`
+	BotID               pgtype.UUID `json:"bot_id"`
+	MaxContextLoadTime  int32       `json:"max_context_load_time"`
+	Language            string      `json:"language"`
+	AllowGuest          bool        `json:"allow_guest"`
+	GroupRequireMention bool        `json:"group_require_mention"`
+	ChatModelID         pgtype.Text `json:"chat_model_id"`
+	MemoryModelID       pgtype.Text `json:"memory_model_id"`
+	EmbeddingModelID    pgtype.Text `json:"embedding_model_id"`
+	VlmModelID          pgtype.Text `json:"vlm_model_id"`
+	SearchProviderID    pgtype.UUID `json:"search_provider_id"`
 }
 
 func (q *Queries) GetSettingsByBotID(ctx context.Context, id pgtype.UUID) (GetSettingsByBotIDRow, error) {
@@ -70,6 +73,7 @@ func (q *Queries) GetSettingsByBotID(ctx context.Context, id pgtype.UUID) (GetSe
 		&i.MaxContextLoadTime,
 		&i.Language,
 		&i.AllowGuest,
+		&i.GroupRequireMention,
 		&i.ChatModelID,
 		&i.MemoryModelID,
 		&i.EmbeddingModelID,
@@ -85,20 +89,22 @@ WITH updated AS (
   SET max_context_load_time = $1,
       language = $2,
       allow_guest = $3,
-      chat_model_id = COALESCE($4::uuid, bots.chat_model_id),
-      memory_model_id = COALESCE($5::uuid, bots.memory_model_id),
-      embedding_model_id = COALESCE($6::uuid, bots.embedding_model_id),
-      vlm_model_id = COALESCE($7::uuid, bots.vlm_model_id),
-      search_provider_id = COALESCE($8::uuid, bots.search_provider_id),
+      group_require_mention = $4,
+      chat_model_id = COALESCE($5::uuid, bots.chat_model_id),
+      memory_model_id = COALESCE($6::uuid, bots.memory_model_id),
+      embedding_model_id = COALESCE($7::uuid, bots.embedding_model_id),
+      vlm_model_id = COALESCE($8::uuid, bots.vlm_model_id),
+      search_provider_id = COALESCE($9::uuid, bots.search_provider_id),
       updated_at = now()
-  WHERE bots.id = $9
-  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.search_provider_id
+  WHERE bots.id = $10
+  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.group_require_mention, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.search_provider_id
 )
 SELECT
   updated.id AS bot_id,
   updated.max_context_load_time,
   updated.language,
   updated.allow_guest,
+  updated.group_require_mention,
   chat_models.model_id AS chat_model_id,
   memory_models.model_id AS memory_model_id,
   embedding_models.model_id AS embedding_model_id,
@@ -113,27 +119,29 @@ LEFT JOIN search_providers ON search_providers.id = updated.search_provider_id
 `
 
 type UpsertBotSettingsParams struct {
-	MaxContextLoadTime int32       `json:"max_context_load_time"`
-	Language           string      `json:"language"`
-	AllowGuest         bool        `json:"allow_guest"`
-	ChatModelID        pgtype.UUID `json:"chat_model_id"`
-	MemoryModelID      pgtype.UUID `json:"memory_model_id"`
-	EmbeddingModelID   pgtype.UUID `json:"embedding_model_id"`
-	VlmModelID         pgtype.UUID `json:"vlm_model_id"`
-	SearchProviderID   pgtype.UUID `json:"search_provider_id"`
-	ID                 pgtype.UUID `json:"id"`
+	MaxContextLoadTime  int32       `json:"max_context_load_time"`
+	Language            string      `json:"language"`
+	AllowGuest          bool        `json:"allow_guest"`
+	GroupRequireMention bool        `json:"group_require_mention"`
+	ChatModelID         pgtype.UUID `json:"chat_model_id"`
+	MemoryModelID       pgtype.UUID `json:"memory_model_id"`
+	EmbeddingModelID    pgtype.UUID `json:"embedding_model_id"`
+	VlmModelID          pgtype.UUID `json:"vlm_model_id"`
+	SearchProviderID    pgtype.UUID `json:"search_provider_id"`
+	ID                  pgtype.UUID `json:"id"`
 }
 
 type UpsertBotSettingsRow struct {
-	BotID              pgtype.UUID `json:"bot_id"`
-	MaxContextLoadTime int32       `json:"max_context_load_time"`
-	Language           string      `json:"language"`
-	AllowGuest         bool        `json:"allow_guest"`
-	ChatModelID        pgtype.Text `json:"chat_model_id"`
-	MemoryModelID      pgtype.Text `json:"memory_model_id"`
-	EmbeddingModelID   pgtype.Text `json:"embedding_model_id"`
-	VlmModelID         pgtype.Text `json:"vlm_model_id"`
-	SearchProviderID   pgtype.UUID `json:"search_provider_id"`
+	BotID               pgtype.UUID `json:"bot_id"`
+	MaxContextLoadTime  int32       `json:"max_context_load_time"`
+	Language            string      `json:"language"`
+	AllowGuest          bool        `json:"allow_guest"`
+	GroupRequireMention bool        `json:"group_require_mention"`
+	ChatModelID         pgtype.Text `json:"chat_model_id"`
+	MemoryModelID       pgtype.Text `json:"memory_model_id"`
+	EmbeddingModelID    pgtype.Text `json:"embedding_model_id"`
+	VlmModelID          pgtype.Text `json:"vlm_model_id"`
+	SearchProviderID    pgtype.UUID `json:"search_provider_id"`
 }
 
 func (q *Queries) UpsertBotSettings(ctx context.Context, arg UpsertBotSettingsParams) (UpsertBotSettingsRow, error) {
@@ -141,6 +149,7 @@ func (q *Queries) UpsertBotSettings(ctx context.Context, arg UpsertBotSettingsPa
 		arg.MaxContextLoadTime,
 		arg.Language,
 		arg.AllowGuest,
+		arg.GroupRequireMention,
 		arg.ChatModelID,
 		arg.MemoryModelID,
 		arg.EmbeddingModelID,
@@ -154,6 +163,7 @@ func (q *Queries) UpsertBotSettings(ctx context.Context, arg UpsertBotSettingsPa
 		&i.MaxContextLoadTime,
 		&i.Language,
 		&i.AllowGuest,
+		&i.GroupRequireMention,
 		&i.ChatModelID,
 		&i.MemoryModelID,
 		&i.EmbeddingModelID,

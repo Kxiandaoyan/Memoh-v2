@@ -77,6 +77,7 @@ type PolicyService interface {
 	AllowGuest(ctx context.Context, botID string) (bool, error)
 	BotType(ctx context.Context, botID string) (string, error)
 	BotOwnerUserID(ctx context.Context, botID string) (string, error)
+	GroupRequireMention(ctx context.Context, botID string) (bool, error)
 }
 
 // PreauthService handles preauth key validation.

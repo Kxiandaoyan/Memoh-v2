@@ -677,6 +677,8 @@
       "allowGuest": "Allow Guest Access",
       "allowGuestPersonalHint": "Personal bots do not support guest access. Use a public bot instead.",
       "allowGuestHint": "Allow unbound users to use this bot directly via platforms",
+      "groupRequireMention": "Require @Mention in Groups",
+      "groupRequireMentionDescription": "When enabled, the bot only responds in group chats when @mentioned or replied to. When disabled, the bot responds to all messages in the group (Warning: this consumes significantly more tokens).",
       "searchModel": "Search models…",
       "noModel": "No models available",
       "saveSuccess": "Settings saved",

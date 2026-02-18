@@ -11,9 +11,10 @@ import (
 )
 
 type Decision struct {
-	BotID      string
-	BotType    string
-	AllowGuest bool
+	BotID               string
+	BotType             string
+	AllowGuest          bool
+	GroupRequireMention bool
 }
 
 type Service struct {
@@ -51,9 +52,10 @@ func (s *Service) Resolve(ctx context.Context, botID string) (Decision, error) {
 		return Decision{}, err
 	}
 	decision := Decision{
-		BotID:      botID,
-		BotType:    strings.TrimSpace(bot.Type),
-		AllowGuest: botSettings.AllowGuest,
+		BotID:               botID,
+		BotType:             strings.TrimSpace(bot.Type),
+		AllowGuest:          botSettings.AllowGuest,
+		GroupRequireMention: botSettings.GroupRequireMention,
 	}
 	if decision.BotType == bots.BotTypePersonal {
 		decision.AllowGuest = false
@@ -77,6 +79,15 @@ func (s *Service) BotType(ctx context.Context, botID string) (string, error) {
 		return "", err
 	}
 	return decision.BotType, nil
+}
+
+// GroupRequireMention checks if the bot requires @mention in group chats. Implements router.PolicyService.
+func (s *Service) GroupRequireMention(ctx context.Context, botID string) (bool, error) {
+	decision, err := s.Resolve(ctx, botID)
+	if err != nil {
+		return true, err
+	}
+	return decision.GroupRequireMention, nil
 }
 
 // BotOwnerUserID returns bot owner's user id. Implements router.PolicyService.

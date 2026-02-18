@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS bots (
   allow_self_evolution BOOLEAN NOT NULL DEFAULT true,
   enable_openviking BOOLEAN NOT NULL DEFAULT false,
   is_privileged BOOLEAN NOT NULL DEFAULT false,
+  group_require_mention BOOLEAN NOT NULL DEFAULT true,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

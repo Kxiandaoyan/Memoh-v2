@@ -110,6 +110,13 @@ func (f *fakePolicyService) BotOwnerUserID(ctx context.Context, botID string) (s
 	return f.ownerUserID, nil
 }
 
+func (f *fakePolicyService) GroupRequireMention(ctx context.Context, botID string) (bool, error) {
+	if f.err != nil {
+		return true, f.err
+	}
+	return true, nil
+}
+
 type fakePreauthServiceIdentity struct {
 	key      preauth.Key
 	err      error
