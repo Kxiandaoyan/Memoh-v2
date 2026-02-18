@@ -36,6 +36,7 @@ func (h *TokenUsageHandler) Register(e *echo.Echo) {
 	e.GET("/bots/:bot_id/token-usage/daily", h.GetBotDaily)
 	e.GET("/token-usage/all", h.GetAllBotsTotals)
 	e.GET("/token-usage/daily", h.GetAllBotsDaily)
+	e.GET("/token-usage/by-model", h.GetByModel)
 }
 
 // GetBotTotal godoc
@@ -157,16 +158,51 @@ func (h *TokenUsageHandler) GetAllBotsDaily(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	type dailyEntry struct {
-		BotID       string `json:"bot_id"`
-		Day         string `json:"day"`
-		TotalTokens int64  `json:"total_tokens"`
+		BotID            string `json:"bot_id"`
+		Day              string `json:"day"`
+		TotalTokens      int64  `json:"total_tokens"`
+		PromptTokens     int64  `json:"prompt_tokens"`
+		CompletionTokens int64  `json:"completion_tokens"`
 	}
 	items := make([]dailyEntry, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, dailyEntry{
-			BotID:       db.UUIDToString(r.BotID),
-			Day:         r.Day.Time.Format("2006-01-02"),
-			TotalTokens: r.TotalTokens,
+			BotID:            db.UUIDToString(r.BotID),
+			Day:              r.Day.Time.Format("2006-01-02"),
+			TotalTokens:      r.TotalTokens,
+			PromptTokens:     r.PromptTokens,
+			CompletionTokens: r.CompletionTokens,
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+// GetByModel godoc
+// @Summary Get token usage totals grouped by model
+// @Tags token-usage
+// @Success 200 {object} map[string]any
+// @Router /token-usage/by-model [get]
+func (h *TokenUsageHandler) GetByModel(c echo.Context) error {
+	if _, err := h.requireAccess(c); err != nil {
+		return err
+	}
+	rows, err := h.queries.GetTokenTotalsByModel(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	type modelTotal struct {
+		Model            string `json:"model"`
+		PromptTokens     int64  `json:"prompt_tokens"`
+		CompletionTokens int64  `json:"completion_tokens"`
+		TotalTokens      int64  `json:"total_tokens"`
+	}
+	items := make([]modelTotal, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, modelTotal{
+			Model:            r.Model,
+			PromptTokens:     r.PromptTokens,
+			CompletionTokens: r.CompletionTokens,
+			TotalTokens:      r.TotalTokens,
 		})
 	}
 	return c.JSON(http.StatusOK, map[string]any{"items": items})

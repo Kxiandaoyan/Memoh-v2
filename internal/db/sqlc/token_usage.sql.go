@@ -15,7 +15,9 @@ const getAllBotsTokenDailySeries = `-- name: GetAllBotsTokenDailySeries :many
 SELECT
   bot_id,
   date_trunc('day', created_at)::date AS day,
-  COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+  COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+  COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
+  COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens
 FROM token_usage
 WHERE created_at >= $1
   AND created_at < $2
@@ -29,9 +31,11 @@ type GetAllBotsTokenDailySeriesParams struct {
 }
 
 type GetAllBotsTokenDailySeriesRow struct {
-	BotID       pgtype.UUID `json:"bot_id"`
-	Day         pgtype.Date `json:"day"`
-	TotalTokens int64       `json:"total_tokens"`
+	BotID            pgtype.UUID `json:"bot_id"`
+	Day              pgtype.Date `json:"day"`
+	TotalTokens      int64       `json:"total_tokens"`
+	PromptTokens     int64       `json:"prompt_tokens"`
+	CompletionTokens int64       `json:"completion_tokens"`
 }
 
 func (q *Queries) GetAllBotsTokenDailySeries(ctx context.Context, arg GetAllBotsTokenDailySeriesParams) ([]GetAllBotsTokenDailySeriesRow, error) {
@@ -43,7 +47,7 @@ func (q *Queries) GetAllBotsTokenDailySeries(ctx context.Context, arg GetAllBots
 	var items []GetAllBotsTokenDailySeriesRow
 	for rows.Next() {
 		var i GetAllBotsTokenDailySeriesRow
-		if err := rows.Scan(&i.BotID, &i.Day, &i.TotalTokens); err != nil {
+		if err := rows.Scan(&i.BotID, &i.Day, &i.TotalTokens, &i.PromptTokens, &i.CompletionTokens); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -206,4 +210,47 @@ func (q *Queries) RecordTokenUsage(ctx context.Context, arg RecordTokenUsagePara
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getTokenTotalsByModel = `-- name: GetTokenTotalsByModel :many
+SELECT
+  model,
+  COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
+  COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens,
+  COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+FROM token_usage
+GROUP BY model
+ORDER BY total_tokens DESC
+`
+
+type GetTokenTotalsByModelRow struct {
+	Model            string `json:"model"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+}
+
+func (q *Queries) GetTokenTotalsByModel(ctx context.Context) ([]GetTokenTotalsByModelRow, error) {
+	rows, err := q.db.Query(ctx, getTokenTotalsByModel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTokenTotalsByModelRow
+	for rows.Next() {
+		var i GetTokenTotalsByModelRow
+		if err := rows.Scan(
+			&i.Model,
+			&i.PromptTokens,
+			&i.CompletionTokens,
+			&i.TotalTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

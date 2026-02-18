@@ -773,7 +773,9 @@
     "noData": "No token usage data yet.",
     "daily": "Daily Usage",
     "botComparison": "Bot Comparison",
-    "tokens": "tokens"
+    "tokens": "tokens",
+    "modelDistribution": "Model Distribution",
+    "model": "Model"
   },
   "logs": {
     "title": "Process Logs",

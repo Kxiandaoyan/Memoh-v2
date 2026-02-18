@@ -769,7 +769,9 @@
     "noData": "暂无 Token 使用数据。",
     "daily": "每日用量",
     "botComparison": "Bot 对比",
-    "tokens": "tokens"
+    "tokens": "tokens",
+    "modelDistribution": "模型用量分布",
+    "model": "模型"
   },
   "logs": {
     "title": "流程日志",

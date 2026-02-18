@@ -28,12 +28,24 @@ ORDER BY day;
 SELECT
   bot_id,
   date_trunc('day', created_at)::date AS day,
-  COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+  COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+  COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
+  COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens
 FROM token_usage
 WHERE created_at >= @since
   AND created_at < @until
 GROUP BY bot_id, date_trunc('day', created_at)
 ORDER BY day;
+
+-- name: GetTokenTotalsByModel :many
+SELECT
+  model,
+  COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
+  COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens,
+  COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+FROM token_usage
+GROUP BY model
+ORDER BY total_tokens DESC;
 
 -- name: GetAllBotsTokenTotals :many
 SELECT

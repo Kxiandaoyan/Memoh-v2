@@ -104,12 +104,33 @@
           v-for="(series, idx) in chartSeries"
           :key="series.botId"
         >
+          <!-- Total (solid) -->
           <path
-            :d="series.path"
+            :d="series.totalPath"
             fill="none"
             :stroke="palette[idx % palette.length]"
             stroke-width="2"
             stroke-linejoin="round"
+          />
+          <!-- Prompt / Input (dashed) -->
+          <path
+            :d="series.promptPath"
+            fill="none"
+            :stroke="palette[idx % palette.length]"
+            stroke-width="1.2"
+            stroke-dasharray="4 3"
+            stroke-linejoin="round"
+            opacity="0.6"
+          />
+          <!-- Completion / Output (dotted) -->
+          <path
+            :d="series.completionPath"
+            fill="none"
+            :stroke="palette[idx % palette.length]"
+            stroke-width="1.2"
+            stroke-dasharray="1.5 3"
+            stroke-linejoin="round"
+            opacity="0.6"
           />
           <circle
             v-for="(pt, pi) in series.points"
@@ -120,7 +141,10 @@
             :fill="palette[idx % palette.length]"
             class="opacity-70"
           >
-            <title>{{ series.botName }}: {{ formatNumber(pt.val) }} tokens ({{ pt.day }})</title>
+            <title>{{ series.botName }} ({{ pt.day }})
+{{ $t('tokenUsage.totalTokens') }}: {{ formatNumber(pt.total) }}
+{{ $t('tokenUsage.promptTokens') }}: {{ formatNumber(pt.prompt) }}
+{{ $t('tokenUsage.completionTokens') }}: {{ formatNumber(pt.completion) }}</title>
           </circle>
         </g>
 
@@ -145,7 +169,78 @@
             {{ series.botName }}
           </text>
         </g>
+
+        <!-- Line style legend -->
+        <g :transform="`translate(${chartW - pad.right - 260}, ${chartH - 12})`">
+          <line x1="0" y1="0" x2="16" y2="0" stroke="currentColor" stroke-width="2" opacity="0.5" />
+          <text x="20" y="3" font-size="9" class="fill-muted-foreground">{{ $t('tokenUsage.totalTokens') }}</text>
+          <line x1="90" y1="0" x2="106" y2="0" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.5" />
+          <text x="110" y="3" font-size="9" class="fill-muted-foreground">{{ $t('tokenUsage.promptTokens') }}</text>
+          <line x1="185" y1="0" x2="201" y2="0" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.5 3" opacity="0.5" />
+          <text x="205" y="3" font-size="9" class="fill-muted-foreground">{{ $t('tokenUsage.completionTokens') }}</text>
+        </g>
       </svg>
+    </div>
+
+    <!-- Model distribution pie chart -->
+    <div class="rounded-xl border bg-card p-5">
+      <h2 class="text-base font-semibold mb-4">{{ $t('tokenUsage.modelDistribution') }}</h2>
+      <div
+        v-if="modelRows.length === 0"
+        class="flex items-center justify-center h-48 text-muted-foreground"
+      >
+        {{ $t('tokenUsage.noData') }}
+      </div>
+      <div v-else class="flex flex-col md:flex-row items-center gap-8">
+        <!-- Pie chart SVG -->
+        <svg viewBox="0 0 260 260" class="w-56 h-56 shrink-0">
+          <g transform="translate(130,130)">
+            <path
+              v-for="(slice, idx) in pieSlices"
+              :key="idx"
+              :d="slice.path"
+              :fill="palette[idx % palette.length]"
+              stroke="var(--card)"
+              stroke-width="2"
+              class="transition-opacity hover:opacity-80"
+            >
+              <title>{{ slice.model }}: {{ formatNumber(slice.total) }} ({{ slice.pct }}%)</title>
+            </path>
+            <!-- Center label -->
+            <text text-anchor="middle" dominant-baseline="central" class="fill-foreground font-bold" font-size="14">
+              {{ formatNumber(modelGrandTotal) }}
+            </text>
+          </g>
+        </svg>
+        <!-- Legend table -->
+        <table class="text-sm flex-1 w-full">
+          <thead>
+            <tr class="border-b text-muted-foreground text-left">
+              <th class="pb-2 font-medium">{{ $t('tokenUsage.model') }}</th>
+              <th class="pb-2 font-medium text-right">{{ $t('tokenUsage.promptTokens') }}</th>
+              <th class="pb-2 font-medium text-right">{{ $t('tokenUsage.completionTokens') }}</th>
+              <th class="pb-2 font-medium text-right">{{ $t('tokenUsage.totalTokens') }}</th>
+              <th class="pb-2 font-medium text-right">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(row, idx) in modelRows"
+              :key="row.model"
+              class="border-b last:border-0"
+            >
+              <td class="py-2 flex items-center gap-2">
+                <span class="inline-block w-3 h-3 rounded-sm shrink-0" :style="{ background: palette[idx % palette.length] }" />
+                {{ row.model || 'unknown' }}
+              </td>
+              <td class="py-2 text-right tabular-nums">{{ formatNumber(row.prompt_tokens) }}</td>
+              <td class="py-2 text-right tabular-nums">{{ formatNumber(row.completion_tokens) }}</td>
+              <td class="py-2 text-right tabular-nums font-medium">{{ formatNumber(row.total_tokens) }}</td>
+              <td class="py-2 text-right tabular-nums">{{ modelGrandTotal > 0 ? ((row.total_tokens / modelGrandTotal) * 100).toFixed(1) : 0 }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Per-bot table -->
@@ -203,6 +298,8 @@ interface DailyRow {
   bot_id: string
   day: string
   total_tokens: number
+  prompt_tokens: number
+  completion_tokens: number
 }
 
 interface BotInfo {
@@ -211,11 +308,50 @@ interface BotInfo {
   name?: string
 }
 
+interface ModelTotal {
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
 const days = ref(30)
 const loading = ref(false)
 const totalsRows = ref<BotTotal[]>([])
 const dailyRows = ref<DailyRow[]>([])
 const botList = ref<BotInfo[]>([])
+const modelRows = ref<ModelTotal[]>([])
+
+const modelGrandTotal = computed(() =>
+  modelRows.value.reduce((s, r) => s + r.total_tokens, 0),
+)
+
+const pieSlices = computed(() => {
+  const total = modelGrandTotal.value
+  if (total === 0) return []
+  const r = 110
+  let cumAngle = -Math.PI / 2
+  return modelRows.value.map((row) => {
+    const frac = row.total_tokens / total
+    const startAngle = cumAngle
+    const endAngle = cumAngle + frac * 2 * Math.PI
+    cumAngle = endAngle
+    const largeArc = frac > 0.5 ? 1 : 0
+    const x1 = r * Math.cos(startAngle)
+    const y1 = r * Math.sin(startAngle)
+    const x2 = r * Math.cos(endAngle)
+    const y2 = r * Math.sin(endAngle)
+    const path = modelRows.value.length === 1
+      ? `M ${r} 0 A ${r} ${r} 0 1 1 ${r - 0.001} 0 A ${r} ${r} 0 1 1 ${r} 0 Z`
+      : `M 0 0 L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`
+    return {
+      model: row.model || 'unknown',
+      total: row.total_tokens,
+      pct: (frac * 100).toFixed(1),
+      path,
+    }
+  })
+})
 
 const rangeOptions = computed(() => [
   { days: 7, label: t('tokenUsage.last7days') },
@@ -243,13 +379,23 @@ const chartW = 800
 const chartH = 320
 const pad = { top: 30, right: 20, bottom: 30, left: 55 }
 
+interface DayData {
+  total: number
+  prompt: number
+  completion: number
+}
+
 const chartSeries = computed(() => {
   if (dailyRows.value.length === 0) return []
 
-  const byBot = new Map<string, Map<string, number>>()
+  const byBot = new Map<string, Map<string, DayData>>()
   for (const r of dailyRows.value) {
     if (!byBot.has(r.bot_id)) byBot.set(r.bot_id, new Map())
-    byBot.get(r.bot_id)!.set(r.day, r.total_tokens)
+    byBot.get(r.bot_id)!.set(r.day, {
+      total: r.total_tokens,
+      prompt: r.prompt_tokens,
+      completion: r.completion_tokens,
+    })
   }
 
   const allDays = [...new Set(dailyRows.value.map((r) => r.day))].sort()
@@ -260,18 +406,29 @@ const chartSeries = computed(() => {
 
   return [...byBot.entries()].map(([botId, dayMap]) => {
     const points = allDays.map((day, i) => {
-      const val = dayMap.get(day) ?? 0
+      const data = dayMap.get(day) ?? { total: 0, prompt: 0, completion: 0 }
+      const x = pad.left + (allDays.length > 1 ? (i / (allDays.length - 1)) * plotW : plotW / 2)
       return {
-        x: pad.left + (allDays.length > 1 ? (i / (allDays.length - 1)) * plotW : plotW / 2),
-        y: pad.top + plotH - (val / maxVal) * plotH,
-        val,
+        x,
+        y: pad.top + plotH - (data.total / maxVal) * plotH,
+        yPrompt: pad.top + plotH - (data.prompt / maxVal) * plotH,
+        yCompletion: pad.top + plotH - (data.completion / maxVal) * plotH,
+        total: data.total,
+        prompt: data.prompt,
+        completion: data.completion,
         day,
       }
     })
-    const path = points
+    const totalPath = points
       .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
       .join(' ')
-    return { botId, botName: getBotName(botId), points, path }
+    const promptPath = points
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.yPrompt.toFixed(1)}`)
+      .join(' ')
+    const completionPath = points
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.yCompletion.toFixed(1)}`)
+      .join(' ')
+    return { botId, botName: getBotName(botId), points, totalPath, promptPath, completionPath }
   })
 })
 
@@ -331,15 +488,18 @@ async function loadBots() {
 async function loadData() {
   loading.value = true
   try {
-    const [totalsRes, dailyRes] = await Promise.all([
+    const [totalsRes, dailyRes, modelRes] = await Promise.all([
       client.get({ url: '/token-usage/all' }) as Promise<{ data: { items: BotTotal[] } }>,
       client.get({ url: '/token-usage/daily', query: { days: days.value } }) as Promise<{ data: { items: DailyRow[] } }>,
+      client.get({ url: '/token-usage/by-model' }) as Promise<{ data: { items: ModelTotal[] } }>,
     ])
     totalsRows.value = totalsRes.data?.items ?? []
     dailyRows.value = dailyRes.data?.items ?? []
+    modelRows.value = modelRes.data?.items ?? []
   } catch {
     totalsRows.value = []
     dailyRows.value = []
+    modelRows.value = []
   } finally {
     loading.value = false
   }

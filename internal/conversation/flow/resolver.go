@@ -920,16 +920,16 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 
 // tryStoreStream attempts to extract final messages from a stream event and persist them.
 func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequest, eventType, data, modelID string) (bool, error) {
-	storeAndRecord := func(resp gatewayResponse) error {
-		r.recordTokenUsage(ctx, req.BotID, resp.Usage, modelID, "chat")
-		return r.storeRound(ctx, req, resp.Messages, resp.Usage)
+	record := func(usage *gatewayUsage) {
+		r.recordTokenUsage(ctx, req.BotID, usage, modelID, "chat")
 	}
 
 	// event: done + data: {messages: [...]}
 	if eventType == "done" {
 		var resp gatewayResponse
 		if err := json.Unmarshal([]byte(data), &resp); err == nil && len(resp.Messages) > 0 {
-			return true, storeAndRecord(resp)
+			record(resp.Usage)
+			return true, r.storeRound(ctx, req, resp.Messages, resp.Usage)
 		}
 	}
 
@@ -943,13 +943,14 @@ func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequ
 	}
 	if err := json.Unmarshal([]byte(data), &envelope); err == nil {
 		if (envelope.Type == "agent_end" || envelope.Type == "done") && len(envelope.Messages) > 0 {
-			r.recordTokenUsage(ctx, req.BotID, envelope.Usage, modelID, "chat")
+			record(envelope.Usage)
 			return true, r.storeRound(ctx, req, envelope.Messages, envelope.Usage)
 		}
 		if envelope.Type == "done" && len(envelope.Data) > 0 {
 			var resp gatewayResponse
 			if err := json.Unmarshal(envelope.Data, &resp); err == nil && len(resp.Messages) > 0 {
-				return true, storeAndRecord(resp)
+				record(resp.Usage)
+				return true, r.storeRound(ctx, req, resp.Messages, resp.Usage)
 			}
 		}
 	}
@@ -957,7 +958,8 @@ func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequ
 	// fallback: data: {messages: [...]}
 	var resp gatewayResponse
 	if err := json.Unmarshal([]byte(data), &resp); err == nil && len(resp.Messages) > 0 {
-		return true, storeAndRecord(resp)
+		record(resp.Usage)
+		return true, r.storeRound(ctx, req, resp.Messages, resp.Usage)
 	}
 	return false, nil
 }
