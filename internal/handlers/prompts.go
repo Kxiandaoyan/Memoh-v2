@@ -277,7 +277,7 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 	// Populate embedding: prefer bot setting, fall back to system first embedding model.
 	embPopulated := false
 	if botEmbeddingModelID != "" {
-		if emb, err := h.modelsService.GetByID(ctx, botEmbeddingModelID); err == nil {
+		if emb, err := h.modelsService.GetByModelID(ctx, botEmbeddingModelID); err == nil {
 			if provider, provErr := models.FetchProviderByID(ctx, h.queries, emb.LlmProviderID); provErr == nil {
 				h.applyEmbeddingConf(&conf, emb, provider)
 				embPopulated = true
@@ -296,7 +296,7 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 	// then to system first multimodal chat model.
 	vlmPopulated := false
 	if botVlmModelID != "" {
-		if vlm, err := h.modelsService.GetByID(ctx, botVlmModelID); err == nil {
+		if vlm, err := h.modelsService.GetByModelID(ctx, botVlmModelID); err == nil {
 			if provider, provErr := models.FetchProviderByID(ctx, h.queries, vlm.LlmProviderID); provErr == nil {
 				h.applyVLMConf(&conf, vlm, provider)
 				vlmPopulated = true
@@ -304,7 +304,7 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 		}
 	}
 	if !vlmPopulated && botChatModelID != "" {
-		if chat, err := h.modelsService.GetByID(ctx, botChatModelID); err == nil {
+		if chat, err := h.modelsService.GetByModelID(ctx, botChatModelID); err == nil {
 			if provider, provErr := models.FetchProviderByID(ctx, h.queries, chat.LlmProviderID); provErr == nil {
 				h.applyVLMConf(&conf, chat, provider)
 				vlmPopulated = true
