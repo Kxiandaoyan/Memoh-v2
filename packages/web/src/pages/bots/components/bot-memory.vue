@@ -47,6 +47,33 @@
         </div>
       </div>
 
+      <!-- Batch action toolbar -->
+      <div v-if="batchMode" class="px-2 py-1.5 border-b flex items-center gap-2 bg-muted/30 shrink-0">
+        <button
+          class="text-[10px] text-primary hover:underline"
+          @click="toggleSelectAll"
+        >
+          {{ selectedIds.size === filteredMemories.length ? $t('bots.memory.deselectAll') : $t('bots.memory.selectAll') }}
+        </button>
+        <span class="text-[10px] text-muted-foreground ml-auto">{{ selectedIds.size }}</span>
+        <ConfirmPopover
+          :message="$t('bots.memory.batchDeleteConfirm', { count: selectedIds.size })"
+          @confirm="handleBatchDelete"
+        >
+          <template #trigger>
+            <Button
+              variant="destructive"
+              size="sm"
+              class="h-6 px-2 text-[10px]"
+              :disabled="selectedIds.size === 0 || actionLoading"
+            >
+              <FontAwesomeIcon :icon="['far', 'trash-can']" class="size-2.5 mr-1" />
+              {{ $t('bots.memory.deleteSelected') }}
+            </Button>
+          </template>
+        </ConfirmPopover>
+      </div>
+
       <ScrollArea class="flex-1 min-h-0">
         <div class="p-2 space-y-1">
           <div
@@ -66,27 +93,51 @@
             :key="item.id"
             class="w-full text-left px-3 py-2 rounded-md text-xs transition-colors hover:bg-accent group relative"
             :class="{ 'bg-accent font-medium text-primary': selectedId === item.id }"
-            @click="selectMemory(item)"
+            @click="batchMode ? toggleBatchItem(item.id) : selectMemory(item)"
           >
             <div class="flex items-center gap-2">
+              <div
+                v-if="batchMode"
+                class="size-3.5 shrink-0 rounded border border-primary flex items-center justify-center transition-colors"
+                :class="selectedIds.has(item.id) ? 'bg-primary text-primary-foreground' : 'bg-background'"
+              >
+                <FontAwesomeIcon
+                  v-if="selectedIds.has(item.id)"
+                  :icon="['fas', 'check']"
+                  class="size-2"
+                />
+              </div>
               <FontAwesomeIcon
+                v-else
                 :icon="['fas', 'file-lines']"
                 class="size-3 shrink-0 opacity-70"
               />
               <span class="truncate pr-4">{{ formatDate(item.created_at) }}</span>
             </div>
-            <div class="mt-1 text-[10px] text-muted-foreground truncate opacity-70 group-hover:opacity-100">
+            <div class="mt-1 text-[10px] text-muted-foreground truncate opacity-70 group-hover:opacity-100" :class="{ 'ml-5.5': batchMode }">
               {{ item.memory.length > 60 ? item.memory.slice(0, 60) + '...' : item.memory }}
             </div>
           </button>
         </div>
       </ScrollArea>
 
-      <div class="p-2 border-t mt-auto">
+      <div class="p-2 border-t mt-auto space-y-1.5">
         <Button
           variant="outline"
           size="sm"
-          class="w-full h-8 text-xs"
+          class="w-full h-7 text-xs"
+          @click="toggleBatchMode"
+        >
+          <FontAwesomeIcon
+            :icon="batchMode ? ['fas', 'xmark'] : ['fas', 'list-check']"
+            class="mr-2 size-3"
+          />
+          {{ batchMode ? $t('common.cancel') : $t('bots.memory.deleteSelected') }}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          class="w-full h-7 text-xs"
           @click="openNewMemoryDialog"
         >
           <FontAwesomeIcon
@@ -100,6 +151,26 @@
 
     <!-- Right: Editor/Preview -->
     <div class="flex-1 flex flex-col border rounded-lg overflow-hidden bg-card">
+      <!-- Usage stats bar (always visible when we have data) -->
+      <div v-if="usageStats" class="grid grid-cols-4 gap-px bg-muted/30 border-b shrink-0">
+        <div class="bg-card px-3 py-2 text-center">
+          <div class="text-[10px] text-muted-foreground uppercase">{{ $t('bots.memory.usageCount') }}</div>
+          <div class="text-sm font-semibold tabular-nums">{{ usageStats.count }}</div>
+        </div>
+        <div class="bg-card px-3 py-2 text-center">
+          <div class="text-[10px] text-muted-foreground uppercase">{{ $t('bots.memory.usageTotalSize') }}</div>
+          <div class="text-sm font-semibold tabular-nums">{{ formatBytes(usageStats.total_text_bytes) }}</div>
+        </div>
+        <div class="bg-card px-3 py-2 text-center">
+          <div class="text-[10px] text-muted-foreground uppercase">{{ $t('bots.memory.usageAvgSize') }}</div>
+          <div class="text-sm font-semibold tabular-nums">{{ formatBytes(usageStats.avg_text_bytes) }}</div>
+        </div>
+        <div class="bg-card px-3 py-2 text-center">
+          <div class="text-[10px] text-muted-foreground uppercase">{{ $t('bots.memory.usageStorage') }}</div>
+          <div class="text-sm font-semibold tabular-nums">{{ formatBytes(usageStats.estimated_storage_bytes) }}</div>
+        </div>
+      </div>
+
       <template v-if="selectedMemory">
         <div class="flex-1 flex flex-col min-h-0">
           <div class="p-3 border-b flex items-center justify-between bg-muted/30 shrink-0">
@@ -520,8 +591,10 @@ import {
 import {
   getBotsByBotIdMemory,
   postBotsByBotIdMemory,
+  deleteBotsByBotIdMemory,
   deleteBotsByBotIdMemoryById,
   postBotsByBotIdMemoryCompact,
+  getBotsByBotIdMemoryUsage,
   getBotsByBotIdMessages,
 } from '@memoh/sdk'
 import { toast } from 'vue-sonner'
@@ -556,6 +629,19 @@ const searchQuery = ref('')
 const selectedId = ref<string | null>(null)
 const editContent = ref('')
 const originalContent = ref('')
+
+// Batch selection mode
+const batchMode = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
+
+// Usage stats
+interface UsageStats {
+  count: number
+  total_text_bytes: number
+  avg_text_bytes: number
+  estimated_storage_bytes: number
+}
+const usageStats = ref<UsageStats | null>(null)
 
 // New memory dialog
 const newMemoryDialogOpen = ref(false)
@@ -696,6 +782,7 @@ async function handleCreateMemory() {
     toast.success(t('common.add'))
     newMemoryDialogOpen.value = false
     await loadMemories()
+    await loadUsageStats()
 
     if (data.results && data.results.length > 0) {
       selectMemory(data.results[0])
@@ -756,12 +843,80 @@ async function handleDelete() {
     editContent.value = ''
     originalContent.value = ''
     await loadMemories()
+    await loadUsageStats()
   } catch (error) {
     console.error('Failed to delete memory:', error)
     toast.error(t('common.delete'))
   } finally {
     actionLoading.value = false
   }
+}
+
+function toggleBatchMode() {
+  batchMode.value = !batchMode.value
+  selectedIds.value = new Set()
+}
+
+function toggleBatchItem(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+function toggleSelectAll() {
+  if (selectedIds.value.size === filteredMemories.value.length) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(filteredMemories.value.map(m => m.id))
+  }
+}
+
+async function handleBatchDelete() {
+  if (selectedIds.value.size === 0) return
+  actionLoading.value = true
+  try {
+    await deleteBotsByBotIdMemory({
+      path: { bot_id: props.botId },
+      body: { memory_ids: [...selectedIds.value] } as any,
+      throwOnError: true,
+    })
+    toast.success(t('bots.memory.batchDeleteSuccess', { count: selectedIds.value.size }))
+    selectedIds.value = new Set()
+    batchMode.value = false
+    if (selectedId.value && selectedIds.value.has(selectedId.value)) {
+      selectedId.value = null
+      editContent.value = ''
+      originalContent.value = ''
+    }
+    await loadMemories()
+    await loadUsageStats()
+  } catch (error) {
+    console.error('Failed to batch delete memories:', error)
+    toast.error(t('common.delete'))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function loadUsageStats() {
+  try {
+    const { data } = await getBotsByBotIdMemoryUsage({
+      path: { bot_id: props.botId },
+      throwOnError: true,
+    })
+    usageStats.value = data as any
+  } catch {
+    usageStats.value = null
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const val = bytes / Math.pow(1024, i)
+  return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`
 }
 
 function openCompactDialog() {
@@ -784,6 +939,7 @@ async function handleCompact() {
     toast.success(t('bots.memory.compactSuccess'))
     compactDialogOpen.value = false
     await loadMemories()
+    await loadUsageStats()
     selectedId.value = null
   } catch (error) {
     console.error('Failed to compact memory:', error)
@@ -836,12 +992,17 @@ async function copyToClipboard(text: string) {
 
 onMounted(() => {
   loadMemories()
+  loadUsageStats()
 })
 
 watch(() => props.botId, () => {
   memories.value = []
   selectedId.value = null
+  usageStats.value = null
+  batchMode.value = false
+  selectedIds.value = new Set()
   loadMemories()
+  loadUsageStats()
 })
 
 // Chart Helper: Generate smooth SVG path

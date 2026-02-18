@@ -430,6 +430,8 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		usableSkills = []gatewaySkill{}
 	}
 
+	usableSkills = filterSkillsByRelevance(usableSkills, req.Query, 10)
+
 	// Load bot persona/prompt configuration.
 	var botIdentity, botSoul, botTask string
 	allowSelfEvolution := true
@@ -794,49 +796,65 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			streamReq.UserMessagePersisted = true
 		}
 
-		// Wrap streamChat to capture completion
-		wrappedChunkCh := make(chan conversation.StreamChunk)
-		streamCompleteCh := make(chan struct{})
-
-		go func() {
-			err := r.streamChat(ctx, rc.payload, streamReq, wrappedChunkCh, rc.model.ModelID, rc.traceID)
-
-			// Log stream completed or error
-			if err != nil {
-				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-					processlog.StepStreamError, processlog.LevelError, "Stream error",
-					map[string]any{"error": err.Error()}, 0)
-			} else {
-				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-					processlog.StepStreamCompleted, processlog.LevelInfo, "Stream completed",
-					nil, 0)
-				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-					processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
-					nil, 0)
-				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-					processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
-					nil, 0)
-
-				if r.ovSessionExtractor != nil {
-					msgs := make([]conversation.ModelMessage, len(rc.payload.Messages))
-					copy(msgs, rc.payload.Messages)
-					go r.ovSessionExtractor.ExtractSession(context.Background(), req.BotID, req.ChatID, msgs)
+		// doStreamAttempt runs one streaming attempt: launches streamChat in a
+		// goroutine, forwards chunks to chunkCh, and returns (error, chunksForwarded).
+		doStreamAttempt := func(attempt resolvedContext) (error, int) {
+			wrapped := make(chan conversation.StreamChunk)
+			streamErr := make(chan error, 1)
+			go func() {
+				defer close(wrapped)
+				streamErr <- r.streamChat(ctx, attempt.payload, streamReq, wrapped, attempt.model.ModelID, attempt.traceID)
+			}()
+			forwarded := 0
+			for chunk := range wrapped {
+				forwarded++
+				select {
+				case chunkCh <- chunk:
+				case <-ctx.Done():
+					return ctx.Err(), forwarded
 				}
 			}
-			close(streamCompleteCh)
-		}()
+			return <-streamErr, forwarded
+		}
 
-		// Forward chunks to main channel
-		for {
-			select {
-			case chunk, ok := <-wrappedChunkCh:
-				if !ok {
-					<-streamCompleteCh
-					return
+		streamErr, forwarded := doStreamAttempt(rc)
+
+		// Failover: if the primary model failed before sending any data, try
+		// the fallback model (mirrors the sync Chat() failover logic).
+		if streamErr != nil && forwarded == 0 {
+			if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
+				r.logger.Warn("primary stream failed, using fallback",
+					slog.String("primary", rc.model.ModelID),
+					slog.String("fallback", fbCtx.model.ModelID),
+					slog.Any("primary_error", streamErr))
+				fbErr, fbForwarded := doStreamAttempt(fbCtx)
+				if fbErr == nil || fbForwarded > 0 {
+					rc = fbCtx
+					streamErr = fbErr
 				}
-				chunkCh <- chunk
-			case <-ctx.Done():
-				return
+			}
+		}
+
+		if streamErr != nil {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+				processlog.StepStreamError, processlog.LevelError, "Stream error",
+				map[string]any{"error": streamErr.Error()}, 0)
+			errCh <- streamErr
+		} else {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+				processlog.StepStreamCompleted, processlog.LevelInfo, "Stream completed",
+				nil, 0)
+			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+				processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
+				nil, 0)
+			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+				processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
+				nil, 0)
+
+			if r.ovSessionExtractor != nil {
+				msgs := make([]conversation.ModelMessage, len(rc.payload.Messages))
+				copy(msgs, rc.payload.Messages)
+				go r.ovSessionExtractor.ExtractSession(context.Background(), req.BotID, req.ChatID, msgs)
 			}
 		}
 	}()
@@ -1628,7 +1646,7 @@ func (r *Resolver) tryFallback(ctx context.Context, primary resolvedContext) (re
 		Reasoning:  fbModel.Reasoning,
 		MaxTokens:  fbModel.MaxTokens,
 	}
-	return resolvedContext{payload: fbPayload, model: fbModel, provider: fbProvider}, nil
+	return resolvedContext{payload: fbPayload, model: fbModel, provider: fbProvider, traceID: primary.traceID}, nil
 }
 
 // --- model selection ---
@@ -2117,4 +2135,96 @@ func toTokenUsage(u *gatewayUsage) *conversation.TokenUsage {
 		CompletionTokens: u.CompletionTokens,
 		TotalTokens:      u.TotalTokens,
 	}
+}
+
+// --- skill context filtering ---
+
+// filterSkillsByRelevance returns the top-N most relevant skills based on
+// keyword overlap between the user query and skill name+description.
+// If the total count is <= maxCandidates, all skills are returned (no filtering).
+// Skills with metadata["enabled"]=true are always kept.
+func filterSkillsByRelevance(skills []gatewaySkill, query string, maxCandidates int) []gatewaySkill {
+	if len(skills) <= maxCandidates || query == "" {
+		return skills
+	}
+
+	queryTokens := tokenize(query)
+	if len(queryTokens) == 0 {
+		return skills
+	}
+
+	type scored struct {
+		idx   int
+		score float64
+		keep  bool // enabled skills are always kept
+	}
+
+	items := make([]scored, len(skills))
+	for i, sk := range skills {
+		enabled := false
+		if v, ok := sk.Metadata["enabled"]; ok {
+			if b, ok2 := v.(bool); ok2 && b {
+				enabled = true
+			}
+		}
+		text := sk.Name + " " + sk.Description
+		skillTokens := tokenize(text)
+		items[i] = scored{idx: i, score: jaccardSimilarity(queryTokens, skillTokens), keep: enabled}
+	}
+
+	// Sort by: keep first, then score descending
+	sort.Slice(items, func(a, b int) bool {
+		if items[a].keep != items[b].keep {
+			return items[a].keep
+		}
+		return items[a].score > items[b].score
+	})
+
+	result := make([]gatewaySkill, 0, maxCandidates)
+	for _, it := range items {
+		if len(result) >= maxCandidates && !it.keep {
+			break
+		}
+		result = append(result, skills[it.idx])
+	}
+	return result
+}
+
+func tokenize(s string) map[string]struct{} {
+	s = strings.ToLower(s)
+	tokens := make(map[string]struct{})
+	start := -1
+	for i, r := range s {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r >= 0x4e00 && r <= 0x9fff {
+			if start < 0 {
+				start = i
+			}
+		} else {
+			if start >= 0 {
+				tokens[s[start:i]] = struct{}{}
+				start = -1
+			}
+		}
+	}
+	if start >= 0 {
+		tokens[s[start:]] = struct{}{}
+	}
+	return tokens
+}
+
+func jaccardSimilarity(a, b map[string]struct{}) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	intersection := 0
+	for k := range a {
+		if _, ok := b[k]; ok {
+			intersection++
+		}
+	}
+	union := len(a) + len(b) - intersection
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
 }

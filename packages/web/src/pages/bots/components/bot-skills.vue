@@ -9,84 +9,159 @@
           {{ $t('bots.skills.subtitle') }}
         </p>
       </div>
-      <div class="flex gap-2 shrink-0">
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b">
+      <button
+        class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+        :class="activeTab === 'installed' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
+        @click="activeTab = 'installed'"
+      >
+        {{ $t('bots.skills.installedTab') }}
+      </button>
+      <button
+        class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+        :class="activeTab === 'clawhub' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
+        @click="activeTab = 'clawhub'"
+      >
+        {{ $t('bots.skills.clawHubTab') }}
+      </button>
+    </div>
+
+    <!-- Installed Skills Tab -->
+    <div v-if="activeTab === 'installed'">
+      <div class="flex justify-end gap-2 mb-4">
         <Button
           variant="outline"
           size="sm"
           :disabled="loading"
           @click="loadSkills"
         >
-          <Spinner
-            v-if="loading"
-            class="mr-1.5"
-          />
+          <Spinner v-if="loading" class="mr-1.5" />
           {{ $t('common.refresh') }}
         </Button>
-        <Button
-          size="sm"
-          @click="openCreateDialog"
-        >
+        <Button size="sm" @click="openCreateDialog">
           {{ $t('common.add') }}
         </Button>
       </div>
-    </div>
 
-    <!-- Loading -->
-    <div
-      v-if="loading && skills.length === 0"
-      class="flex items-center gap-2 text-sm text-muted-foreground"
-    >
-      <Spinner />
-      <span>{{ $t('common.loading') }}</span>
-    </div>
-
-    <!-- Empty -->
-    <div
-      v-else-if="skills.length === 0"
-      class="rounded-md border p-6 text-center text-sm text-muted-foreground"
-    >
-      {{ $t('bots.skills.empty') }}
-    </div>
-
-    <!-- Skill list -->
-    <div
-      v-else
-      class="space-y-3"
-    >
       <div
-        v-for="skill in skills"
-        :key="skill.name"
-        class="rounded-md border p-4 space-y-2"
+        v-if="loading && skills.length === 0"
+        class="flex items-center gap-2 text-sm text-muted-foreground"
       >
-        <div class="flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <p class="font-mono text-sm font-medium truncate">{{ skill.name }}</p>
-            <p
-              v-if="skill.description"
-              class="text-sm text-muted-foreground truncate"
-            >
-              {{ skill.description }}
-            </p>
+        <Spinner />
+        <span>{{ $t('common.loading') }}</span>
+      </div>
+
+      <div
+        v-else-if="skills.length === 0"
+        class="rounded-md border p-6 text-center text-sm text-muted-foreground"
+      >
+        {{ $t('bots.skills.empty') }}
+      </div>
+
+      <div v-else class="space-y-3">
+        <div
+          v-for="skill in skills"
+          :key="skill.name"
+          class="rounded-md border p-4 space-y-2"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <p class="font-mono text-sm font-medium truncate">{{ skill.name }}</p>
+              <p v-if="skill.description" class="text-sm text-muted-foreground truncate">
+                {{ skill.description }}
+              </p>
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <Button variant="outline" size="sm" @click="viewSkill(skill)">
+                {{ $t('bots.skills.view') }}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                :disabled="deleting === skill.name"
+                @click="handleDelete(skill.name)"
+              >
+                <Spinner v-if="deleting === skill.name" class="mr-1.5" />
+                {{ $t('common.delete') }}
+              </Button>
+            </div>
           </div>
-          <div class="flex gap-2 shrink-0">
+        </div>
+      </div>
+    </div>
+
+    <!-- ClawHub Marketplace Tab -->
+    <div v-if="activeTab === 'clawhub'">
+      <div class="flex gap-2 mb-4">
+        <Input
+          v-model="clawHubQuery"
+          :placeholder="$t('bots.skills.clawHubSearchPlaceholder')"
+          class="flex-1"
+          @keydown.enter="searchClawHub"
+        />
+        <Button
+          size="sm"
+          :disabled="clawHubSearching"
+          @click="searchClawHub"
+        >
+          <Spinner v-if="clawHubSearching" class="mr-1.5" />
+          {{ $t('bots.skills.clawHubSearch') }}
+        </Button>
+      </div>
+
+      <div
+        v-if="clawHubSearching"
+        class="flex items-center gap-2 text-sm text-muted-foreground"
+      >
+        <Spinner />
+        <span>{{ $t('common.loading') }}</span>
+      </div>
+
+      <div
+        v-else-if="!clawHubSearched"
+        class="rounded-md border p-6 text-center text-sm text-muted-foreground"
+      >
+        {{ $t('bots.skills.clawHubEmpty') }}
+      </div>
+
+      <div
+        v-else-if="clawHubResults.length === 0"
+        class="rounded-md border p-6 text-center text-sm text-muted-foreground"
+      >
+        {{ $t('bots.skills.clawHubNoResults') }}
+      </div>
+
+      <div v-else class="space-y-3">
+        <div
+          v-for="item in clawHubResults"
+          :key="item.slug"
+          class="rounded-md border p-4"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="font-mono text-sm font-medium truncate">{{ item.name }}</p>
+                <span v-if="item.version" class="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  v{{ item.version }}
+                </span>
+              </div>
+              <p v-if="item.description" class="text-sm text-muted-foreground mt-0.5 truncate">
+                {{ item.description }}
+              </p>
+              <p v-if="item.author" class="text-xs text-muted-foreground/70 mt-1">
+                by {{ item.author }}
+              </p>
+            </div>
             <Button
-              variant="outline"
               size="sm"
-              @click="viewSkill(skill)"
+              :disabled="clawHubInstalling === item.slug"
+              @click="installFromClawHub(item.slug)"
             >
-              {{ $t('bots.skills.view') }}
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              :disabled="deleting === skill.name"
-              @click="handleDelete(skill.name)"
-            >
-              <Spinner
-                v-if="deleting === skill.name"
-                class="mr-1.5"
-              />
-              {{ $t('common.delete') }}
+              <Spinner v-if="clawHubInstalling === item.slug" class="mr-1.5" />
+              {{ clawHubInstalling === item.slug ? $t('bots.skills.clawHubInstalling') : $t('bots.skills.clawHubInstall') }}
             </Button>
           </div>
         </div>
@@ -151,10 +226,7 @@
         </div>
         <DialogFooter class="mt-6">
           <DialogClose as-child>
-            <Button
-              variant="outline"
-              :disabled="creating"
-            >
+            <Button variant="outline" :disabled="creating">
               {{ $t('common.cancel') }}
             </Button>
           </DialogClose>
@@ -162,10 +234,7 @@
             :disabled="creating || !createForm.name.trim()"
             @click="handleCreate"
           >
-            <Spinner
-              v-if="creating"
-              class="mr-1.5"
-            />
+            <Spinner v-if="creating" class="mr-1.5" />
             {{ $t('common.add') }}
           </Button>
         </DialogFooter>
@@ -201,12 +270,21 @@ interface SkillItem {
   metadata?: Record<string, unknown>
 }
 
+interface ClawHubResult {
+  name: string
+  slug: string
+  description: string
+  author: string
+  version?: string
+}
+
 const props = defineProps<{
   botId: string
 }>()
 
 const { t } = useI18n()
 
+const activeTab = ref<'installed' | 'clawhub'>('installed')
 const skills = ref<SkillItem[]>([])
 const loading = ref(false)
 const deleting = ref('')
@@ -220,6 +298,13 @@ const createForm = reactive({
   description: '',
   content: '',
 })
+
+// ClawHub state
+const clawHubQuery = ref('')
+const clawHubSearching = ref(false)
+const clawHubSearched = ref(false)
+const clawHubResults = ref<ClawHubResult[]>([])
+const clawHubInstalling = ref('')
 
 watch(() => props.botId, () => {
   loadSkills()
@@ -291,6 +376,43 @@ async function handleDelete(name: string) {
     toast.error(t('bots.skills.deleteFailed'))
   } finally {
     deleting.value = ''
+  }
+}
+
+async function searchClawHub() {
+  const q = clawHubQuery.value.trim()
+  if (!q) return
+  clawHubSearching.value = true
+  clawHubSearched.value = false
+  try {
+    const { data } = await client.post({
+      url: '/bots/{bot_id}/container/clawhub/search',
+      path: { bot_id: props.botId },
+      body: { query: q },
+    }) as { data: { results: ClawHubResult[] } }
+    clawHubResults.value = data.results ?? []
+    clawHubSearched.value = true
+  } catch {
+    toast.error(t('bots.skills.clawHubSearchFailed'))
+  } finally {
+    clawHubSearching.value = false
+  }
+}
+
+async function installFromClawHub(slug: string) {
+  clawHubInstalling.value = slug
+  try {
+    await client.post({
+      url: '/bots/{bot_id}/container/clawhub/install',
+      path: { bot_id: props.botId },
+      body: { slug },
+    })
+    toast.success(t('bots.skills.clawHubInstallSuccess'))
+    await loadSkills()
+  } catch {
+    toast.error(t('bots.skills.clawHubInstallFailed'))
+  } finally {
+    clawHubInstalling.value = ''
   }
 }
 </script>

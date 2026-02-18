@@ -162,7 +162,7 @@ const botIdRef = computed(() => props.botId)
 const { data: channels, isLoading, refetch } = useQuery({
   key: () => ['bot-channels', botIdRef.value],
   query: async (): Promise<BotChannelItem[]> => {
-    const { data: metas } = await getChannels({ throwOnError: true })
+    const { data: metas } = await getChannels({ throwOnError: true }).catch(() => ({ data: undefined }))
     if (!metas) return []
 
     const configurableTypes = metas.filter((m) => !m.configless)
@@ -170,11 +170,13 @@ const { data: channels, isLoading, refetch } = useQuery({
     const results = await Promise.all(
       configurableTypes.map(async (meta) => {
         try {
-          const { data: config } = await getBotsByIdChannelByPlatform({
+          const resp = await getBotsByIdChannelByPlatform({
             path: { id: botIdRef.value, platform: meta.type },
-            throwOnError: true,
           })
-          return { meta, config: config ?? null, configured: true } as BotChannelItem
+          if (resp.data) {
+            return { meta, config: resp.data ?? null, configured: true } as BotChannelItem
+          }
+          return { meta, config: null, configured: false } as BotChannelItem
         } catch {
           return { meta, config: null, configured: false } as BotChannelItem
         }

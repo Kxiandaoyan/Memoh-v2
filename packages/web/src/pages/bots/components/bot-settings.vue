@@ -289,8 +289,13 @@ const queryCache = useQueryCache()
 const { data: settings } = useQuery({
   key: () => ['bot-settings', botIdRef.value],
   query: async () => {
-    const { data } = await getBotsByBotIdSettings({ path: { bot_id: botIdRef.value }, throwOnError: true })
-    return data
+    try {
+      const { data } = await getBotsByBotIdSettings({ path: { bot_id: botIdRef.value }, throwOnError: true })
+      return data
+    } catch (e) {
+      console.error('Failed to load bot settings:', e)
+      return undefined
+    }
   },
   enabled: () => !!botIdRef.value,
 })
@@ -298,12 +303,17 @@ const { data: settings } = useQuery({
 // ---- Data: Prompts (task, switches) ----
 const { data: prompts } = useQuery({
   key: () => ['bot-prompts', botIdRef.value],
-  query: async (): Promise<BotPrompts> => {
-    const response = await client.get({
-      url: '/bots/{bot_id}/prompts',
-      path: { bot_id: botIdRef.value },
-    })
-    return response.data as BotPrompts
+  query: async (): Promise<BotPrompts | undefined> => {
+    try {
+      const response = await client.get({
+        url: '/bots/{bot_id}/prompts',
+        path: { bot_id: botIdRef.value },
+      })
+      return response.data as BotPrompts
+    } catch (e) {
+      console.error('Failed to load bot prompts:', e)
+      return undefined
+    }
   },
   enabled: () => !!botIdRef.value,
 })
@@ -311,24 +321,36 @@ const { data: prompts } = useQuery({
 const { data: modelData } = useQuery({
   key: ['all-models'],
   query: async () => {
-    const { data } = await getModels({ throwOnError: true })
-    return data
+    try {
+      const { data } = await getModels({ throwOnError: true })
+      return data
+    } catch {
+      return []
+    }
   },
 })
 
 const { data: providerData } = useQuery({
   key: ['all-providers'],
   query: async () => {
-    const { data } = await getProviders({ throwOnError: true })
-    return data
+    try {
+      const { data } = await getProviders({ throwOnError: true })
+      return data
+    } catch {
+      return []
+    }
   },
 })
 
 const { data: searchProviderData } = useQuery({
   key: ['all-search-providers'],
   query: async () => {
-    const { data } = await getSearchProviders({ throwOnError: true })
-    return data
+    try {
+      const { data } = await getSearchProviders({ throwOnError: true })
+      return data
+    } catch {
+      return []
+    }
   },
 })
 

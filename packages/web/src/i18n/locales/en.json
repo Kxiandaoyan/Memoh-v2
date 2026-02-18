@@ -432,7 +432,18 @@
       "createSuccess": "Skill created",
       "createFailed": "Failed to create skill",
       "deleteSuccess": "Skill deleted",
-      "deleteFailed": "Failed to delete skill"
+      "deleteFailed": "Failed to delete skill",
+      "installedTab": "Installed Skills",
+      "clawHubTab": "ClawHub Marketplace",
+      "clawHubSearchPlaceholder": "Search ClawHub skills...",
+      "clawHubSearch": "Search",
+      "clawHubEmpty": "Enter a keyword to search the ClawHub community marketplace",
+      "clawHubNoResults": "No matching skills found",
+      "clawHubInstall": "Install",
+      "clawHubInstalling": "Installing...",
+      "clawHubInstallSuccess": "Skill installed successfully",
+      "clawHubInstallFailed": "Failed to install skill",
+      "clawHubSearchFailed": "Search failed"
     },
     "subagents": {
       "title": "Subagents",
@@ -760,7 +771,17 @@
       "fromConversation": "Create from Conversation",
       "noConversations": "No history conversations found",
       "idCopied": "ID copied to clipboard",
-      "deleteConfirm": "Are you sure you want to delete this memory? This cannot be undone."
+      "deleteConfirm": "Are you sure you want to delete this memory? This cannot be undone.",
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All",
+      "deleteSelected": "Delete Selected",
+      "batchDeleteConfirm": "Are you sure you want to delete {count} selected memories? This cannot be undone.",
+      "batchDeleteSuccess": "Deleted {count} memories",
+      "usage": "Usage Stats",
+      "usageCount": "Total Memories",
+      "usageTotalSize": "Total Text",
+      "usageAvgSize": "Average Size",
+      "usageStorage": "Est. Storage"
     }
   },
   "tokenUsage": {

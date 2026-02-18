@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
+	ctr "github.com/Kxiandaoyan/Memoh-v2/internal/containerd"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/mcp"
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
 )
@@ -372,4 +376,128 @@ func isValidSkillName(name string) bool {
 		return false
 	}
 	return true
+}
+
+// --- ClawHub marketplace proxy APIs ---
+
+type clawHubSearchRequest struct {
+	Query string `json:"query"`
+}
+
+type clawHubInstallRequest struct {
+	Slug string `json:"slug"`
+}
+
+type clawHubSearchResult struct {
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	Author      string `json:"author"`
+	Version     string `json:"version,omitempty"`
+}
+
+// ClawHubSearch godoc
+// @Summary Search ClawHub skill marketplace
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param payload body clawHubSearchRequest true "Search query"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/container/clawhub/search [post]
+func (h *ContainerdHandler) ClawHubSearch(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+
+	var req clawHubSearchRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "query is required")
+	}
+
+	containerID := mcp.ContainerPrefix + botID
+
+	var stdout, stderr bytes.Buffer
+	result, err := h.service.ExecTask(c.Request().Context(), containerID, ctr.ExecTaskRequest{
+		Args:   []string{"clawhub", "search", query, "--json"},
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "exec failed: "+err.Error())
+	}
+	if result.ExitCode != 0 {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(stdout.String())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "clawhub search failed: "+errMsg)
+	}
+
+	// Try to parse as JSON array; if it fails, return raw output
+	var results []clawHubSearchResult
+	if err := json.Unmarshal(stdout.Bytes(), &results); err != nil {
+		return c.JSON(http.StatusOK, map[string]any{
+			"results": []any{},
+			"raw":     strings.TrimSpace(stdout.String()),
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"results": results})
+}
+
+// ClawHubInstall godoc
+// @Summary Install a skill from ClawHub
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param payload body clawHubInstallRequest true "Skill slug"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/container/clawhub/install [post]
+func (h *ContainerdHandler) ClawHubInstall(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+
+	var req clawHubInstallRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	slug := strings.TrimSpace(req.Slug)
+	if slug == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "slug is required")
+	}
+	if strings.ContainsAny(slug, ";|&$`") {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid slug")
+	}
+
+	containerID := mcp.ContainerPrefix + botID
+
+	var stdout, stderr bytes.Buffer
+	result, err := h.service.ExecTask(c.Request().Context(), containerID, ctr.ExecTaskRequest{
+		Args:   []string{"clawhub", "install", slug, "--dir", "/data/.skills"},
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "exec failed: "+err.Error())
+	}
+	if result.ExitCode != 0 {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(stdout.String())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "clawhub install failed: "+errMsg)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"ok":      true,
+		"message": strings.TrimSpace(stdout.String()),
+	})
 }

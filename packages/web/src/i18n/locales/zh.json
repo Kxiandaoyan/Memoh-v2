@@ -428,7 +428,18 @@
       "createSuccess": "技能已创建",
       "createFailed": "创建技能失败",
       "deleteSuccess": "技能已删除",
-      "deleteFailed": "删除技能失败"
+      "deleteFailed": "删除技能失败",
+      "installedTab": "已安装技能",
+      "clawHubTab": "ClawHub 技能市场",
+      "clawHubSearchPlaceholder": "搜索 ClawHub 技能...",
+      "clawHubSearch": "搜索",
+      "clawHubEmpty": "输入关键词搜索 ClawHub 社区技能市场",
+      "clawHubNoResults": "未找到匹配的技能",
+      "clawHubInstall": "安装",
+      "clawHubInstalling": "安装中...",
+      "clawHubInstallSuccess": "技能安装成功",
+      "clawHubInstallFailed": "技能安装失败",
+      "clawHubSearchFailed": "搜索失败"
     },
     "subagents": {
       "title": "子智能体",
@@ -756,7 +767,17 @@
       "fromConversation": "从已有对话创建",
       "noConversations": "暂无历史对话",
       "idCopied": "ID 已复制",
-      "deleteConfirm": "确定要删除这条记忆吗？此操作无法撤销。"
+      "deleteConfirm": "确定要删除这条记忆吗？此操作无法撤销。",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "deleteSelected": "删除选中",
+      "batchDeleteConfirm": "确定要删除选中的 {count} 条记忆吗？此操作无法撤销。",
+      "batchDeleteSuccess": "已删除 {count} 条记忆",
+      "usage": "用量统计",
+      "usageCount": "记忆总数",
+      "usageTotalSize": "总文本量",
+      "usageAvgSize": "平均大小",
+      "usageStorage": "预估存储"
     }
   },
   "tokenUsage": {

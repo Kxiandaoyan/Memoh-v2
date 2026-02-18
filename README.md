@@ -137,7 +137,7 @@ docker compose up -d
 
 - 独立的身份定义（Identity / Soul / Task 三层人设）
 - 独立的容器沙箱（文件系统、命令执行、网络访问）
-- 独立的记忆空间（向量数据库分区隔离）
+- 独立的记忆空间（按 bot_id 索引隔离，每个 Bot 的记忆完全独立）
 - 独立的频道配置（Telegram / 飞书等）
 - 成员权限管理（Owner / Admin / Member 三级角色）
 - 生命周期管理（creating → ready → deleting）

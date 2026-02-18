@@ -36,7 +36,7 @@
 |---|--------|------|----------|----------|
 | 1.1 | 三层人设 (Identity / Soul / Task) | 100 | `bot_prompts` 表存储三个字段；`agent/src/prompts/system.ts` 分段组装系统提示词；数据库优先、容器文件兜底逻辑完整 | `internal/handlers/prompts.go`, `agent/src/prompts/system.ts` |
 | 1.2 | 独立容器沙箱 | 100 | 每个 Bot 按 `mcp-{botID}` 创建独立 containerd 容器，独立数据挂载 `data/bots/{id}` | `internal/containerd/service.go`, `internal/handlers/containerd.go` |
-| 1.3 | 独立记忆空间（向量数据库分区隔离） | **60** | 所有 Bot 共用一个 Qdrant Collection，通过 payload filter `bot_id` 隔离。**功能上有效**，但并非 README 声称的"分区隔离"，是**过滤隔离** | `internal/memory/qdrant_store.go` |
+| 1.3 | 独立记忆空间（按 bot_id 索引隔离） | **100** | 所有 Bot 共用一个 Qdrant Collection，通过 payload indexed filter `bot_id` 隔离，功能等效于分区——每个 Bot 的记忆完全独立且互不可见。README 措辞已修正为匹配实际实现 | `internal/memory/qdrant_store.go` |
 | 1.4 | 独立频道配置 | 100 | `bot_channel_configs` 表按 `(bot_id, channel_type)` 唯一约束存储，CRUD 完整 | `db/queries/channels.sql` |
 | 1.5 | 成员权限管理 (Owner/Admin/Member) | 100 | `bot_members` 表含 `role` 字段；`AuthorizeAccess()` 做三级权限检查 | `internal/bots/service.go:88-114` |
 | 1.6 | 生命周期管理 (creating→ready→deleting) | 100 | 四种状态 `creating/ready/failed/deleting`，异步队列驱动状态转换 | `internal/bots/types.go:139-143` |
@@ -67,7 +67,7 @@
 | 3.4 | 记忆生命周期 — 定期维护 | 100 | 心跳引擎识别 `[memory-compact]` 标记自动触发 `CompactBot()`；新 Bot 自动创建 7 天间隔的压缩心跳 | `internal/heartbeat/engine.go:468-487` |
 | 3.5 | 记忆管理 — 手动创建 | 100 | UI 提供 "New Memory" 按钮和创建对话框 | `packages/web/src/pages/bots/components/bot-memory.vue` |
 | 3.6 | 记忆管理 — 三档压缩 | 100 | 轻度 (0.8) / 中度 (0.5) / 重度 (0.3) 三档，UI 和后端均支持 | `bot-memory.vue`, `internal/memory/service.go:523-641` |
-| 3.7 | 记忆管理 — 批量删除 + 用量统计 | **70** | 单条删除已实现；**批量删除**（多选后一键删除）未实现；**用量统计**在 UI 中未发现独立展示区域 | `bot-memory.vue` |
+| 3.7 | 记忆管理 — 批量删除 + 用量统计 | **100** | 批量删除：checkbox 多选 + 确认弹窗 + 调用后端 `DELETE /bots/:bot_id/memory` 批量 API；用量统计：顶部四格卡片展示总数/总大小/平均/预估存储，调用 `GET /bots/:bot_id/memory/usage` | `bot-memory.vue` |
 
 ---
 
@@ -143,8 +143,8 @@
 | 9.1 | 子智能体 spawn/query 双模式 | 100 | `spawn_subagent`（异步，返回 runId）和 `query_subagent`（同步，等待结果）均实现 | `agent/src/tools/subagent.ts` |
 | 9.2 | 管理界面预注册子智能体 | 100 | 完整 CRUD UI：创建/编辑对话框、列表展示、名称/描述/技能字段 | `bot-subagents.vue` |
 | 9.3 | 技能为 Markdown 文件 | 100 | 从容器 `.skills` 目录读取 Markdown 文件，解析 name/description/content | `internal/handlers/skills.go:174-206` |
-| 9.4 | 根据上下文自动加载技能 | **70** | 所有技能均被加载注入系统提示词。**未实现**基于对话上下文的智能筛选（README 称"根据对话上下文自动加载相关技能"） | `resolver.go:409-431` |
-| 9.5 | ClawHub 社区技能市场 UI 集成 | **50** | ClawHub CLI 已安装在容器中，Bot 可通过 `exec` 工具调用。前端 Bot 详情页有 "ClawHub" 能力标识。但**无**专门的浏览/搜索/一键安装 UI | `Dockerfile.mcp:29`, `detail.vue:1019` |
+| 9.4 | 根据上下文自动加载技能 | **100** | `filterSkillsByRelevance()` 基于 Jaccard 关键词相似度对技能进行排序，取 top-N（默认 10）+ 已启用技能始终保留；技能 ≤10 时跳过筛选（退化保护） | `resolver.go` filterSkillsByRelevance |
+| 9.5 | ClawHub 社区技能市场 UI 集成 | **100** | 前端 Bot 技能页新增 "ClawHub 技能市场" Tab，支持关键词搜索和一键安装；后端新增 `POST /clawhub/search` 和 `POST /clawhub/install` 代理 API，通过容器 exec 调用 clawhub CLI | `bot-skills.vue`, `skills.go` ClawHubSearch/ClawHubInstall |
 
 ---
 
@@ -198,7 +198,7 @@
 
 | # | 功能点 | 分数 | 审计结论 | 关键代码 |
 |---|--------|------|----------|----------|
-| C.1 | 模型故障切换 — 备用模型自动 Failover（sync + stream） | **70** | **同步模式**：`tryFallback()` 完整实现，主模型失败时自动切换备用模型。**流式模式**：`StreamChat()` 中**无** fallback 逻辑，流式失败直接报错。README 声称 "sync + stream" 均支持，实际只有 sync | `resolver.go:524-531` (sync), `resolver.go:745-824` (stream 无 fallback) |
+| C.1 | 模型故障切换 — 备用模型自动 Failover（sync + stream） | **100** | **同步模式**：`tryFallback()` 完整实现。**流式模式**：`StreamChat()` 通过 `doStreamAttempt` 闭包实现零 chunk 检测，主模型失败且尚未发送任何数据时自动切换备用模型重试 | `resolver.go` StreamChat() doStreamAttempt + tryFallback |
 
 ---
 
@@ -206,11 +206,11 @@
 
 | 序号 | 功能点 | 当前分数 | 差距说明 | 建议改进 |
 |------|--------|----------|----------|----------|
-| 1 | 记忆空间"分区隔离" | 60 | README 称"向量数据库分区隔离"，实际是 filter-based 隔离（共享 Collection + bot_id 过滤）。功能上等效，但表述不准确 | 改 README 措辞为"按 bot_id 过滤隔离"，或改用 Qdrant partition key |
-| 2 | 记忆 UI 批量删除 + 用量统计 | 70 | 只支持单条删除，无多选批量操作；无独立的记忆用量统计区域 | 添加 checkbox 多选 + 批量删除按钮；添加记忆数量/大小统计卡片 |
-| 3 | 技能上下文智能筛选 | 70 | 所有技能全量加载，未按对话上下文筛选相关技能 | 实现基于语义相似度或关键词匹配的技能筛选 |
-| 4 | ClawHub UI 集成 | 50 | CLI 可用，Bot 能通过 exec 调用，但无专门的浏览/搜索 UI | 在 Bot 设置中增加 ClawHub 技能市场面板 |
-| 5 | 流式模式 Failover | 70 | 同步模式 failover 完整，但流式模式缺失 | 在 `StreamChat()` 中增加 `tryFallback` 逻辑 |
+| 1 | 记忆空间隔离 | 100 | README 措辞已修正为"按 bot_id 索引隔离"，与实际实现一致 | ✅ 已完成 |
+| 2 | 记忆 UI 批量删除 + 用量统计 | 100 | 批量多选删除 + 用量统计卡片均已实现 | ✅ 已完成 |
+| 3 | 技能上下文智能筛选 | 100 | Jaccard 关键词匹配 + top-N 截断 + 退化保护已实现 | ✅ 已完成 |
+| 4 | ClawHub UI 集成 | 100 | 搜索 + 安装 Tab + 后端代理 API 均已实现 | ✅ 已完成 |
+| 5 | 流式模式 Failover | 100 | 同步+流式双模式 failover 均已实现 | ✅ 已完成 |
 
 ---
 
@@ -225,4 +225,4 @@ Memoh-v2 **74 项功能审计平均得分 97.4 分**。69 项（93%）完全实�
 - OpenViking 11 个原生工具 + 自动 Session 提取 + 上下文注入完整集成
 - 安装/升级/卸载脚本链路完整
 
-主要差距集中在**边缘 UI 体验**（批量删除、ClawHub 浏览器、技能筛选）和**流式 Failover** 上，核心架构和功能均已落地。
+所有 5 项低分功能已全部升级到 100 分：记忆隔离措辞修正、记忆 UI 批量删除+用量统计、技能上下文智能筛选、ClawHub UI 集成、流式 Failover。项目功能完成度达到 **100%**。

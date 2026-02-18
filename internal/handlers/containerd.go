@@ -137,6 +137,8 @@ func (h *ContainerdHandler) Register(e *echo.Echo) {
 	group.GET("/skills", h.ListSkills)
 	group.POST("/skills", h.UpsertSkills)
 	group.DELETE("/skills", h.DeleteSkills)
+	group.POST("/clawhub/search", h.ClawHubSearch)
+	group.POST("/clawhub/install", h.ClawHubInstall)
 	root := e.Group("/bots/:bot_id")
 	root.POST("/mcp-stdio", h.CreateMCPStdio)
 	root.POST("/mcp-stdio/:connection_id", h.HandleMCPStdio)
