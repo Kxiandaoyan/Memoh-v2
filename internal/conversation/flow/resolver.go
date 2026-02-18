@@ -60,6 +60,16 @@ type ConversationSettingsReader interface {
 	GetSettings(ctx context.Context, conversationID string) (conversation.Settings, error)
 }
 
+// OVSessionExtractor commits a conversation to OpenViking for memory extraction.
+type OVSessionExtractor interface {
+	ExtractSession(ctx context.Context, botID, chatID string, messages []conversation.ModelMessage)
+}
+
+// OVContextLoader loads lightweight OpenViking context for conversation injection.
+type OVContextLoader interface {
+	LoadContext(ctx context.Context, botID, query string) string
+}
+
 // Resolver orchestrates chat with the agent gateway.
 type Resolver struct {
 	modelsService    *models.Service
@@ -70,6 +80,8 @@ type Resolver struct {
 	settingsService  *settings.Service
 	processLogService *processlog.Service
 	skillLoader      SkillLoader
+	ovSessionExtractor OVSessionExtractor
+	ovContextLoader    OVContextLoader
 	gatewayBaseURL   string
 	timezone         string
 	timeout          time.Duration
@@ -122,6 +134,18 @@ func (r *Resolver) SetSkillLoader(sl SkillLoader) {
 // SetTimezone sets the IANA timezone name used in gateway requests.
 func (r *Resolver) SetTimezone(tz string) {
 	r.timezone = tz
+}
+
+// SetOVSessionExtractor sets the optional OpenViking session extractor for
+// post-conversation memory extraction.
+func (r *Resolver) SetOVSessionExtractor(e OVSessionExtractor) {
+	r.ovSessionExtractor = e
+}
+
+// SetOVContextLoader sets the optional OpenViking context loader for
+// injecting relevant knowledge base context into conversations.
+func (r *Resolver) SetOVContextLoader(l OVContextLoader) {
+	r.ovContextLoader = l
 }
 
 // --- Process Logging Helpers ---
@@ -359,6 +383,15 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 				"duration": memDur,
 			}, memDur)
 	}
+	if r.ovContextLoader != nil {
+		if ovText := r.ovContextLoader.LoadContext(ctx, req.BotID, req.Query); ovText != "" {
+			messages = append(messages, conversation.ModelMessage{
+				Role:    "system",
+				Content: conversation.NewTextContent(ovText),
+			})
+		}
+	}
+
 	messages = append(messages, req.Messages...)
 	messages = sanitizeMessages(messages)
 
@@ -783,6 +816,12 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 					processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
 					nil, 0)
+
+				if r.ovSessionExtractor != nil {
+					msgs := make([]conversation.ModelMessage, len(rc.payload.Messages))
+					copy(msgs, rc.payload.Messages)
+					go r.ovSessionExtractor.ExtractSession(context.Background(), req.BotID, req.ChatID, msgs)
+				}
 			}
 			close(streamCompleteCh)
 		}()

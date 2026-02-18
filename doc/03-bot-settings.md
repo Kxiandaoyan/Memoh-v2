@@ -33,7 +33,9 @@
 
 ### 启用 OpenViking
 - 默认：**关闭**
-- 开启后 Bot 可以使用 OpenViking 功能模块。
+- 开启后 Bot 可以使用 OpenViking 上下文数据库，获得原生 `ov_*` 工具（语义搜索、分层上下文加载、资源管理等）。
+- 系统自动生成配置、初始化数据目录、注入上下文、提取对话记忆。
+- 详情参考 [OpenViking 上下文数据库](18-openviking.md)。
 
 ### 特权模式 (Privileged)
 - 默认：**关闭**

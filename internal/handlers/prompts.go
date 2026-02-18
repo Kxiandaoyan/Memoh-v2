@@ -19,6 +19,11 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/models"
 )
 
+// OVInitializer can pre-initialize the OpenViking data directory inside a bot container.
+type OVInitializer interface {
+	InitializeBot(ctx context.Context, botID string)
+}
+
 // PromptsHandler manages bot persona/prompt configuration via REST API.
 type PromptsHandler struct {
 	botService     *bots.Service
@@ -27,6 +32,7 @@ type PromptsHandler struct {
 	queries        *dbsqlc.Queries
 	mcpCfg         config.MCPConfig
 	logger         *slog.Logger
+	ovInitializer  OVInitializer
 }
 
 // NewPromptsHandler creates a PromptsHandler.
@@ -42,6 +48,12 @@ func NewPromptsHandler(log *slog.Logger, botService *bots.Service, accountServic
 		mcpCfg:         cfg.MCP,
 		logger:         log.With(slog.String("handler", "prompts")),
 	}
+}
+
+// SetOVInitializer injects an optional OpenViking initializer to run when the
+// feature is enabled. Call after construction if available.
+func (h *PromptsHandler) SetOVInitializer(init OVInitializer) {
+	h.ovInitializer = init
 }
 
 // Register registers prompt routes.
@@ -116,9 +128,12 @@ func (h *PromptsHandler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update bot prompts")
 	}
 
-	// Auto-create ov.conf when OpenViking is enabled, populated from system models.
+	// Auto-create ov.conf and initialize data directory when OpenViking is enabled.
 	if prompts.EnableOpenviking {
 		h.ensureOVConf(c.Request().Context(), botID)
+		if h.ovInitializer != nil {
+			go h.ovInitializer.InitializeBot(context.Background(), botID)
+		}
 	}
 
 	return c.JSON(http.StatusOK, prompts)
@@ -137,6 +152,7 @@ type ovConfEmbed struct {
 type ovConfDense struct {
 	APIBase   string `json:"api_base"`
 	APIKey    string `json:"api_key"`
+	Backend   string `json:"backend"`
 	Provider  string `json:"provider"`
 	Dimension int    `json:"dimension"`
 	Model     string `json:"model"`
@@ -145,18 +161,40 @@ type ovConfDense struct {
 type ovConfVLM struct {
 	APIBase    string `json:"api_base"`
 	APIKey     string `json:"api_key"`
+	Backend    string `json:"backend"`
 	Provider   string `json:"provider"`
 	MaxRetries int    `json:"max_retries"`
 	Model      string `json:"model"`
 }
 
 // mapClientTypeToOVProvider maps Memoh's client_type to OpenViking's provider string.
+// OpenViking supports: volcengine, openai, anthropic, deepseek, gemini, moonshot,
+// zhipu, dashscope, minimax, openrouter, vllm. For embedding only openai and
+// volcengine are supported; VLM accepts all of the above.
 func mapClientTypeToOVProvider(clientType string) string {
 	switch strings.ToLower(clientType) {
 	case "openai", "azure", "ollama":
 		return "openai"
-	case "volcengine", "dashscope":
+	case "volcengine":
 		return "volcengine"
+	case "anthropic":
+		return "anthropic"
+	case "deepseek":
+		return "deepseek"
+	case "gemini", "google":
+		return "gemini"
+	case "moonshot":
+		return "moonshot"
+	case "zhipu":
+		return "zhipu"
+	case "dashscope":
+		return "dashscope"
+	case "minimax":
+		return "minimax"
+	case "openrouter":
+		return "openrouter"
+	case "vllm":
+		return "vllm"
 	default:
 		return "openai"
 	}
@@ -206,6 +244,7 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 			Dense: ovConfDense{
 				APIBase:   "https://api.openai.com/v1",
 				APIKey:    "sk-your-api-key-here",
+				Backend:   "openai",
 				Provider:  "openai",
 				Dimension: 1536,
 				Model:     "text-embedding-3-small",
@@ -214,6 +253,7 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 		VLM: ovConfVLM{
 			APIBase:    "https://api.openai.com/v1",
 			APIKey:     "sk-your-api-key-here",
+			Backend:    "openai",
 			Provider:   "openai",
 			MaxRetries: 2,
 			Model:      "gpt-4o",
@@ -290,9 +330,11 @@ func (h *PromptsHandler) buildOVConf(ctx context.Context, botID string) ovConfJS
 }
 
 func (h *PromptsHandler) applyEmbeddingConf(conf *ovConfJSON, emb models.GetResponse, provider dbsqlc.LlmProvider) {
+	ovProvider := mapClientTypeToOVProvider(provider.ClientType)
 	conf.Embedding.Dense.APIBase = provider.BaseUrl
 	conf.Embedding.Dense.APIKey = provider.ApiKey
-	conf.Embedding.Dense.Provider = mapClientTypeToOVProvider(provider.ClientType)
+	conf.Embedding.Dense.Backend = ovProvider
+	conf.Embedding.Dense.Provider = ovProvider
 	conf.Embedding.Dense.Model = emb.ModelID
 	if emb.Dimensions > 0 {
 		conf.Embedding.Dense.Dimension = emb.Dimensions
@@ -303,9 +345,11 @@ func (h *PromptsHandler) applyEmbeddingConf(conf *ovConfJSON, emb models.GetResp
 }
 
 func (h *PromptsHandler) applyVLMConf(conf *ovConfJSON, chat models.GetResponse, provider dbsqlc.LlmProvider) {
+	ovProvider := mapClientTypeToOVProvider(provider.ClientType)
 	conf.VLM.APIBase = provider.BaseUrl
 	conf.VLM.APIKey = provider.ApiKey
-	conf.VLM.Provider = mapClientTypeToOVProvider(provider.ClientType)
+	conf.VLM.Backend = ovProvider
+	conf.VLM.Provider = ovProvider
 	conf.VLM.Model = chat.ModelID
 	h.logger.Info("ov.conf: VLM model resolved",
 		slog.String("model", chat.ModelID),

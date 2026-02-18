@@ -46,6 +46,7 @@ import (
 	mcpmessage "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/message"
 	mcpschedule "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/schedule"
 	mcpadmin "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/admin"
+	mcpopenviking "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/openviking"
 	mcpweb "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/web"
 	mcpfederation "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/sources/federation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
@@ -148,7 +149,7 @@ func main() {
 			provideServerHandler(handlers.NewSearchProvidersHandler),
 			provideServerHandler(handlers.NewModelsHandler),
 			provideServerHandler(handlers.NewSettingsHandler),
-			provideServerHandler(handlers.NewPromptsHandler),
+			provideServerHandler(providePromptsHandler),
 			provideServerHandler(handlers.NewPreauthHandler),
 			provideServerHandler(handlers.NewBindHandler),
 			provideServerHandler(handlers.NewScheduleHandler),
@@ -344,7 +345,7 @@ func provideProcessLogService(log *slog.Logger, queries *dbsqlc.Queries) *proces
 	return processlog.NewService(log, queries)
 }
 
-func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, processLogSvc *processlog.Service, containerdHandler *handlers.ContainerdHandler) *flow.Resolver {
+func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, processLogSvc *processlog.Service, containerdHandler *handlers.ContainerdHandler, manager *mcp.Manager) *flow.Resolver {
 	resolver := flow.NewResolver(log, modelsService, queries, memoryService, chatService, msgService, settingsService, processLogSvc, cfg.AgentGateway.BaseURL(), 120*time.Second)
 	resolver.SetSkillLoader(&skillLoaderAdapter{handler: containerdHandler})
 	tz, _ := gs.GetTimezone()
@@ -352,6 +353,10 @@ func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings
 	gs.OnTimezoneChange(func(tz string, _ *time.Location) {
 		resolver.SetTimezone(tz)
 	})
+	if manager != nil {
+		resolver.SetOVSessionExtractor(mcpopenviking.NewSessionExtractor(log, manager, queries))
+		resolver.SetOVContextLoader(mcpopenviking.NewContextLoader(log, manager, queries))
+	}
 	return resolver
 }
 
@@ -403,12 +408,14 @@ func provideToolGatewayService(log *slog.Logger, cfg config.Config, channelManag
 	adminInner := mcpadmin.NewExecutor(log, botService, modelService, providerService)
 	adminExec := mcpadmin.NewConditionalExecutor(log, adminInner, queries)
 
+	ovExec := mcpopenviking.NewExecutor(log, manager, queries)
+
 	fedGateway := handlers.NewMCPFederationGateway(log, containerdHandler)
 	fedSource := mcpfederation.NewSource(log, fedGateway, mcpConnService)
 
 	svc := mcp.NewToolGatewayService(
 		log,
-		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec},
+		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec},
 		[]mcp.ToolSource{fedSource},
 	)
 	containerdHandler.SetToolGatewayService(svc)
@@ -418,6 +425,15 @@ func provideToolGatewayService(log *slog.Logger, cfg config.Config, channelManag
 // ---------------------------------------------------------------------------
 // handler providers (interface adaptation / config extraction)
 // ---------------------------------------------------------------------------
+
+func providePromptsHandler(log *slog.Logger, botService *bots.Service, accountService *accounts.Service, modelsService *models.Service, queries *dbsqlc.Queries, cfg config.Config, manager *mcp.Manager) *handlers.PromptsHandler {
+	h := handlers.NewPromptsHandler(log, botService, accountService, modelsService, queries, cfg)
+	if manager != nil {
+		ovExec := mcpopenviking.NewExecutor(log, manager, queries)
+		h.SetOVInitializer(ovExec)
+	}
+	return h
+}
 
 func provideMemoryHandler(log *slog.Logger, service *memory.Service, chatService *conversation.Service, accountService *accounts.Service, cfg config.Config, manager *mcp.Manager) *handlers.MemoryHandler {
 	h := handlers.NewMemoryHandler(log, service, chatService, accountService)

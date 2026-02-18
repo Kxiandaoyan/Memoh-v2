@@ -237,114 +237,39 @@ curl -s "https://example.com/page" | head -200  # Quick HTML peek
 
 OpenViking is a context database that manages memories, resources, and skills via a filesystem paradigm (`viking://` URIs). It provides tiered context loading (L0 abstract → L1 overview → L2 full) and semantic search.
 
-> **Note**: OpenViking is only available when enabled in your bot's Persona settings.
+> **Note**: OpenViking is only available when enabled in your bot's Persona settings. When enabled, dedicated `ov_*` tools appear automatically.
 
 ### Configuration
 
 When OpenViking is enabled, an `ov.conf` file is **auto-generated** at `/data/ov.conf`,
 pre-populated from your system's configured Models & Providers (embedding model → `embedding.dense`, multimodal chat model → `vlm`).
-In most cases, no manual editing is needed. If you want to override, edit via the web UI's **Files** tab.
+In most cases, no manual editing is needed. The data directory at `/app/openviking-data` is auto-initialized on first use.
 
-The config format (JSON with a `_README` help block):
+### Native Tools
 
-```json
-{
-  "_README": ["... help text, safe to keep or delete ..."],
-  "embedding": {
-    "dense": {
-      "api_base": "https://api.openai.com/v1",
-      "api_key": "sk-your-api-key-here",
-      "provider": "openai",
-      "dimension": 1536,
-      "model": "text-embedding-3-small"
-    }
-  },
-  "vlm": {
-    "api_base": "https://api.openai.com/v1",
-    "api_key": "sk-your-api-key-here",
-    "provider": "openai",
-    "max_retries": 2,
-    "model": "gpt-4o"
-  }
-}
-```
+When OpenViking is enabled, these tools are available directly (no need to write Python scripts):
 
-| Field | Description |
-|-------|-------------|
-| `api_base` | LLM provider API endpoint |
-| `api_key` | Your API key |
-| `provider` | `openai` or `volcengine` |
-| `dimension` | Embedding dimensions: `1536` (OpenAI), `1024` (doubao) |
-| `model` | Model name, e.g. `text-embedding-3-small`, `gpt-4o` |
-| `input` | (optional) Set to `multimodal` for doubao-embedding-vision |
+| Tool | Description |
+|------|-------------|
+| `ov_initialize` | Initialize the OpenViking data directory (auto-called on first use) |
+| `ov_find` | Quick semantic search — returns matching URIs with scores |
+| `ov_search` | Advanced retrieval with intent analysis and hierarchical search |
+| `ov_read` | Read full content (L2) from a viking:// URI |
+| `ov_abstract` | Get L0 abstract (~100 tokens, one-sentence summary) |
+| `ov_overview` | Get L1 overview (~2k tokens, structure and key points) |
+| `ov_ls` | List directory contents under a viking:// URI |
+| `ov_tree` | Get a tree view of directory structure |
+| `ov_add_resource` | Add a resource (URL, file, or directory) to be indexed |
+| `ov_rm` | Remove a resource by its viking:// URI |
+| `ov_session_commit` | Commit conversation messages, extracting long-term memories |
 
-### Python API (via `exec`)
+### Typical Workflow
 
-```bash
-# Initialize a data directory for this bot (uses /data/ov.conf for model config)
-python3 -c "
-import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
-client.initialize()
-print('OpenViking initialized')
-client.close()
-"
-```
-
-### Core Operations
-
-```bash
-# Add a resource (URL, file, or directory)
-python3 -c "
-import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
-client.initialize()
-result = client.add_resource(path='https://example.com/doc.md')
-print(result)
-client.close()
-"
-
-# List directory structure
-python3 -c "
-import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
-client.initialize()
-print(client.ls('viking://resources/'))
-client.close()
-"
-
-# Semantic search
-python3 -c "
-import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
-client.initialize()
-client.wait_processed()
-results = client.find('your search query', target_uri='viking://resources/')
-for r in results.resources:
-    print(f'{r.uri} (score: {r.score:.4f})')
-client.close()
-"
-
-# Read content by URI
-python3 -c "
-import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
-client.initialize()
-content = client.read('viking://resources/...')
-print(content)
-client.close()
-"
-
-# Get tiered summaries
-python3 -c "
-import openviking as ov
-client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
-client.initialize()
-print('Abstract:', client.abstract('viking://resources/...'))
-print('Overview:', client.overview('viking://resources/...'))
-client.close()
-"
-```
+1. **Add resources**: Use `ov_add_resource` to ingest documents, repos, or web pages
+2. **Browse**: Use `ov_ls` or `ov_tree` to explore the `viking://` filesystem
+3. **Search**: Use `ov_find` for quick semantic search or `ov_search` for deep retrieval
+4. **Read**: Use `ov_abstract` for quick summaries, `ov_overview` for detailed summaries, or `ov_read` for full content
+5. **Session management**: Conversations are automatically committed for memory extraction after each chat
 
 ### Key Concepts
 
@@ -355,8 +280,22 @@ client.close()
 - **L0 (Abstract)** — One-sentence summary (~100 tokens)
 - **L1 (Overview)** — Core info for planning (~2k tokens)
 - **L2 (Details)** — Full original data (load on demand)
-- Use `find()` for semantic search, `ls()` + `glob()` for filesystem navigation.
-- Always call `wait_processed()` after adding resources before searching.
+- Use `ov_find` for semantic search, `ov_ls` for filesystem navigation
+- Resources are automatically processed after adding — `ov_find` will return results once processing completes
+
+### Advanced: Direct Python API
+
+For operations not covered by the native tools, you can still use the Python API via `exec`:
+
+```bash
+python3 -c "
+import openviking as ov
+client = ov.SyncOpenViking(path='/app/openviking-data', config_file='/data/ov.conf')
+client.initialize()
+# ... your custom operations ...
+client.close()
+"
+```
 
 ---
 
