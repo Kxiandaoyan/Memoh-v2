@@ -30,7 +30,7 @@
             size="sm"
             @click="selectedCategory = cat"
           >
-            {{ $t(`bots.templates.categories.${cat}`) }}
+            {{ $t(`bots.templates.categories.${cat}`, cat) }}
           </Button>
         </div>
 
@@ -63,9 +63,9 @@
               <div class="w-8 h-8 rounded-md bg-muted flex items-center justify-center">
                 <FontAwesomeIcon :icon="['fas', tmpl.icon]" class="text-muted-foreground text-sm" />
               </div>
-              <span class="font-medium text-sm">{{ $t(`bots.templates.names.${tmpl.id}`) }}</span>
+              <span class="font-medium text-sm">{{ tmpl.name }}</span>
             </div>
-            <p class="text-xs text-muted-foreground line-clamp-2">{{ $t(`bots.templates.descriptions.${tmpl.id}`) }}</p>
+            <p class="text-xs text-muted-foreground line-clamp-2">{{ tmpl.description }}</p>
           </div>
         </div>
 
@@ -89,8 +89,8 @@
             <DialogDescription>
               <div class="flex items-center gap-2 mt-1">
                 <span class="text-xs text-muted-foreground">{{ $t('bots.step', { current: 2, total: 2 }) }}</span>
-                <span v-if="selectedTemplateId" class="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-                  {{ $t(`bots.templates.names.${selectedTemplateId}`) }}
+                <span v-if="selectedTemplateName" class="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                  {{ selectedTemplateName }}
                 </span>
               </div>
               <Separator class="my-3" />
@@ -240,9 +240,10 @@ import {
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import z from 'zod'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { postBotsMutation, getBotsQueryKey } from '@memoh/sdk/colada'
+import { client } from '@memoh/sdk/client'
 
 const open = defineModel<boolean>('open', { default: false })
 
@@ -252,28 +253,71 @@ const selectedCategory = ref('all')
 
 interface TemplateMeta {
   id: string
+  name: string
+  description: string
   icon: string
   category: string
 }
 
-const allTemplates: TemplateMeta[] = [
-  { id: 'research-analyst', icon: 'magnifying-glass', category: 'productivity' },
-  { id: 'code-architect', icon: 'code', category: 'development' },
-  { id: 'writing-editor', icon: 'pen-nib', category: 'creative' },
-  { id: 'daily-secretary', icon: 'calendar-check', category: 'productivity' },
-  { id: 'data-wrangler', icon: 'chart-bar', category: 'development' },
-  { id: 'knowledge-curator', icon: 'book-open', category: 'productivity' },
-  { id: 'language-tutor', icon: 'language', category: 'education' },
-  { id: 'creative-muse', icon: 'lightbulb', category: 'creative' },
-  { id: 'ops-monitor', icon: 'server', category: 'development' },
-  { id: 'life-strategist', icon: 'compass', category: 'personal' },
-]
+const iconMap: Record<string, string> = {
+  'crown': 'chess-king',
+  'cpu': 'microchip',
+  'cursor-click': 'hand-pointer',
+  'megaphone': 'bullhorn',
+  'rocket': 'rocket',
+  'cube': 'cube',
+  'shield-check': 'shield-halved',
+  'currency-dollar': 'dollar-sign',
+  'paint-brush': 'paintbrush',
+  'magnifying-glass': 'magnifying-glass',
+  'calendar-check': 'calendar-check',
+  'book-open': 'book-open',
+  'code': 'code',
+}
 
-const categories = ['all', 'productivity', 'development', 'creative', 'education', 'personal']
+function mapIcon(backendIcon: string): string {
+  return iconMap[backendIcon] || backendIcon
+}
+
+const allTemplates = ref<TemplateMeta[]>([])
+const loadingTemplates = ref(false)
+
+async function loadTemplates() {
+  loadingTemplates.value = true
+  try {
+    const { data } = await client.get({ url: '/templates', throwOnError: true }) as { data: { items: TemplateMeta[] } }
+    const items = data?.items ?? data ?? []
+    allTemplates.value = items.map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      icon: mapIcon(t.icon || 'robot'),
+      category: t.category || 'productivity',
+    }))
+  } catch {
+    allTemplates.value = []
+  } finally {
+    loadingTemplates.value = false
+  }
+}
+
+const categories = computed(() => {
+  const cats = new Set(allTemplates.value.map(t => t.category))
+  return ['all', ...Array.from(cats)]
+})
 
 const filteredTemplates = computed(() => {
-  if (selectedCategory.value === 'all') return allTemplates
-  return allTemplates.filter(t => t.category === selectedCategory.value)
+  if (selectedCategory.value === 'all') return allTemplates.value
+  return allTemplates.value.filter(t => t.category === selectedCategory.value)
+})
+
+onMounted(() => {
+  void loadTemplates()
+})
+
+const selectedTemplateName = computed(() => {
+  const tmpl = allTemplates.value.find(t => t.id === selectedTemplateId.value)
+  return tmpl?.name || ''
 })
 
 function selectTemplate(id: string) {

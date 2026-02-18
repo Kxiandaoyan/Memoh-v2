@@ -14,6 +14,14 @@ const routes = [
     component: () => import('@/pages/main-section/index.vue'),
     children: [
       {
+        name: 'system-settings',
+        path: '/system-settings',
+        component: () => import('@/pages/system-settings/index.vue'),
+        meta: {
+          breadcrumb: i18nRef('sidebar.systemSettings'),
+        },
+      },
+      {
         name: 'chat',
         path: '/chat',
         component: () => import('@/pages/chat/index.vue'),

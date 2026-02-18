@@ -61,12 +61,20 @@
     "settings": "Settings",
     "mcp": "MCP",
     "sharedWorkspace": "Shared Workspace",
+    "systemSettings": "System Settings",
     "schedules": "Schedules",
     "tokenUsage": "Token Usage",
     "logs": "Process Logs"
   },
   "breadcrumb": {
     "main": "Home"
+  },
+  "systemSettings": {
+    "title": "System Settings",
+    "subtitle": "Manage system-level display preferences, timezone, and diagnostics.",
+    "display": "Display Preferences",
+    "timezoneLabel": "Global Timezone",
+    "timezoneHint": "Affects scheduled tasks and bot time display"
   },
   "settings": {
     "display": "General",
@@ -312,35 +320,10 @@
       "blankDescription": "Start from scratch with an empty persona",
       "categories": {
         "all": "All",
-        "productivity": "Productivity",
+        "business": "Business",
         "development": "Development",
-        "creative": "Creative",
-        "education": "Education",
-        "personal": "Personal"
-      },
-      "names": {
-        "research-analyst": "Research Analyst",
-        "code-architect": "Code Architect",
-        "writing-editor": "Writing Editor",
-        "daily-secretary": "Daily Secretary",
-        "data-wrangler": "Data Wrangler",
-        "knowledge-curator": "Knowledge Curator",
-        "language-tutor": "Language Tutor",
-        "creative-muse": "Creative Muse",
-        "ops-monitor": "Ops Monitor",
-        "life-strategist": "Life Strategist"
-      },
-      "descriptions": {
-        "research-analyst": "Deep web researcher with critical analysis skills",
-        "code-architect": "Pragmatic full-stack developer, simplicity over complexity",
-        "writing-editor": "Meticulous editor and writing coach",
-        "daily-secretary": "Efficient personal assistant for daily operations",
-        "data-wrangler": "Turns messy data into clear insights",
-        "knowledge-curator": "Personal knowledge architect — your second brain",
-        "language-tutor": "Patient language learning partner",
-        "creative-muse": "Brainstorming and ideation partner",
-        "ops-monitor": "Systems reliability and monitoring partner",
-        "life-strategist": "Personal growth and decision-making partner"
+        "design": "Design",
+        "productivity": "Productivity"
       }
     },
     "step": "Step {current} of {total}",

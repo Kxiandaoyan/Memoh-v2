@@ -67,6 +67,15 @@ import {
   faServer,
   faCompass,
   faFile,
+  faSliders,
+  faChessKing,
+  faMicrochip,
+  faHandPointer,
+  faBullhorn,
+  faRocket,
+  faCube,
+  faDollarSign,
+  faPaintbrush,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   faRectangleList,
@@ -127,12 +136,21 @@ library.add(
   faServer,
   faCompass,
   faFile,
+  faSliders,
   faRectangleList,
   faTrashCan,
   faComments,
   faComment,
   faSlack,
   faBrave,
+  faChessKing,
+  faMicrochip,
+  faHandPointer,
+  faBullhorn,
+  faRocket,
+  faCube,
+  faDollarSign,
+  faPaintbrush,
 )
 
 createApp(App)
