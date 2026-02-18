@@ -55,9 +55,7 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = sqlc.arg(bot_id)
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at ASC
 LIMIT sqlc.arg(max_count);
 
@@ -79,10 +77,8 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = sqlc.arg(bot_id)
   AND m.created_at >= sqlc.arg(created_at)
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at ASC
 LIMIT sqlc.arg(max_count);
 
@@ -104,10 +100,8 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = sqlc.arg(bot_id)
   AND m.created_at < sqlc.arg(created_at)
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at DESC
 LIMIT sqlc.arg(max_count);
 
@@ -129,9 +123,7 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = sqlc.arg(bot_id)
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at DESC
 LIMIT sqlc.arg(max_count);
 

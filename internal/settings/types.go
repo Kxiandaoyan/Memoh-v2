@@ -4,8 +4,9 @@ const (
 	DefaultMaxContextLoadTime = 24 * 60
 	DefaultLanguage           = "auto"
 	// Default history limits (in user turns)
-	DefaultDMHistoryLimit       = 20      // DM conversations
-	DefaultChannelHistoryLimit  = 10      // Channel/Group conversations
+	DefaultDMHistoryLimit       = 50      // DM conversations
+	DefaultChannelHistoryLimit  = 30      // Channel/Group conversations
+	DefaultEvolutionHistoryLimit = 50     // Evolution heartbeat (all conversation types)
 )
 
 type Settings struct {

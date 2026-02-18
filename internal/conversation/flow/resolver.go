@@ -317,7 +317,6 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	maxCtx := coalescePositiveInt(req.MaxContextLoadTime, botSettings.MaxContextLoadTime, defaultMaxContextMinutes)
 
 	// Determine history limit based on conversation type (DM vs Channel/Group)
-	// DM conversations get more history, channel/group get less
 	historyLimit := settings.DefaultChannelHistoryLimit
 	if isDirectConversationType(req.ConversationType) {
 		historyLimit = settings.DefaultDMHistoryLimit
@@ -328,6 +327,10 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 	if botSettings.ChannelHistoryLimit > 0 && !isDirectConversationType(req.ConversationType) {
 		historyLimit = botSettings.ChannelHistoryLimit
+	}
+	// Allow explicit override (used by evolution heartbeat)
+	if req.HistoryLimitOverride > 0 {
+		historyLimit = req.HistoryLimitOverride
 	}
 
 	var messages []conversation.ModelMessage
@@ -578,13 +581,14 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 
 // triggerParams holds the unified parameters for executeTrigger.
 type triggerParams struct {
-	botID          string
-	query          string
-	ownerUserID    string
-	displayName    string          // "Scheduler" or "Heartbeat"
-	schedule       gatewaySchedule // gateway schedule metadata
-	usageType      string          // "schedule" or "heartbeat"
-	evolutionLogID string          // non-empty only for evolution heartbeats
+	botID                string
+	query                string
+	ownerUserID          string
+	displayName          string          // "Scheduler" or "Heartbeat"
+	schedule             gatewaySchedule // gateway schedule metadata
+	usageType            string          // "schedule" or "heartbeat"
+	evolutionLogID       string          // non-empty only for evolution heartbeats
+	historyLimitOverride int             // when > 0, override default history turn limit
 }
 
 // executeTrigger is the shared execution path for both schedule and heartbeat triggers.
@@ -592,11 +596,12 @@ type triggerParams struct {
 // and stores the conversation round.
 func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token string) error {
 	req := conversation.ChatRequest{
-		BotID:  p.botID,
-		ChatID: p.botID,
-		Query:  p.query,
-		UserID: p.ownerUserID,
-		Token:  token,
+		BotID:                p.botID,
+		ChatID:               p.botID,
+		Query:                p.query,
+		UserID:               p.ownerUserID,
+		Token:                token,
+		HistoryLimitOverride: p.historyLimitOverride,
 	}
 	rc, err := r.resolve(ctx, req)
 	if err != nil {
@@ -668,8 +673,9 @@ func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload h
 			Description: fmt.Sprintf("Heartbeat trigger (reason: %s)", payload.Reason),
 			Command:     payload.Prompt,
 		},
-		usageType:      "heartbeat",
-		evolutionLogID: payload.EvolutionLogID,
+		usageType:            "heartbeat",
+		evolutionLogID:       payload.EvolutionLogID,
+		historyLimitOverride: settings.DefaultEvolutionHistoryLimit,
 	}, token)
 }
 

@@ -242,6 +242,9 @@ type ChatRequest struct {
 	Messages           []ModelMessage `json:"messages,omitempty"`
 	Skills             []string       `json:"skills,omitempty"`
 	AllowedActions     []string       `json:"allowed_actions,omitempty"`
+
+	// HistoryLimitOverride, when > 0, overrides the default turn-based history limit.
+	HistoryLimitOverride int `json:"-"`
 }
 
 // TokenUsage summarises token consumption for a single request.

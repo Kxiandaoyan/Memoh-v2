@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -57,19 +58,42 @@ func (h *ContainerdHandler) ListSkills(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	h.logger.Info("ListSkills: resolved skills dir",
+		slog.String("bot_id", botID),
+		slog.String("skills_dir", skillsDir))
+
 	entries, err := listSkillEntries(skillsDir)
 	if err != nil {
+		h.logger.Warn("ListSkills: failed to list entries",
+			slog.String("bot_id", botID),
+			slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	entryNames := make([]string, 0, len(entries))
+	for _, e := range entries {
+		entryNames = append(entryNames, e.Path)
+	}
+	h.logger.Info("ListSkills: found entries",
+		slog.String("bot_id", botID),
+		slog.Int("count", len(entries)),
+		slog.Any("entries", entryNames))
 
 	skills := make([]SkillItem, 0, len(entries))
 	for _, entry := range entries {
 		skillPath, name := skillPathForEntry(entry)
 		if skillPath == "" {
+			h.logger.Warn("ListSkills: skillPathForEntry returned empty",
+				slog.String("bot_id", botID),
+				slog.String("entry_path", entry.Path),
+				slog.Bool("is_dir", entry.IsDir))
 			continue
 		}
 		raw, err := h.readSkillFile(skillsDir, skillPath)
 		if err != nil {
+			h.logger.Warn("ListSkills: readSkillFile failed",
+				slog.String("bot_id", botID),
+				slog.String("skill_path", skillPath),
+				slog.Any("error", err))
 			continue
 		}
 		parsed := parseSkillFile(raw, name)
@@ -81,6 +105,9 @@ func (h *ContainerdHandler) ListSkills(c echo.Context) error {
 		})
 	}
 
+	h.logger.Info("ListSkills: returning skills",
+		slog.String("bot_id", botID),
+		slog.Int("total", len(skills)))
 	return c.JSON(http.StatusOK, SkillsResponse{Skills: skills})
 }
 
@@ -196,6 +223,10 @@ func (h *ContainerdHandler) LoadSkills(ctx context.Context, botID string) ([]Ski
 		}
 		raw, err := h.readSkillFile(skillsDir, skillPath)
 		if err != nil {
+			h.logger.Warn("LoadSkills: readSkillFile failed",
+				slog.String("bot_id", botID),
+				slog.String("skill_path", skillPath),
+				slog.Any("error", err))
 			continue
 		}
 		parsed := parseSkillFile(raw, name)
@@ -228,10 +259,44 @@ func (h *ContainerdHandler) readSkillFile(skillsDir, filePath string) (string, e
 	}
 	target := filepath.Join(skillsDir, filepath.FromSlash(safeRel))
 	data, err := os.ReadFile(target)
-	if err != nil {
+	if err == nil {
+		return string(data), nil
+	}
+	if !os.IsNotExist(err) {
 		return "", err
 	}
-	return string(data), nil
+
+	// Primary file not found — try alternative filenames in the same directory.
+	dir := filepath.Dir(target)
+	for _, candidate := range skillFileCandidates {
+		alt := filepath.Join(dir, candidate)
+		if alt == target {
+			continue
+		}
+		data, err := os.ReadFile(alt)
+		if err == nil {
+			return string(data), nil
+		}
+	}
+
+	// Last resort: read the first .md file in the directory.
+	dirEntries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		return "", err
+	}
+	for _, de := range dirEntries {
+		if de.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(de.Name()), ".md") {
+			data, readErr := os.ReadFile(filepath.Join(dir, de.Name()))
+			if readErr == nil {
+				return string(data), nil
+			}
+		}
+	}
+
+	return "", err
 }
 
 func listSkillEntries(skillsDir string) ([]skillEntry, error) {
@@ -296,6 +361,18 @@ func skillPathForEntry(entry skillEntry) (string, string) {
 	return "", ""
 }
 
+// skillFileCandidates lists filenames to try when looking for a skill definition,
+// ordered by priority. This handles cases where bots create skills with
+// non-standard filenames via conversation.
+var skillFileCandidates = []string{
+	"SKILL.md",
+	"skill.md",
+	"Skill.md",
+	"README.md",
+	"readme.md",
+	"index.md",
+}
+
 // parsedSkill holds the result of parsing a SKILL.md file with YAML frontmatter.
 type parsedSkill struct {
 	Name        string
@@ -319,6 +396,7 @@ func parseSkillFile(raw string, fallbackName string) parsedSkill {
 
 	trimmed := strings.TrimSpace(raw)
 	if !strings.HasPrefix(trimmed, "---") {
+		result.Content = trimmed
 		return result
 	}
 

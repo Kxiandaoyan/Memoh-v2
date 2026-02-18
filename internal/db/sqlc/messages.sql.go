@@ -138,9 +138,7 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = $1
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at ASC
 LIMIT $2
 `
@@ -220,10 +218,8 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = $1
   AND m.created_at < $2
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at DESC
 LIMIT $3
 `
@@ -304,9 +300,7 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = $1
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at DESC
 LIMIT $2
 `
@@ -386,10 +380,8 @@ SELECT
   ci.avatar_url AS sender_avatar_url
 FROM bot_history_messages m
 LEFT JOIN channel_identities ci ON ci.id = m.sender_channel_identity_id
-LEFT JOIN bot_channel_routes r ON r.id = m.route_id
 WHERE m.bot_id = $1
   AND m.created_at >= $2
-  AND (m.route_id IS NULL OR r.conversation_type IS NULL OR r.conversation_type IN ('', 'p2p', 'private', 'direct'))
 ORDER BY m.created_at ASC
 LIMIT $3
 `
