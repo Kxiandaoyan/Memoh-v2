@@ -496,9 +496,18 @@ func isValidClientType(clientType ClientType) bool {
 }
 
 // SelectMemoryModel selects a chat model for memory operations.
-func SelectMemoryModel(ctx context.Context, modelsService *Service, queries *sqlc.Queries) (GetResponse, sqlc.LlmProvider, error) {
+// If preferredModelID is provided and resolves to a valid model+provider,
+// it is used; otherwise the first available chat model is returned.
+func SelectMemoryModel(ctx context.Context, modelsService *Service, queries *sqlc.Queries, preferredModelID ...string) (GetResponse, sqlc.LlmProvider, error) {
 	if modelsService == nil {
 		return GetResponse{}, sqlc.LlmProvider{}, fmt.Errorf("models service not configured")
+	}
+	if len(preferredModelID) > 0 && strings.TrimSpace(preferredModelID[0]) != "" {
+		if model, err := modelsService.GetByModelID(ctx, preferredModelID[0]); err == nil {
+			if provider, provErr := FetchProviderByID(ctx, queries, model.LlmProviderID); provErr == nil {
+				return model, provider, nil
+			}
+		}
 	}
 	candidates, err := modelsService.ListByType(ctx, ModelTypeChat)
 	if err != nil || len(candidates) == 0 {

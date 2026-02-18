@@ -2,6 +2,23 @@ package memory
 
 import "context"
 
+type ctxKeyPreferredModel struct{}
+
+// WithPreferredModel returns a context that carries a bot-specific memory model ID.
+// The lazyLLMClient checks this value to select the right model instead of the
+// global first-available fallback.
+func WithPreferredModel(ctx context.Context, modelID string) context.Context {
+	return context.WithValue(ctx, ctxKeyPreferredModel{}, modelID)
+}
+
+// PreferredModelFromCtx extracts the preferred memory model ID from context.
+func PreferredModelFromCtx(ctx context.Context) string {
+	if v, ok := ctx.Value(ctxKeyPreferredModel{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // LLM is the interface for LLM operations needed by memory service
 type LLM interface {
 	Extract(ctx context.Context, req ExtractRequest) (ExtractResponse, error)

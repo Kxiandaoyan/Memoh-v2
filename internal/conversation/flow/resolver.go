@@ -1692,12 +1692,25 @@ func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []con
 		return
 	}
 
+	// Inject bot-specific memory model into context so the LLM client
+	// uses the model configured in bot settings instead of the global default.
+	if r.queries != nil {
+		if pgBotID, parseErr := db.ParseUUID(botID); parseErr == nil {
+			if settingsRow, sErr := r.queries.GetSettingsByBotID(ctx, pgBotID); sErr == nil {
+				if mid := strings.TrimSpace(settingsRow.MemoryModelID.String); mid != "" {
+					ctx = memory.WithPreferredModel(ctx, mid)
+				}
+			}
+		}
+	}
+
 	// Log memory storage attempt
 	if r.logger != nil {
 		r.logger.Info("storing memory",
 			slog.String("bot_id", botID),
 			slog.Int("message_count", len(memMsgs)),
 			slog.String("namespace", sharedMemoryNamespace),
+			slog.String("preferred_model", memory.PreferredModelFromCtx(ctx)),
 		)
 	}
 
