@@ -11,7 +11,7 @@
 
 每个 Bot 拥有独立容器、独立记忆、独立技能、自我进化能力 —— 你的私人 AI 智能体平台。
 
-[English](./README_EN.md) · [快速开始](#快速开始) · [功能详解](#功能详解) · [安装与升级](#安装与升级) · [使用教程](./doc/README.md) · [界面截图](./doc/screenshots.md)
+[English](./README_EN.md) · [快速开始](#快速开始) · [功能详解](#功能详解) · [安装与升级](#安装与升级) · [使用教程](./doc/README.md) · [界面截图](./doc/screenshots.md) · [项目完成进度](./doc/FEATURE_AUDIT.md) · [项目提示词](./doc/PROMPTS_INVENTORY.md)
 
 </div>
 
