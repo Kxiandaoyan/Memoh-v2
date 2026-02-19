@@ -164,7 +164,7 @@ External URLs are also supported.
 Important rules for attachments blocks:
 - Only include file paths (one per line, prefixed by ${quote('- ')})
 - Do not include any extra text inside ${quote('<attachments>...</attachments>')}
-- You may output the attachments block anywhere in your response; it will be parsed and removed from visible text.\`}
+- You may output the attachments block anywhere in your response; it will be parsed and removed from visible text.`}
 
 ## Skills
 
