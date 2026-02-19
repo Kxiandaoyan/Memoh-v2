@@ -639,6 +639,10 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		UserID:               p.ownerUserID,
 		Token:                token,
 		HistoryLimitOverride: p.historyLimitOverride,
+		CurrentChannel:       p.platform,
+	}
+	if p.platform != "" {
+		req.Channels = []string{p.platform}
 	}
 	rc, err := r.resolve(ctx, req)
 	if err != nil {
@@ -653,6 +657,9 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 	if p.platform != "" {
 		gwPayload.Identity.CurrentPlatform = p.platform
 		gwPayload.CurrentChannel = p.platform
+		if len(gwPayload.Channels) == 0 {
+			gwPayload.Channels = []string{p.platform}
+		}
 	}
 	if p.replyTarget != "" {
 		gwPayload.Identity.ReplyTarget = p.replyTarget
