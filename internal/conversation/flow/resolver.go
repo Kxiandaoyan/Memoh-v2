@@ -632,6 +632,13 @@ type triggerParams struct {
 // It resolves the conversation context, posts to the agent gateway, records token usage,
 // and stores the conversation round.
 func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token string) error {
+	r.logger.Info("executeTrigger: channel routing",
+		slog.String("bot_id", p.botID),
+		slog.String("usage_type", p.usageType),
+		slog.String("platform", p.platform),
+		slog.String("reply_target", p.replyTarget),
+		slog.String("query", truncate(p.query, 200)),
+	)
 	req := conversation.ChatRequest{
 		BotID:                p.botID,
 		ChatID:               p.botID,
@@ -687,7 +694,12 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 
 // TriggerSchedule executes a scheduled command through the agent gateway trigger-schedule endpoint.
 func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload schedule.TriggerPayload, token string) error {
-	r.logger.Info("TriggerSchedule: starting", slog.String("bot_id", botID))
+	r.logger.Info("TriggerSchedule: starting",
+		slog.String("bot_id", botID),
+		slog.String("schedule_id", payload.ID),
+		slog.String("platform", payload.Platform),
+		slog.String("reply_target", payload.ReplyTarget),
+	)
 	if strings.TrimSpace(botID) == "" {
 		return fmt.Errorf("bot id is required")
 	}
@@ -928,15 +940,6 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 				processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
 				nil, 0)
-
-			if r.ovSessionExtractor != nil {
-				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-					processlog.StepOpenVikingSession, processlog.LevelInfo, "OpenViking session extraction queued",
-					nil, 0)
-				msgs := make([]conversation.ModelMessage, len(rc.payload.Messages))
-				copy(msgs, rc.payload.Messages)
-				go r.ovSessionExtractor.ExtractSession(context.Background(), req.BotID, req.ChatID, msgs)
-			}
 		}
 	}()
 	return chunkCh, errCh
@@ -1458,6 +1461,21 @@ func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.Cha
 		usagePtr = usage[0]
 	}
 	r.storeMessages(ctx, req, fullRound, usagePtr)
+
+	// For memory extraction, always include the user's query so the LLM
+	// can extract facts from what the user said. fullRound may have
+	// excluded it when UserMessagePersisted is true (to avoid duplicate
+	// persistence), but memory extraction needs the full conversation.
+	memoryRound := fullRound
+	if req.UserMessagePersisted && strings.TrimSpace(req.Query) != "" {
+		memoryRound = make([]conversation.ModelMessage, 0, len(fullRound)+1)
+		memoryRound = append(memoryRound, conversation.ModelMessage{
+			Role:    "user",
+			Content: conversation.NewTextContent(req.Query),
+		})
+		memoryRound = append(memoryRound, fullRound...)
+	}
+
 	mtc := memoryTraceCtx{
 		traceID: traceID,
 		chatID:  req.ChatID,
@@ -1473,8 +1491,18 @@ func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.Cha
 				)
 			}
 		}()
-		r.storeMemory(context.WithoutCancel(ctx), req.BotID, fullRound, mtc)
+		r.storeMemory(context.WithoutCancel(ctx), req.BotID, memoryRound, mtc)
 	}()
+
+	if r.ovSessionExtractor != nil {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepOpenVikingSession, processlog.LevelInfo, "OpenViking session extraction queued",
+			nil, 0)
+		ovMsgs := make([]conversation.ModelMessage, len(memoryRound))
+		copy(ovMsgs, memoryRound)
+		go r.ovSessionExtractor.ExtractSession(context.WithoutCancel(ctx), req.BotID, req.ChatID, ovMsgs)
+	}
+
 	return nil
 }
 

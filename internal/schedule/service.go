@@ -238,6 +238,20 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 		return fmt.Errorf("generate trigger token: %w", err)
 	}
 
+	platform := schedule.Platform
+	replyTarget := schedule.ReplyTarget
+	if strings.TrimSpace(platform) == "" {
+		if p, t := s.resolveDefaultRoute(ctx, schedule.BotID); p != "" {
+			platform = p
+			replyTarget = t
+			s.logger.Info("runSchedule: resolved fallback channel from routes",
+				slog.String("schedule_id", schedule.ID),
+				slog.String("platform", platform),
+				slog.String("reply_target", replyTarget),
+			)
+		}
+	}
+
 	err = s.triggerer.TriggerSchedule(ctx, schedule.BotID, TriggerPayload{
 		ID:          schedule.ID,
 		Name:        schedule.Name,
@@ -246,8 +260,8 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 		MaxCalls:    schedule.MaxCalls,
 		Command:     schedule.Command,
 		OwnerUserID: ownerUserID,
-		Platform:    schedule.Platform,
-		ReplyTarget: schedule.ReplyTarget,
+		Platform:    platform,
+		ReplyTarget: replyTarget,
 	}, token)
 	if err != nil {
 		return err
@@ -324,6 +338,26 @@ func toSchedule(row sqlc.Schedule) Schedule {
 		item.UpdatedAt = row.UpdatedAt.Time
 	}
 	return item
+}
+
+// resolveDefaultRoute looks up the bot's channel routes and returns the
+// platform and reply_target of the first (oldest) route. This provides a
+// fallback when a schedule has no platform stored (e.g. created before the
+// platform column was added, or via the web UI).
+func (s *Service) resolveDefaultRoute(ctx context.Context, botID string) (platform, replyTarget string) {
+	if s.queries == nil {
+		return "", ""
+	}
+	pgBotID, err := db.ParseUUID(botID)
+	if err != nil {
+		return "", ""
+	}
+	routes, err := s.queries.ListChatRoutes(ctx, pgBotID)
+	if err != nil || len(routes) == 0 {
+		return "", ""
+	}
+	route := routes[0]
+	return strings.TrimSpace(route.Platform), strings.TrimSpace(route.ReplyTarget.String)
 }
 
 func toUUID(id string) pgtype.UUID {
