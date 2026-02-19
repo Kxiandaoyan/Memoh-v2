@@ -178,6 +178,7 @@ func main() {
 			startChannelManager,
 			startContainerReconciliation,
 			startServer,
+			wireTriggerSender,
 		),
 		fx.WithLogger(func(logger *slog.Logger) fxevent.Logger {
 			return &fxevent.SlogLogger{Logger: logger.With(slog.String("component", "fx"))}
@@ -389,6 +390,28 @@ func provideChannelManager(log *slog.Logger, registry *channel.Registry, channel
 		mgr.Use(mw)
 	}
 	return mgr
+}
+
+// wireTriggerSender connects channel.Manager to the Resolver as a fallback
+// message sender for schedule/heartbeat triggers.
+// channelManager depends on channelRouter which depends on resolver, so this
+// wiring must happen via fx.Invoke (post-construction) rather than in the
+// resolver constructor to avoid a circular dependency.
+func wireTriggerSender(resolver *flow.Resolver, channelManager *channel.Manager) {
+	resolver.SetTriggerSender(&channelTriggerSender{manager: channelManager})
+}
+
+// channelTriggerSender implements flow.TriggerMessageSender using channel.Manager.
+type channelTriggerSender struct {
+	manager *channel.Manager
+}
+
+func (s *channelTriggerSender) SendText(ctx context.Context, botID, platform, target, text string) error {
+	ct := channel.ChannelType(strings.ToLower(strings.TrimSpace(platform)))
+	return s.manager.Send(ctx, botID, ct, channel.SendRequest{
+		Target:  target,
+		Message: channel.Message{Text: text},
+	})
 }
 
 // ---------------------------------------------------------------------------

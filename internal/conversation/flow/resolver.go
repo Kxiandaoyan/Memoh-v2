@@ -150,6 +150,12 @@ type OVContextLoader interface {
 	LoadContext(ctx context.Context, botID, query string) string
 }
 
+// TriggerMessageSender is an optional fallback used by executeTrigger to
+// deliver a text message when the LLM did not call the send MCP tool.
+type TriggerMessageSender interface {
+	SendText(ctx context.Context, botID, platform, target, text string) error
+}
+
 // Resolver orchestrates chat with the agent gateway.
 type Resolver struct {
 	modelsService    *models.Service
@@ -162,6 +168,7 @@ type Resolver struct {
 	skillLoader      SkillLoader
 	ovSessionExtractor OVSessionExtractor
 	ovContextLoader    OVContextLoader
+	triggerSender    TriggerMessageSender
 	gatewayBaseURL   string
 	timezone         string
 	timeout          time.Duration
@@ -226,6 +233,12 @@ func (r *Resolver) SetOVSessionExtractor(e OVSessionExtractor) {
 // injecting relevant knowledge base context into conversations.
 func (r *Resolver) SetOVContextLoader(l OVContextLoader) {
 	r.ovContextLoader = l
+}
+
+// SetTriggerSender sets the fallback channel sender used when a schedule/heartbeat
+// trigger's LLM response contains text but no explicit send tool call.
+func (r *Resolver) SetTriggerSender(s TriggerMessageSender) {
+	r.triggerSender = s
 }
 
 // --- Process Logging Helpers ---
@@ -930,6 +943,40 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 	r.recordTokenUsage(ctx, p.botID, resp.Usage, rc.model.ModelID, p.usageType)
 	r.completeEvolutionLogFromResponse(ctx, p.evolutionLogID, resp)
 
+	// Fallback delivery: if the LLM never called the send MCP tool, push the
+	// response to the channel directly so the user receives it.
+	// Priority: (1) LLM text response, (2) last tool-result readable content.
+	if r.triggerSender != nil &&
+		strings.TrimSpace(p.platform) != "" &&
+		strings.TrimSpace(p.replyTarget) != "" {
+		if !hasSendToolCallInMessages(resp.Messages) {
+			var fallbackText string
+			var fallbackSource string
+			if text := extractFullAssistantText(resp.Messages); strings.TrimSpace(text) != "" {
+				fallbackText = text
+				fallbackSource = "assistant_text"
+			} else if text := extractLastToolResultSummary(resp.Messages); strings.TrimSpace(text) != "" {
+				fallbackText = text
+				fallbackSource = "tool_result"
+			}
+			if fallbackText != "" {
+				r.logger.Info("executeTrigger: LLM skipped send tool – delivering via fallback",
+					slog.String("bot_id", p.botID),
+					slog.String("platform", p.platform),
+					slog.String("reply_target", p.replyTarget),
+					slog.String("source", fallbackSource),
+					slog.String("text_preview", truncate(fallbackText, 100)),
+				)
+				if sendErr := r.triggerSender.SendText(ctx, p.botID, p.platform, p.replyTarget, fallbackText); sendErr != nil {
+					r.logger.Warn("executeTrigger: fallback send failed",
+						slog.String("bot_id", p.botID),
+						slog.Any("error", sendErr),
+					)
+				}
+			}
+		}
+	}
+
 	r.logProcessStep(ctx, p.botID, p.botID, rc.traceID, p.ownerUserID, p.platform,
 		processlog.StepResponseSent, processlog.LevelInfo, fmt.Sprintf("Trigger round stored (%s)", p.usageType),
 		map[string]any{
@@ -942,6 +989,119 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		return err
 	}
 	return nil
+}
+
+// hasSendToolCallInMessages returns true if any assistant message in the slice
+// contains a tool call to the "send" MCP tool (checks both the ToolCalls field
+// and Vercel AI SDK-style content parts).
+func hasSendToolCallInMessages(messages []conversation.ModelMessage) bool {
+	for _, msg := range messages {
+		if msg.Role != "assistant" {
+			continue
+		}
+		for _, tc := range msg.ToolCalls {
+			if tc.Function.Name == "send" {
+				return true
+			}
+		}
+		if len(msg.Content) > 0 {
+			var parts []struct {
+				Type     string `json:"type"`
+				ToolName string `json:"toolName"`
+			}
+			if err := json.Unmarshal(msg.Content, &parts); err == nil {
+				for _, part := range parts {
+					if part.Type == "tool-call" && part.ToolName == "send" {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// extractFullAssistantText returns the full text of the last assistant message
+// (not truncated), skipping reasoning/thinking parts.
+func extractFullAssistantText(messages []conversation.ModelMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			text := messages[i].TextContent()
+			if text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+// extractLastToolResultSummary scans the last tool-role message in the
+// conversation and attempts to return a human-readable excerpt from the tool
+// result. It is used as a secondary fallback when the LLM produced no text
+// response (e.g., it only made tool calls without a final summary).
+//
+// It handles two serialization formats emitted by the Vercel AI SDK:
+//  1. Plain string content: returned directly.
+//  2. Array of parts with type "tool-result": the inner result is inspected;
+//     well-known text fields (stdout, output, text, message, result, content)
+//     are preferred, otherwise the raw JSON is returned as a last resort.
+func extractLastToolResultSummary(messages []conversation.ModelMessage) string {
+	const maxChars = 400
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != "tool" {
+			continue
+		}
+		// Standard path: plain string content.
+		if text := strings.TrimSpace(msg.TextContent()); text != "" {
+			return truncate(text, maxChars)
+		}
+		// Vercel AI SDK path: [{type:"tool-result", toolCallId:"...", result:{...}}]
+		if len(msg.Content) == 0 {
+			continue
+		}
+		var parts []struct {
+			Type   string          `json:"type"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(msg.Content, &parts); err != nil {
+			continue
+		}
+		// Walk parts in reverse to get the last tool-result.
+		for j := len(parts) - 1; j >= 0; j-- {
+			p := parts[j]
+			if p.Type != "tool-result" || len(p.Result) == 0 {
+				continue
+			}
+			// Try as plain string.
+			var s string
+			if err := json.Unmarshal(p.Result, &s); err == nil {
+				if s = strings.TrimSpace(s); s != "" {
+					return truncate(s, maxChars)
+				}
+			}
+			// Try as object; prefer well-known text-bearing fields.
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(p.Result, &obj); err == nil {
+				for _, key := range []string{"stdout", "output", "text", "message", "result", "content"} {
+					if raw, ok := obj[key]; ok {
+						var field string
+						if err2 := json.Unmarshal(raw, &field); err2 == nil {
+							if field = strings.TrimSpace(field); field != "" {
+								return truncate(field, maxChars)
+							}
+						}
+					}
+				}
+				// Nothing useful in known fields — fall back to the raw JSON.
+				raw := strings.TrimSpace(string(p.Result))
+				if raw != "" && raw != "null" && raw != "{}" {
+					return truncate(raw, maxChars)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // TriggerSchedule executes a scheduled command through the agent gateway trigger-schedule endpoint.

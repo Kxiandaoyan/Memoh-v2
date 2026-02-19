@@ -79,6 +79,8 @@ import {
   faDollarSign,
   faPaintbrush,
   faArrowUpRightFromSquare,
+  faDownload,
+  faFileExport,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   faRectangleList,
@@ -158,6 +160,8 @@ library.add(
   faDollarSign,
   faPaintbrush,
   faArrowUpRightFromSquare,
+  faDownload,
+  faFileExport,
 )
 
 createApp(App)
