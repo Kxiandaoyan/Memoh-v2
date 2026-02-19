@@ -84,3 +84,21 @@ export async function exportTrace(traceId: string): Promise<TraceExport> {
   if (response?.json) return response.json()
   return response?.data ?? response
 }
+
+export interface ChatExport {
+  version: string
+  exported_at: string
+  bot_id: string
+  chat_id: string
+  channel?: string
+  total_rounds: number
+  time_range: { start: string; end: string }
+  total_duration_ms: number
+  rounds: TraceExport[]
+}
+
+export async function exportChat(botId: string, chatId: string, limit = 2000): Promise<ChatExport> {
+  const response = await client.get({ url: `/logs/chat/${chatId}/export`, query: { botId, limit: String(limit) }, throwOnError: true }) as any
+  if (response?.json) return response.json()
+  return response?.data ?? response
+}

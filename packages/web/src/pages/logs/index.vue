@@ -9,7 +9,7 @@
         <select
           v-model="selectedBotId"
           class="px-3 py-1.5 text-sm rounded-md border bg-background"
-          @change="loadLogs"
+          @change="onBotChange"
         >
           <option value="">{{ $t('logs.allBots') }}</option>
           <option
@@ -20,6 +20,29 @@
             {{ bot.display_name || bot.name || bot.id.slice(0, 8) }}
           </option>
         </select>
+        <select
+          v-if="chatList.length > 1"
+          v-model="selectedChatId"
+          class="px-3 py-1.5 text-sm rounded-md border bg-background max-w-48"
+        >
+          <option value="">{{ $t('logs.allChats') }}</option>
+          <option
+            v-for="chat in chatList"
+            :key="chat.chatId"
+            :value="chat.chatId"
+          >
+            {{ chat.query.slice(0, 30) }} ({{ chat.count }})
+          </option>
+        </select>
+        <button
+          v-if="selectedBotId && selectedChatId"
+          class="px-3 py-1.5 text-xs rounded-md border transition-colors hover:bg-accent"
+          :disabled="exportingChat"
+          @click="exportChatAsFile"
+        >
+          <FontAwesomeIcon :icon="['fas', exportingChat ? 'spinner' : 'file-export']" :class="{ 'animate-spin': exportingChat }" class="mr-1" />
+          {{ $t('logs.exportChatFile') }}
+        </button>
         <button
           class="px-3 py-1.5 text-xs rounded-md border transition-colors hover:bg-accent"
           @click="refresh"
@@ -113,18 +136,27 @@
             {{ group.totalDuration > 0 ? formatDuration(group.totalDuration) : '-' }}
           </span>
         </button>
-        <!-- Export button -->
-        <button
-          class="absolute right-2 top-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors z-10"
-          :class="{ 'text-green-500': exportedTraceId === group.traceId }"
-          :title="$t('logs.exportTrace')"
-          @click.stop="exportTraceToClipboard(group.traceId)"
-        >
-          <FontAwesomeIcon
-            :icon="['fas', exportedTraceId === group.traceId ? 'check' : 'clipboard']"
-            class="text-xs"
-          />
-        </button>
+        <!-- Export buttons -->
+        <div class="absolute right-2 top-2 flex gap-1 z-10">
+          <button
+            class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+            :title="$t('logs.downloadTrace')"
+            @click.stop="downloadTraceAsFile(group.traceId)"
+          >
+            <FontAwesomeIcon :icon="['fas', 'download']" class="text-xs" />
+          </button>
+          <button
+            class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+            :class="{ 'text-green-500': exportedTraceId === group.traceId }"
+            :title="$t('logs.exportTrace')"
+            @click.stop="exportTraceToClipboard(group.traceId)"
+          >
+            <FontAwesomeIcon
+              :icon="['fas', exportedTraceId === group.traceId ? 'check' : 'clipboard']"
+              class="text-xs"
+            />
+          </button>
+        </div>
 
         <!-- Step Details (Level 2) -->
         <div
@@ -204,7 +236,7 @@ import { useI18n } from 'vue-i18n'
 import { client } from '@memoh/sdk/client'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import type { ProcessLog } from '@/lib/api-logs'
-import { exportTrace } from '@/lib/api-logs'
+import { exportTrace, exportChat } from '@/lib/api-logs'
 
 const { t } = useI18n()
 
@@ -229,9 +261,11 @@ const loading = ref(false)
 const logs = ref<ProcessLog[]>([])
 const botList = ref<BotInfo[]>([])
 const selectedBotId = ref('')
+const selectedChatId = ref('')
 const expandedTraces = ref<Set<string>>(new Set())
 const expandedData = ref<Set<string>>(new Set())
 const exportedTraceId = ref<string | null>(null)
+const exportingChat = ref(false)
 
 const stepLabels: Record<string, string> = {
   user_message_received: t('logs.steps.user_message_received'),
@@ -260,11 +294,18 @@ const stepLabels: Record<string, string> = {
   evolution_started: t('logs.steps.evolution_started'),
   evolution_completed: t('logs.steps.evolution_completed'),
   evolution_failed: t('logs.steps.evolution_failed'),
+  memory_filtered: t('logs.steps.memory_filtered'),
+  query_expanded: t('logs.steps.query_expanded'),
+  token_budget_calculated: t('logs.steps.token_budget_calculated'),
+  tool_result_trimmed: t('logs.steps.tool_result_trimmed'),
+  model_fallback: t('logs.steps.model_fallback'),
+  skills_filtered: t('logs.steps.skills_filtered'),
 }
 
 const traceGroups = computed<TraceGroup[]>(() => {
   const groups = new Map<string, ProcessLog[]>()
   for (const log of logs.value) {
+    if (selectedChatId.value && log.chat_id !== selectedChatId.value) continue
     const key = log.trace_id || log.id
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(log)
@@ -293,6 +334,19 @@ const traceGroups = computed<TraceGroup[]>(() => {
   }
   result.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
   return result
+})
+
+const chatList = computed(() => {
+  const chats = new Map<string, { chatId: string; query: string; count: number }>()
+  for (const group of traceGroups.value) {
+    const chatId = group.steps[0]?.chat_id
+    if (!chatId) continue
+    if (!chats.has(chatId)) {
+      chats.set(chatId, { chatId, query: group.query || chatId.slice(0, 8), count: 0 })
+    }
+    chats.get(chatId)!.count++
+  }
+  return Array.from(chats.values())
 })
 
 const errorTraceCount = computed(() => traceGroups.value.filter(g => g.hasError).length)
@@ -366,6 +420,11 @@ function toggleData(logId: string) {
   expandedData.value = new Set(expandedData.value)
 }
 
+function onBotChange() {
+  selectedChatId.value = ''
+  loadLogs()
+}
+
 async function exportTraceToClipboard(traceId: string) {
   try {
     const data = await exportTrace(traceId)
@@ -377,6 +436,43 @@ async function exportTraceToClipboard(traceId: string) {
     }, 2000)
   } catch (e) {
     console.error('Failed to export trace', e)
+  }
+}
+
+function downloadJSON(data: unknown, filename: string) {
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+async function downloadTraceAsFile(traceId: string) {
+  try {
+    const data = await exportTrace(traceId)
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    downloadJSON(data, `trace-${traceId.slice(0, 8)}-${ts}.json`)
+  } catch (e) {
+    console.error('Failed to download trace', e)
+  }
+}
+
+async function exportChatAsFile() {
+  if (!selectedBotId.value || !selectedChatId.value) return
+  exportingChat.value = true
+  try {
+    const data = await exportChat(selectedBotId.value, selectedChatId.value)
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    downloadJSON(data, `chat-export-${selectedChatId.value.slice(0, 8)}-${ts}.json`)
+  } catch (e) {
+    console.error('Failed to export chat', e)
+  } finally {
+    exportingChat.value = false
   }
 }
 

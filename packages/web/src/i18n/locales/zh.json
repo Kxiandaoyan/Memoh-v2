@@ -813,7 +813,10 @@
     "showData": "展开数据",
     "hideData": "收起数据",
     "exportTrace": "复制诊断报告到剪贴板",
+    "downloadTrace": "下载诊断报告为 JSON 文件",
+    "exportChatFile": "导出会话日志",
     "exportSuccess": "已复制到剪贴板",
+    "allChats": "所有会话",
     "steps": {
       "user_message_received": "用户消息",
       "history_loaded": "历史加载",
@@ -842,7 +845,13 @@
       "openviking_session_failed": "OpenViking 会话失败",
       "evolution_started": "进化开始",
       "evolution_completed": "进化完成",
-      "evolution_failed": "进化失败"
+      "evolution_failed": "进化失败",
+      "memory_filtered": "记忆过滤",
+      "query_expanded": "查询扩展",
+      "token_budget_calculated": "Token 预算",
+      "tool_result_trimmed": "工具结果裁剪",
+      "model_fallback": "模型降级",
+      "skills_filtered": "技能过滤"
     }
   }
 }

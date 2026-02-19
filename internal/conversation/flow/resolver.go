@@ -466,7 +466,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 
 	memSearchStart := time.Now()
-	if memoryMsg := r.loadMemoryContextMessage(ctx, req, chatModel.ContextWindow); memoryMsg != nil {
+	if memoryMsg := r.loadMemoryContextMessage(ctx, req, chatModel.ContextWindow, traceID); memoryMsg != nil {
 		memDur := int(time.Since(memSearchStart).Milliseconds())
 		contentStr := string(memoryMsg.Content)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
@@ -521,7 +521,36 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 
 	allMessages := make([]conversation.ModelMessage, len(messages))
 	copy(allMessages, messages)
-	messages = pruneMessagesByTokenBudget(messages, chatModel.ContextWindow)
+	messages, trimDiags, budgetDiag := pruneMessagesByTokenBudget(messages, chatModel.ContextWindow)
+
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepTokenBudgetCalculated, processlog.LevelInfo, "Token budget calculated",
+		map[string]any{
+			"context_window":      chatModel.ContextWindow,
+			"system_tokens":       budgetDiag.SystemTokens,
+			"gateway_estimate":    budgetDiag.GatewayEstimate,
+			"total_system_tokens": budgetDiag.TotalSystemTokens,
+			"budget":              budgetDiag.Budget,
+			"estimated_before":    budgetDiag.EstimatedTotalBefore,
+			"estimated_after":     budgetDiag.EstimatedTotalAfter,
+			"protected_tail":      budgetDiag.ProtectedTail,
+			"pruned":              budgetDiag.Pruned,
+		}, 0)
+
+	if len(trimDiags) > 0 {
+		trimData := make([]map[string]any, 0, len(trimDiags))
+		for _, td := range trimDiags {
+			trimData = append(trimData, map[string]any{
+				"tool_call_id":  td.ToolCallID,
+				"original_chars": td.OriginalChars,
+				"trimmed_chars":  td.TrimmedChars,
+			})
+		}
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepToolResultTrimmed, processlog.LevelInfo,
+			fmt.Sprintf("%d tool result(s) soft-trimmed", len(trimDiags)),
+			map[string]any{"trimmed_tools": trimData}, 0)
+	}
 
 	if len(messages) < len(allMessages) {
 		droppedCount := len(allMessages) - len(messages)
@@ -611,14 +640,29 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		usableSkills = []gatewaySkill{}
 	}
 
+	preFilterCount := len(usableSkills)
 	usableSkills = filterSkillsByRelevance(usableSkills, req.Query, 10)
 	skillDur := int(time.Since(skillStart).Milliseconds())
 	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 		processlog.StepSkillsLoaded, processlog.LevelInfo, "Skills loaded",
 		map[string]any{
-			"total_skills":    len(usableSkills),
+			"total_skills":    preFilterCount,
+			"after_filter":    len(usableSkills),
+			"filtered_out":    preFilterCount - len(usableSkills),
 			"duration":        skillDur,
 		}, skillDur)
+	if preFilterCount > len(usableSkills) {
+		skillNames := make([]string, 0, len(usableSkills))
+		for _, sk := range usableSkills {
+			skillNames = append(skillNames, sk.Name)
+		}
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepSkillsFiltered, processlog.LevelInfo,
+			fmt.Sprintf("Skills filtered: %d → %d", preFilterCount, len(usableSkills)),
+			map[string]any{
+				"kept_skills": skillNames,
+			}, 0)
+	}
 
 	// Load bot persona/prompt configuration.
 	var botIdentity, botSoul, botTask string
@@ -730,10 +774,15 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 
 		// Attempt failover if primary model fails
 		if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
-			r.logger.Warn("primary model failed, using fallback",
-				slog.String("primary", rc.model.ModelID),
-				slog.String("fallback", fbCtx.model.ModelID),
-				slog.Any("primary_error", err))
+			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+				processlog.StepModelFallback, processlog.LevelWarn, "Primary model failed, switching to fallback",
+				map[string]any{
+					"primary_model":    rc.model.ModelID,
+					"primary_provider": rc.provider.ClientType,
+					"primary_error":    err.Error(),
+					"fallback_model":   fbCtx.model.ModelID,
+					"fallback_provider": fbCtx.provider.ClientType,
+				}, 0)
 			resp, err = r.postChat(ctx, fbCtx.payload, req.Token)
 			if err == nil {
 				rc = fbCtx
@@ -1122,10 +1171,15 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 		// the fallback model (mirrors the sync Chat() failover logic).
 		if streamErr != nil && forwarded == 0 {
 			if fbCtx, fbErr := r.tryFallback(ctx, rc); fbErr == nil {
-				r.logger.Warn("primary stream failed, using fallback",
-					slog.String("primary", rc.model.ModelID),
-					slog.String("fallback", fbCtx.model.ModelID),
-					slog.Any("primary_error", streamErr))
+				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+					processlog.StepModelFallback, processlog.LevelWarn, "Primary stream failed, switching to fallback",
+					map[string]any{
+						"primary_model":     rc.model.ModelID,
+						"primary_provider":  rc.provider.ClientType,
+						"primary_error":     streamErr.Error(),
+						"fallback_model":    fbCtx.model.ModelID,
+						"fallback_provider": fbCtx.provider.ClientType,
+					}, 0)
 				fbErr, fbForwarded := doStreamAttempt(fbCtx)
 				if fbErr == nil || fbForwarded > 0 {
 					rc = fbCtx
@@ -1561,7 +1615,7 @@ func rrfMerge(primary, secondary []memory.MemoryItem, k int) []memory.MemoryItem
 	return result
 }
 
-func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversation.ChatRequest, contextWindow int) *conversation.ModelMessage {
+func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversation.ChatRequest, contextWindow int, traceID string) *conversation.ModelMessage {
 	if r.memoryService == nil {
 		return nil
 	}
@@ -1591,9 +1645,13 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		return nil
 	}
 
+	primaryCount := len(resp.Results)
 	allItems := resp.Results
 
+	expandedKeywords := ""
+	kwCount := 0
 	if kw := extractKeywords(req.Query); kw != "" && kw != strings.ToLower(req.Query) {
+		expandedKeywords = kw
 		kwResp, kwErr := r.memoryService.Search(ctx, memory.SearchRequest{
 			Query:   kw,
 			BotID:   req.BotID,
@@ -1602,22 +1660,30 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 			NoStats: true,
 		})
 		if kwErr == nil && len(kwResp.Results) > 0 {
+			kwCount = len(kwResp.Results)
 			allItems = rrfMerge(resp.Results, kwResp.Results, memoryContextLimitPerScope*2)
 		}
 	}
 
-	if r.logger != nil {
-		r.logger.Info("memory search completed",
-			slog.String("query", truncate(req.Query, 100)),
-			slog.Int("results_found", len(allItems)),
-			slog.String("namespace", sharedMemoryNamespace),
-		)
+	if expandedKeywords != "" {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepQueryExpanded, processlog.LevelInfo, "Query expanded with keywords",
+			map[string]any{
+				"original_query":    truncate(req.Query, 200),
+				"expanded_keywords": expandedKeywords,
+				"primary_results":   primaryCount,
+				"keyword_results":   kwCount,
+				"merged_total":      len(allItems),
+			}, 0)
 	}
 
+	filteredByScore := 0
 	results := make([]memoryContextItem, 0, memoryContextLimitPerScope)
 	seen := map[string]struct{}{}
+	var scoreDistribution []float64
 	for _, item := range allItems {
 		if item.Score < memoryMinScoreThreshold {
+			filteredByScore++
 			continue
 		}
 		key := strings.TrimSpace(item.ID)
@@ -1631,26 +1697,28 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 			continue
 		}
 		seen[key] = struct{}{}
+		scoreDistribution = append(scoreDistribution, item.Score)
 		results = append(results, memoryContextItem{Namespace: sharedMemoryNamespace, Item: item})
-
-		if r.logger != nil {
-			r.logger.Debug("memory item found",
-				slog.String("memory_id", item.ID),
-				slog.String("memory_text", truncate(item.Memory, 200)),
-				slog.Float64("score", item.Score),
-			)
-		}
 	}
+
+	if filteredByScore > 0 || len(results) > 0 {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepMemoryFiltered, processlog.LevelInfo, "Memory relevance filtering applied",
+			map[string]any{
+				"total_candidates":    len(allItems),
+				"filtered_by_score":   filteredByScore,
+				"deduplicated":        len(allItems) - filteredByScore - len(results),
+				"passed":              len(results),
+				"min_score_threshold": memoryMinScoreThreshold,
+				"score_distribution":  formatScoreDistribution(scoreDistribution),
+			}, 0)
+	}
+
 	if len(results) == 0 {
-		if r.logger != nil {
-			r.logger.Info("no memory found for query",
-				slog.String("query", truncate(req.Query, 100)),
-				slog.String("namespace", sharedMemoryNamespace),
-			)
-		}
 		return nil
 	}
 
+	preDecayCount := len(results)
 	applyTemporalDecay(results)
 	results = applyMMR(results, 0.7)
 
@@ -1679,6 +1747,8 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 	var sb strings.Builder
 	sb.WriteString("Relevant memory context (use when helpful):\n")
 	totalChars := 0
+	injectedCount := 0
+	var injectedItems []map[string]any
 	for _, entry := range results {
 		text := strings.TrimSpace(entry.Item.Memory)
 		if text == "" {
@@ -1695,11 +1765,31 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		sb.WriteString(snippet)
 		sb.WriteString("\n")
 		totalChars += lineLen
+		injectedCount++
+		injectedItems = append(injectedItems, map[string]any{
+			"id":       entry.Item.ID,
+			"score":    entry.Item.Score,
+			"preview":  truncate(text, 100),
+		})
 	}
 	payload := strings.TrimSpace(sb.String())
 	if payload == "" {
 		return nil
 	}
+
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepMemoryFiltered, processlog.LevelInfo, "Memory pipeline completed",
+		map[string]any{
+			"pre_decay_count":    preDecayCount,
+			"post_mmr_count":     len(results),
+			"injected_count":     injectedCount,
+			"memory_budget_tokens": memoryBudgetTokens,
+			"memory_budget_chars":  memoryBudgetChars,
+			"per_item_chars":       perItemChars,
+			"total_chars_used":     totalChars,
+			"injected_items":       injectedItems,
+		}, 0)
+
 	msg := conversation.ModelMessage{
 		Role:    "system",
 		Content: conversation.NewTextContent(payload),
@@ -2428,6 +2518,28 @@ func nonNilModelMessages(m []conversation.ModelMessage) []conversation.ModelMess
 	return m
 }
 
+func formatScoreDistribution(scores []float64) map[string]any {
+	if len(scores) == 0 {
+		return nil
+	}
+	minS, maxS, sum := scores[0], scores[0], 0.0
+	for _, s := range scores {
+		if s < minS {
+			minS = s
+		}
+		if s > maxS {
+			maxS = s
+		}
+		sum += s
+	}
+	return map[string]any{
+		"count": len(scores),
+		"min":   math.Round(minS*1000) / 1000,
+		"max":   math.Round(maxS*1000) / 1000,
+		"avg":   math.Round((sum/float64(len(scores)))*1000) / 1000,
+	}
+}
+
 func truncateMemorySnippet(s string, n int) string {
 	trimmed := strings.TrimSpace(s)
 	if len(trimmed) <= n {
@@ -2505,7 +2617,13 @@ const (
 	toolResultTailChars    = 1500
 )
 
-func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int) []conversation.ModelMessage {
+type toolTrimDiag struct {
+	ToolCallID    string `json:"tool_call_id"`
+	OriginalChars int    `json:"original_chars"`
+	TrimmedChars  int    `json:"trimmed_chars"`
+}
+
+func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int) ([]conversation.ModelMessage, []toolTrimDiag) {
 	if contextWindow <= 0 {
 		contextWindow = 128000
 	}
@@ -2518,6 +2636,7 @@ func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int
 	}
 	out := make([]conversation.ModelMessage, len(messages))
 	copy(out, messages)
+	var diags []toolTrimDiag
 	for i, msg := range out {
 		if msg.Role != "tool" {
 			continue
@@ -2534,21 +2653,37 @@ func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int
 		head := text[:headN]
 		tail := text[len(text)-tailN:]
 		trimmed := head + fmt.Sprintf("\n\n[... content trimmed, original %d chars ...]\n\n", len(text)) + tail
+		diags = append(diags, toolTrimDiag{
+			ToolCallID:    msg.ToolCallID,
+			OriginalChars: len(text),
+			TrimmedChars:  len(trimmed),
+		})
 		out[i] = conversation.ModelMessage{
 			Role:       msg.Role,
 			Content:    conversation.NewTextContent(trimmed),
 			ToolCallID: msg.ToolCallID,
 		}
 	}
-	return out
+	return out, diags
 }
 
-func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWindow int) []conversation.ModelMessage {
+type pruneDiag struct {
+	SystemTokens        int `json:"system_tokens"`
+	GatewayEstimate     int `json:"gateway_estimate"`
+	TotalSystemTokens   int `json:"total_system_tokens"`
+	Budget              int `json:"budget"`
+	EstimatedTotalBefore int `json:"estimated_total_before"`
+	EstimatedTotalAfter  int `json:"estimated_total_after"`
+	ProtectedTail       int `json:"protected_tail"`
+	Pruned              bool `json:"pruned"`
+}
+
+func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWindow int) ([]conversation.ModelMessage, []toolTrimDiag, pruneDiag) {
 	if contextWindow <= 0 {
 		contextWindow = 128000
 	}
 
-	messages = softTrimToolResults(messages, contextWindow)
+	messages, trimDiags := softTrimToolResults(messages, contextWindow)
 
 	systemTokens := 0
 	for _, msg := range messages {
@@ -2569,14 +2704,26 @@ func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWin
 	}
 
 	total := estimateTokens(messages)
-	if total <= budget {
-		return messages
+	diag := pruneDiag{
+		SystemTokens:         systemTokens,
+		GatewayEstimate:      agentGatewaySystemPromptEstimate,
+		TotalSystemTokens:    totalSystemTokens,
+		Budget:               budget,
+		EstimatedTotalBefore: total,
 	}
+
+	if total <= budget {
+		diag.EstimatedTotalAfter = total
+		return messages, trimDiags, diag
+	}
+
+	diag.Pruned = true
 
 	protectedTail := 6
 	if protectedTail > len(messages) {
 		protectedTail = len(messages)
 	}
+	diag.ProtectedTail = protectedTail
 
 	splitIdx := len(messages) - protectedTail
 	droppable := messages[:splitIdx]
@@ -2587,7 +2734,9 @@ func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWin
 		for len(protected) > 1 && estimateTokens(protected) > budget {
 			protected = protected[1:]
 		}
-		return repairToolPairing(protected)
+		result := repairToolPairing(protected)
+		diag.EstimatedTotalAfter = estimateTokens(result)
+		return result, trimDiags, diag
 	}
 
 	remainBudget := budget - protectedTokens
@@ -2604,7 +2753,9 @@ func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWin
 			result = append(result, oldHalf...)
 			result = append(result, newHalf...)
 			result = append(result, protected...)
-			return repairToolPairing(result)
+			result = repairToolPairing(result)
+			diag.EstimatedTotalAfter = estimateTokens(result)
+			return result, trimDiags, diag
 		}
 
 		for len(oldHalf) > 0 && estimateTokens(oldHalf)+newTokens > remainBudget {
@@ -2621,10 +2772,14 @@ func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWin
 				result = result[1:]
 			}
 		}
-		return repairToolPairing(result)
+		result = repairToolPairing(result)
+		diag.EstimatedTotalAfter = estimateTokens(result)
+		return result, trimDiags, diag
 	}
 
-	return repairToolPairing(protected)
+	result := repairToolPairing(protected)
+	diag.EstimatedTotalAfter = estimateTokens(result)
+	return result, trimDiags, diag
 }
 
 // estimateTokens gives a rough token count for a message list.

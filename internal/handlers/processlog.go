@@ -37,6 +37,7 @@ func (h *ProcessLogHandler) Register(e *echo.Echo) {
 	e.GET("/logs/trace/:traceId", h.GetLogsByTrace)
 	e.GET("/logs/trace/:traceId/export", h.ExportTrace)
 	e.GET("/logs/chat/:chatId", h.GetLogsByChat)
+	e.GET("/logs/chat/:chatId/export", h.ExportChat)
 	e.GET("/logs/stats", h.GetStats)
 }
 
@@ -144,6 +145,34 @@ func (h *ProcessLogHandler) GetLogsByChat(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, logs)
+}
+
+// ExportChat returns a multi-round diagnostic report for an entire chat session
+func (h *ProcessLogHandler) ExportChat(c echo.Context) error {
+	ctx := c.Request().Context()
+	chatID := c.Param("chatId")
+	botID := c.QueryParam("botId")
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "botId is required")
+	}
+
+	limit := 2000
+	if l := c.QueryParam("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	export, err := h.service.ExportChat(ctx, botID, chatID, limit)
+	if err != nil {
+		h.logger.Warn("failed to export chat", slog.Any("error", err))
+		return err
+	}
+	if export == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "no logs found for this chat")
+	}
+
+	return c.JSON(http.StatusOK, export)
 }
 
 // GetStats returns statistics for recent logs

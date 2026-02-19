@@ -227,6 +227,76 @@ func (s *Service) ExportTrace(ctx context.Context, traceID string) (*TraceExport
 	if len(logs) == 0 {
 		return nil, nil
 	}
+	return buildTraceExport(traceID, logs), nil
+}
+
+// ExportChat builds a multi-round diagnostic report for an entire chat session.
+// It groups all logs by trace ID and produces one TraceExport per round.
+func (s *Service) ExportChat(ctx context.Context, botID, chatID string, limit int) (*ChatExport, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 2000
+	}
+	logs, err := s.GetLogsByChat(ctx, botID, chatID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, nil
+	}
+
+	traceMap := make(map[string][]ProcessLog)
+	var traceOrder []string
+	for _, l := range logs {
+		tid := l.TraceID
+		if tid == "" {
+			tid = l.ID
+		}
+		if _, exists := traceMap[tid]; !exists {
+			traceOrder = append(traceOrder, tid)
+		}
+		traceMap[tid] = append(traceMap[tid], l)
+	}
+
+	rounds := make([]TraceExport, 0, len(traceOrder))
+	var globalStart, globalEnd time.Time
+	totalDur := 0
+
+	for _, tid := range traceOrder {
+		tLogs := traceMap[tid]
+		te := buildTraceExport(tid, tLogs)
+		rounds = append(rounds, *te)
+		totalDur += te.TotalDurationMs
+		if globalStart.IsZero() || te.TimeRange.Start.Before(globalStart) {
+			globalStart = te.TimeRange.Start
+		}
+		if te.TimeRange.End.After(globalEnd) {
+			globalEnd = te.TimeRange.End
+		}
+	}
+
+	channel := ""
+	if len(logs) > 0 {
+		channel = logs[0].Channel
+	}
+
+	return &ChatExport{
+		Version:         "1.0",
+		ExportedAt:      time.Now().UTC(),
+		BotID:           botID,
+		ChatID:          chatID,
+		Channel:         channel,
+		TotalRounds:     len(rounds),
+		TimeRange:       TraceTimeRange{Start: globalStart, End: globalEnd},
+		TotalDurationMs: totalDur,
+		Rounds:          rounds,
+	}, nil
+}
+
+// buildTraceExport is the core logic shared by ExportTrace and ExportChat.
+func buildTraceExport(traceID string, logs []ProcessLog) *TraceExport {
+	if len(logs) == 0 {
+		return nil
+	}
 
 	export := &TraceExport{
 		Version:    "1.0",
@@ -306,7 +376,7 @@ func (s *Service) ExportTrace(ctx context.Context, traceID string) (*TraceExport
 	export.Summary = summary
 	export.Steps = steps
 
-	return export, nil
+	return export
 }
 
 // CleanupOldLogs removes logs older than the specified duration

@@ -817,7 +817,10 @@
     "showData": "Show data",
     "hideData": "Hide data",
     "exportTrace": "Copy diagnostic report to clipboard",
+    "downloadTrace": "Download diagnostic report as JSON file",
+    "exportChatFile": "Export Chat Logs",
     "exportSuccess": "Copied to clipboard",
+    "allChats": "All Chats",
     "steps": {
       "user_message_received": "User Message",
       "history_loaded": "History Loaded",
@@ -846,7 +849,13 @@
       "openviking_session_failed": "OV Session Failed",
       "evolution_started": "Evolution Start",
       "evolution_completed": "Evolution Done",
-      "evolution_failed": "Evolution Failed"
+      "evolution_failed": "Evolution Failed",
+      "memory_filtered": "Memory Filter",
+      "query_expanded": "Query Expand",
+      "token_budget_calculated": "Token Budget",
+      "tool_result_trimmed": "Tool Trimmed",
+      "model_fallback": "Model Fallback",
+      "skills_filtered": "Skills Filter"
     }
   }
 }

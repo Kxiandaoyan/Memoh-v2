@@ -37,6 +37,13 @@ const (
 	StepEvolutionStarted           ProcessLogStep = "evolution_started"
 	StepEvolutionCompleted     ProcessLogStep = "evolution_completed"
 	StepEvolutionFailed        ProcessLogStep = "evolution_failed"
+
+	StepMemoryFiltered         ProcessLogStep = "memory_filtered"
+	StepQueryExpanded          ProcessLogStep = "query_expanded"
+	StepTokenBudgetCalculated  ProcessLogStep = "token_budget_calculated"
+	StepToolResultTrimmed      ProcessLogStep = "tool_result_trimmed"
+	StepModelFallback          ProcessLogStep = "model_fallback"
+	StepSkillsFiltered         ProcessLogStep = "skills_filtered"
 )
 
 // ProcessLogLevel represents the log level
@@ -135,4 +142,17 @@ type TraceExportStep struct {
 	Data       map[string]any  `json:"data,omitempty"`
 	DurationMs int             `json:"duration_ms,omitempty"`
 	CreatedAt  time.Time       `json:"created_at"`
+}
+
+// ChatExport aggregates all traces for a single chat session.
+type ChatExport struct {
+	Version        string        `json:"version"`
+	ExportedAt     time.Time     `json:"exported_at"`
+	BotID          string        `json:"bot_id"`
+	ChatID         string        `json:"chat_id"`
+	Channel        string        `json:"channel,omitempty"`
+	TotalRounds    int           `json:"total_rounds"`
+	TimeRange      TraceTimeRange `json:"time_range"`
+	TotalDurationMs int          `json:"total_duration_ms"`
+	Rounds         []TraceExport `json:"rounds"`
 }
