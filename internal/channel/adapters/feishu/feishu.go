@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -640,6 +641,55 @@ func (a *FeishuAdapter) sendAttachment(ctx context.Context, client *lark.Client,
 		} else {
 			msgType = larkim.MsgTypeFile
 			contentMap = map[string]string{"file_key": platformKey}
+		}
+	} else if len(att.Data) > 0 {
+		reader := bytes.NewReader(att.Data)
+		if strings.HasPrefix(att.Mime, "image/") || att.Type == channel.AttachmentImage {
+			uploadReq := larkim.NewCreateImageReqBuilder().
+				Body(larkim.NewCreateImageReqBodyBuilder().
+					ImageType(larkim.ImageTypeMessage).
+					Image(reader).
+					Build()).
+				Build()
+			uploadResp, err := client.Im.V1.Image.Create(ctx, uploadReq)
+			if err != nil {
+				return fmt.Errorf("failed to upload image: %w", err)
+			}
+			if uploadResp == nil || !uploadResp.Success() {
+				code, msg := 0, ""
+				if uploadResp != nil {
+					code, msg = uploadResp.Code, uploadResp.Msg
+				}
+				return fmt.Errorf("failed to upload image: %s (code: %d)", msg, code)
+			}
+			msgType = larkim.MsgTypeImage
+			contentMap = map[string]string{"image_key": *uploadResp.Data.ImageKey}
+		} else {
+			fileType := resolveFeishuFileType(att.Name, att.Mime)
+			fileName := strings.TrimSpace(att.Name)
+			if fileName == "" {
+				fileName = "attachment"
+			}
+			uploadReq := larkim.NewCreateFileReqBuilder().
+				Body(larkim.NewCreateFileReqBodyBuilder().
+					FileType(fileType).
+					FileName(fileName).
+					File(reader).
+					Build()).
+				Build()
+			uploadResp, err := client.Im.V1.File.Create(ctx, uploadReq)
+			if err != nil {
+				return fmt.Errorf("failed to upload file: %w", err)
+			}
+			if uploadResp == nil || !uploadResp.Success() {
+				code, msg := 0, ""
+				if uploadResp != nil {
+					code, msg = uploadResp.Code, uploadResp.Msg
+				}
+				return fmt.Errorf("failed to upload file: %s (code: %d)", msg, code)
+			}
+			msgType = larkim.MsgTypeFile
+			contentMap = map[string]string{"file_key": *uploadResp.Data.FileKey}
 		}
 	} else {
 		downloadURL := strings.TrimSpace(att.URL)

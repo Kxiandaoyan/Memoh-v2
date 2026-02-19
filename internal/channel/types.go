@@ -196,6 +196,7 @@ type Attachment struct {
 	ThumbnailURL   string         `json:"thumbnail_url,omitempty"`
 	Caption        string         `json:"caption,omitempty"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
+	Data           []byte         `json:"-"`
 }
 
 // Reference returns the strongest available attachment reference.

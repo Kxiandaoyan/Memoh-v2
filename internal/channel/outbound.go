@@ -383,7 +383,7 @@ func normalizeAttachmentRefs(attachments []Attachment, defaultPlatform ChannelTy
 		if item.SourcePlatform == "" && item.PlatformKey != "" {
 			item.SourcePlatform = defaultPlatform.String()
 		}
-		if item.URL == "" && item.PlatformKey == "" {
+		if item.URL == "" && item.PlatformKey == "" && len(item.Data) == 0 {
 			return nil, fmt.Errorf("attachment reference is required")
 		}
 		normalized = append(normalized, item)

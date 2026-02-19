@@ -520,15 +520,26 @@ func sendTelegramAttachment(bot *tgbotapi.BotAPI, target string, att channel.Att
 	urlRef := strings.TrimSpace(att.URL)
 	keyRef := strings.TrimSpace(att.PlatformKey)
 	sourcePlatform := strings.TrimSpace(att.SourcePlatform)
-	if urlRef == "" && keyRef == "" {
+	if urlRef == "" && keyRef == "" && len(att.Data) == 0 {
 		return fmt.Errorf("attachment reference is required")
 	}
 	if strings.TrimSpace(caption) == "" && strings.TrimSpace(att.Caption) != "" {
 		caption = strings.TrimSpace(att.Caption)
 	}
-	file := tgbotapi.RequestFileData(tgbotapi.FileURL(urlRef))
-	if keyRef != "" && (sourcePlatform == "" || strings.EqualFold(sourcePlatform, Type.String())) {
+	var file tgbotapi.RequestFileData
+	switch {
+	case len(att.Data) > 0:
+		name := att.Name
+		if name == "" {
+			name = "file"
+		}
+		file = tgbotapi.FileBytes{Name: name, Bytes: att.Data}
+	case keyRef != "" && (sourcePlatform == "" || strings.EqualFold(sourcePlatform, Type.String())):
 		file = tgbotapi.FileID(keyRef)
+	case urlRef != "":
+		file = tgbotapi.FileURL(urlRef)
+	default:
+		file = tgbotapi.FileURL(urlRef)
 	}
 	isChannel := strings.HasPrefix(target, "@")
 	switch att.Type {

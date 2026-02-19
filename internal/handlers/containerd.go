@@ -149,6 +149,10 @@ func (h *ContainerdHandler) Register(e *echo.Echo) {
 	filesGroup.GET("/:filename", h.ReadBotFile)
 	filesGroup.PUT("/:filename", h.WriteBotFile)
 	filesGroup.DELETE("/:filename", h.DeleteBotFile)
+
+	mediaGroup := e.Group("/bots/:bot_id/media")
+	mediaGroup.GET("", h.ListBotMedia)
+	mediaGroup.GET("/:filename", h.ReadBotMedia)
 }
 
 // CreateContainer godoc
