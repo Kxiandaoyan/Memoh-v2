@@ -2,6 +2,7 @@ package heartbeat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -14,17 +15,18 @@ import (
 
 // EvolutionLog represents a single evolution execution record.
 type EvolutionLog struct {
-	ID                string    `json:"id"`
-	BotID             string    `json:"bot_id"`
-	HeartbeatConfigID string    `json:"heartbeat_config_id,omitempty"`
-	TriggerReason     string    `json:"trigger_reason"`
-	Status            string    `json:"status"`
-	ChangesSummary    string    `json:"changes_summary,omitempty"`
-	FilesModified     []string  `json:"files_modified,omitempty"`
-	AgentResponse     string    `json:"agent_response,omitempty"`
-	StartedAt         time.Time `json:"started_at"`
-	CompletedAt       time.Time `json:"completed_at,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID                string                 `json:"id"`
+	BotID             string                 `json:"bot_id"`
+	HeartbeatConfigID string                 `json:"heartbeat_config_id,omitempty"`
+	TriggerReason     string                 `json:"trigger_reason"`
+	Status            string                 `json:"status"`
+	ChangesSummary    string                 `json:"changes_summary,omitempty"`
+	FilesModified     []string               `json:"files_modified,omitempty"`
+	FilesSnapshot     map[string]string      `json:"files_snapshot,omitempty"`
+	AgentResponse     string                 `json:"agent_response,omitempty"`
+	StartedAt         time.Time              `json:"started_at"`
+	CompletedAt       time.Time              `json:"completed_at,omitempty"`
+	CreatedAt         time.Time              `json:"created_at"`
 }
 
 // CompleteEvolutionLogRequest is the payload for completing an evolution log.
@@ -65,6 +67,10 @@ func (e *Engine) ListEvolutionLogs(ctx context.Context, botID string, limit, off
 	items := make([]EvolutionLog, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, toEvolutionLog(row))
+	}
+	// Enrich with files_snapshot (not covered by sqlc since it was added after codegen).
+	if e.dbPool != nil && len(items) > 0 {
+		e.enrichFilesSnapshot(ctx, items)
 	}
 	return ListEvolutionLogsResponse{Items: items, Total: total}, nil
 }
@@ -107,6 +113,44 @@ func (e *Engine) CompleteEvolutionLog(ctx context.Context, logID string, req Com
 		return EvolutionLog{}, err
 	}
 	return toEvolutionLog(row), nil
+}
+
+// enrichFilesSnapshot fetches files_snapshot for each item in-place via a
+// direct DB query. Items with no snapshot are left unchanged.
+func (e *Engine) enrichFilesSnapshot(ctx context.Context, items []EvolutionLog) {
+	if e.dbPool == nil || len(items) == 0 {
+		return
+	}
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	rows, err := e.dbPool.Query(ctx,
+		`SELECT id::text, files_snapshot FROM evolution_logs WHERE id = ANY($1::uuid[]) AND files_snapshot IS NOT NULL`,
+		ids,
+	)
+	if err != nil {
+		e.logger.Warn("enrich files_snapshot: query failed", slog.Any("error", err))
+		return
+	}
+	defer rows.Close()
+	byID := make(map[string]map[string]string, len(items))
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			continue
+		}
+		var snap map[string]string
+		if err := json.Unmarshal(raw, &snap); err == nil && len(snap) > 0 {
+			byID[id] = snap
+		}
+	}
+	for i := range items {
+		if snap, ok := byID[items[i].ID]; ok {
+			items[i].FilesSnapshot = snap
+		}
+	}
 }
 
 func toEvolutionLog(row sqlc.EvolutionLog) EvolutionLog {

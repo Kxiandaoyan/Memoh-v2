@@ -187,6 +187,27 @@
             @update:model-value="(val) => form.group_require_mention = !!val"
           />
         </div>
+
+        <!-- Group Debounce Window -->
+        <div class="flex items-center justify-between p-4">
+          <div class="space-y-0.5 pr-4">
+            <Label>{{ $t('bots.settings.groupDebounceWindow') }}</Label>
+            <p class="text-xs text-muted-foreground">
+              {{ $t('bots.settings.groupDebounceWindowDescription') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <Input
+              type="number"
+              min="0"
+              step="100"
+              class="w-28 text-right"
+              :model-value="form.group_debounce_ms"
+              @update:model-value="(val) => form.group_debounce_ms = Number(val) || 0"
+            />
+            <span class="text-xs text-muted-foreground">ms</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -256,7 +277,7 @@ import ConfirmPopover from '@/components/confirm-popover/index.vue'
 import ModelSelect from './model-select.vue'
 import SearchProviderSelect from './search-provider-select.vue'
 import { useQuery, useMutation, useQueryCache } from '@pinia/colada'
-import { getBotsByBotIdSettings, putBotsByBotIdSettings, deleteBotsById, getModels, getProviders, getSearchProviders } from '@memoh/sdk'
+import { getBotsByBotIdSettings, putBotsByBotIdSettings, deleteBotsById, getModels, getProviders, getSearchProviders, putBotsById } from '@memoh/sdk'
 import { getBotsQueryKey } from '@memoh/sdk/colada'
 import { client } from '@memoh/sdk/client'
 import type { SettingsSettings } from '@memoh/sdk'
@@ -391,6 +412,7 @@ const form = reactive({
   language: '',
   allow_guest: false,
   group_require_mention: true,
+  group_debounce_ms: 0,
 })
 
 let lastSettingsSnapshot = ''
@@ -408,6 +430,7 @@ watch(settings, (val) => {
   form.language = val.language ?? ''
   form.allow_guest = val.allow_guest ?? false
   form.group_require_mention = (val as any).group_require_mention ?? true
+  form.group_debounce_ms = typeof (val as any).group_debounce_ms === 'number' ? (val as any).group_debounce_ms : 0
 }, { immediate: true })
 
 // ---- Form: Prompts (task, switches) ----
@@ -443,6 +466,7 @@ const hasSettingsChanges = computed(() => {
     || form.max_context_load_time !== (s.max_context_load_time ?? 0)
     || form.language !== (s.language ?? '')
     || form.group_require_mention !== (s.group_require_mention ?? true)
+    || form.group_debounce_ms !== (typeof (s as any).group_debounce_ms === 'number' ? (s as any).group_debounce_ms : 0)
   if (isPublicBot.value) {
     changed = changed || form.allow_guest !== (s.allow_guest ?? false)
   }
@@ -468,7 +492,21 @@ async function handleSave() {
   try {
     const promises: Promise<unknown>[] = []
     if (hasSettingsChanges.value) {
-      promises.push(updateSettings({ ...form }))
+      const settingsBody: Record<string, unknown> = { ...form }
+      delete (settingsBody as any).group_debounce_ms
+      promises.push(updateSettings(settingsBody as any))
+      // group_debounce_ms lives in bot.metadata — save via bot update API
+      const s = settings.value as any
+      const prevDebounce = typeof s?.group_debounce_ms === 'number' ? s.group_debounce_ms : 0
+      if (form.group_debounce_ms !== prevDebounce) {
+        promises.push(
+          putBotsById({
+            path: { id: props.botId },
+            body: { metadata: { group_debounce_ms: form.group_debounce_ms } } as any,
+            throwOnError: true,
+          }),
+        )
+      }
     }
     if (hasPromptsChanges.value) {
       const promptsBody: Record<string, unknown> = {}

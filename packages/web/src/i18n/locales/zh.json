@@ -462,7 +462,12 @@
       "saveSuccess": "子智能体已保存",
       "saveFailed": "保存子智能体失败",
       "deleteSuccess": "子智能体已删除",
-      "deleteFailed": "删除子智能体失败"
+      "deleteFailed": "删除子智能体失败",
+      "runHistory": "运行历史",
+      "noRuns": "暂无运行记录。",
+      "runsLoadFailed": "加载运行历史失败",
+      "runDeleteSuccess": "运行记录已删除",
+      "runDeleteFailed": "删除运行记录失败"
     },
     "heartbeat": {
       "title": "心跳",
@@ -637,7 +642,11 @@
       "triggerReason": "触发原因",
       "startedAt": "开始时间",
       "completedAt": "完成时间",
-      "loadMore": "加载更多"
+      "loadMore": "加载更多",
+      "rollback": "回退",
+      "rollbackConfirm": "将 Bot 的人设文件（IDENTITY.md、SOUL.md 等）恢复到此次进化之前的状态？此操作不可逆。",
+      "rollbackSuccess": "已回退到进化前状态",
+      "rollbackFailed": "回退失败"
     },
     "capabilities": {
       "title": "容器能力",
@@ -687,6 +696,8 @@
       "allowGuestHint": "允许未绑定的用户直接通过平台使用此 Bot",
       "groupRequireMention": "群聊需要 {'@'}提及",
       "groupRequireMentionDescription": "开启后，Bot 在群聊中仅在被 {'@'}提及 或回复时才会响应。关闭后，Bot 会回复群内所有消息（注意：这会大量消耗 Token）。",
+      "groupDebounceWindow": "群组防抖窗口",
+      "groupDebounceWindowDescription": "在群组消息合并后等待多少毫秒再分发给 Agent。设为 0 使用全局默认值（300 ms）。",
       "searchModel": "搜索模型…",
       "noModel": "暂无可选模型",
       "saveSuccess": "设置已保存",

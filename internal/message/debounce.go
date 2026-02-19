@@ -97,6 +97,32 @@ func (d *GroupDebouncer) Submit(key, text string, execute func(mergedText string
 	pg.Append(text, d.window, execute)
 }
 
+// SubmitWithWindow is like Submit but uses a caller-supplied window duration instead of
+// the debouncer's global default. This allows per-bot debounce windows read from
+// bot metadata (e.g. metadata.group_debounce_ms).
+// If window <= 0 the debouncer's default window is used.
+func (d *GroupDebouncer) SubmitWithWindow(key, text string, window time.Duration, execute func(mergedText string)) {
+	if window <= 0 {
+		window = d.window
+	}
+	d.mu.Lock()
+	pg, ok := d.pending[key]
+	if !ok {
+		pg = &PendingGroup{}
+		d.pending[key] = pg
+		originalExecute := execute
+		execute = func(merged string) {
+			d.mu.Lock()
+			delete(d.pending, key)
+			d.mu.Unlock()
+			originalExecute(merged)
+		}
+	}
+	d.mu.Unlock()
+
+	pg.Append(text, window, execute)
+}
+
 // Flush cancels any pending timer for the given key and discards buffered messages.
 // Useful for testing or when a conversation is deleted.
 func (d *GroupDebouncer) Flush(key string) {

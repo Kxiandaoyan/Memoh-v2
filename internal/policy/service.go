@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/settings"
@@ -88,6 +89,32 @@ func (s *Service) GroupRequireMention(ctx context.Context, botID string) (bool, 
 		return true, err
 	}
 	return decision.GroupRequireMention, nil
+}
+
+// GroupDebounceWindow returns the per-bot group debounce window from bot metadata
+// (key: group_debounce_ms). Returns 0 if not configured. Implements router.PolicyService.
+func (s *Service) GroupDebounceWindow(ctx context.Context, botID string) (time.Duration, error) {
+	if s == nil || s.bots == nil {
+		return 0, nil
+	}
+	bot, err := s.bots.Get(ctx, strings.TrimSpace(botID))
+	if err != nil {
+		return 0, err
+	}
+	if bot.Metadata == nil {
+		return 0, nil
+	}
+	switch v := bot.Metadata["group_debounce_ms"].(type) {
+	case float64:
+		if v > 0 {
+			return time.Duration(v) * time.Millisecond, nil
+		}
+	case int64:
+		if v > 0 {
+			return time.Duration(v) * time.Millisecond, nil
+		}
+	}
+	return 0, nil
 }
 
 // BotOwnerUserID returns bot owner's user id. Implements router.PolicyService.

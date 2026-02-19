@@ -103,23 +103,28 @@ export const createAgent = (
       return systemFileCache.data
     }
 
-    const readViaMCP = async (path: string): Promise<string> => {
-      const url = `${normalizeBaseUrl(auth.baseUrl)}/bots/${identity.botId}/tools`
-      const headers: Record<string, string> = {
+    const mcpHeaders = (): Record<string, string> => {
+      const h: Record<string, string> = {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         Authorization: `Bearer ${auth.bearer}`,
       }
       if (identity.channelIdentityId) {
-        headers['X-Memoh-Channel-Identity-Id'] = identity.channelIdentityId
+        h['X-Memoh-Channel-Identity-Id'] = identity.channelIdentityId
       }
+      return h
+    }
+
+    const mcpToolsURL = `${normalizeBaseUrl(auth.baseUrl)}/bots/${identity.botId}/tools`
+
+    const readViaMCP = async (path: string): Promise<string> => {
       const body = JSON.stringify({
         jsonrpc: '2.0',
         id: `read-${path}`,
         method: 'tools/call',
         params: { name: 'read', arguments: { path } },
       })
-      const response = await fetch(url, { method: 'POST', headers, body })
+      const response = await fetch(mcpToolsURL, { method: 'POST', headers: mcpHeaders(), body })
       if (!response.ok) return ''
       const data = await response.json().catch(() => ({}))
       const structured =
@@ -138,6 +143,20 @@ export const createAgent = (
       return ''
     }
 
+    // Async restore: write DB persona content back to container if the file is
+    // missing/empty. Fires in the background; failures are silently ignored so
+    // they never block the current request.
+    const restoreViaMCP = (path: string, content: string): void => {
+      if (!content.trim()) return
+      const body = JSON.stringify({
+        jsonrpc: '2.0',
+        id: `write-${path}`,
+        method: 'tools/call',
+        params: { name: 'write', arguments: { path, content } },
+      })
+      fetch(mcpToolsURL, { method: 'POST', headers: mcpHeaders(), body }).catch(() => {})
+    }
+
     const needIdentity = !botIdentity
     const needSoul = !botSoul
     const needTools = true
@@ -148,6 +167,11 @@ export const createAgent = (
       needTools ? readViaMCP('TOOLS.md') : Promise.resolve(''),
     ]
     const [mcpIdentity, mcpSoul, toolsContent] = await Promise.all(mcpReads)
+
+    // Self-healing: if DB has persona content but container file is empty,
+    // asynchronously restore the file so evolution can read it next time.
+    if (botIdentity && !mcpIdentity.trim()) restoreViaMCP('IDENTITY.md', botIdentity)
+    if (botSoul && !mcpSoul.trim()) restoreViaMCP('SOUL.md', botSoul)
 
     const result = {
       identityContent: botIdentity || mcpIdentity,

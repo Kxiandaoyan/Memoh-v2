@@ -893,6 +893,18 @@ func (s *Service) applyAdd(ctx context.Context, text string, filters map[string]
 		if err != nil {
 			return MemoryItem{}, err
 		}
+		// Dedup guard: skip if a near-duplicate (cosine similarity ≥ 0.92) already exists.
+		if len(vector) > 0 {
+			existing, scores, searchErr := s.store.Search(ctx, vector, 1, filters, s.vectorNameForText())
+			if searchErr == nil && len(existing) > 0 && len(scores) > 0 && scores[0] >= 0.92 {
+				s.logger.Debug("memory.applyAdd: skipping near-duplicate",
+					slog.String("existing_id", existing[0].ID),
+					slog.Float64("similarity", scores[0]),
+					slog.String("text_prefix", truncateStr(text, 60)),
+				)
+				return payloadToMemoryItem(existing[0].ID, existing[0].Payload), nil
+			}
+		}
 		point.Vector = vector
 		point.VectorName = s.vectorNameForText()
 	}

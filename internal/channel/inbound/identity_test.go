@@ -117,6 +117,10 @@ func (f *fakePolicyService) GroupRequireMention(ctx context.Context, botID strin
 	return true, nil
 }
 
+func (f *fakePolicyService) GroupDebounceWindow(ctx context.Context, botID string) (time.Duration, error) {
+	return 0, nil
+}
+
 type fakePreauthServiceIdentity struct {
 	key      preauth.Key
 	err      error

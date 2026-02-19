@@ -466,7 +466,12 @@
       "saveSuccess": "Subagent saved",
       "saveFailed": "Failed to save subagent",
       "deleteSuccess": "Subagent deleted",
-      "deleteFailed": "Failed to delete subagent"
+      "deleteFailed": "Failed to delete subagent",
+      "runHistory": "Run History",
+      "noRuns": "No run records yet.",
+      "runsLoadFailed": "Failed to load run history",
+      "runDeleteSuccess": "Run record deleted",
+      "runDeleteFailed": "Failed to delete run record"
     },
     "heartbeat": {
       "title": "Heartbeat",
@@ -641,7 +646,11 @@
       "triggerReason": "Trigger",
       "startedAt": "Started",
       "completedAt": "Completed at",
-      "loadMore": "Load more"
+      "loadMore": "Load more",
+      "rollback": "Rollback",
+      "rollbackConfirm": "Restore persona files (IDENTITY.md, SOUL.md, …) to the state before this evolution run? This cannot be undone.",
+      "rollbackSuccess": "Rolled back to pre-evolution state",
+      "rollbackFailed": "Rollback failed"
     },
     "capabilities": {
       "title": "Container Capabilities",
@@ -691,6 +700,8 @@
       "allowGuestHint": "Allow unbound users to use this bot directly via platforms",
       "groupRequireMention": "Require {'@'}Mention in Groups",
       "groupRequireMentionDescription": "When enabled, the bot only responds in group chats when {'@'}mentioned or replied to. When disabled, the bot responds to all messages in the group (Warning: this consumes significantly more tokens).",
+      "groupDebounceWindow": "Group Debounce Window",
+      "groupDebounceWindowDescription": "How long (ms) to wait before dispatching merged group messages to the agent. Set 0 to use the global default (300 ms).",
       "searchModel": "Search models…",
       "noModel": "No models available",
       "saveSuccess": "Settings saved",

@@ -106,6 +106,119 @@
       </div>
     </div>
 
+    <!-- Run History -->
+    <div class="space-y-3 pt-2">
+      <div class="flex items-center justify-between">
+        <button
+          class="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary transition-colors"
+          @click="historyOpen = !historyOpen"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4 transition-transform"
+            :class="historyOpen ? 'rotate-90' : ''"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          {{ $t('bots.subagents.runHistory') }}
+          <span
+            v-if="runItems.length > 0"
+            class="ml-1 text-xs text-muted-foreground"
+          >({{ runItems.length }})</span>
+        </button>
+        <button
+          v-if="historyOpen"
+          class="text-xs text-muted-foreground hover:text-primary transition-colors"
+          :disabled="runsLoading"
+          @click="loadRunHistory"
+        >
+          {{ $t('common.refresh') }}
+        </button>
+      </div>
+
+      <div v-if="historyOpen">
+        <div
+          v-if="runsLoading && runItems.length === 0"
+          class="flex items-center gap-2 text-sm text-muted-foreground py-4"
+        >
+          <Spinner />
+          <span>{{ $t('common.loading') }}</span>
+        </div>
+        <div
+          v-else-if="runItems.length === 0"
+          class="rounded-md border p-4 text-center text-sm text-muted-foreground"
+        >
+          {{ $t('bots.subagents.noRuns') }}
+        </div>
+        <div
+          v-else
+          class="space-y-2"
+        >
+          <div
+            v-for="run in runItems"
+            :key="run.run_id"
+            class="rounded-md border p-3 text-sm"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 space-y-0.5">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium truncate">{{ run.name }}</span>
+                  <Badge
+                    :variant="run.status === 'completed' ? 'default' : run.status === 'failed' ? 'destructive' : 'secondary'"
+                    class="text-xs shrink-0"
+                  >
+                    {{ run.status }}
+                  </Badge>
+                  <Badge
+                    v-if="run.spawn_depth > 0"
+                    variant="outline"
+                    class="text-xs shrink-0"
+                  >
+                    depth {{ run.spawn_depth }}
+                  </Badge>
+                </div>
+                <p
+                  v-if="run.task"
+                  class="text-xs text-muted-foreground truncate"
+                >
+                  {{ run.task }}
+                </p>
+                <p
+                  v-if="run.result_summary"
+                  class="text-xs text-green-600 dark:text-green-400 truncate"
+                >
+                  {{ run.result_summary }}
+                </p>
+                <p
+                  v-if="run.error_message"
+                  class="text-xs text-destructive truncate"
+                >
+                  {{ run.error_message }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  {{ formatDate(run.started_at) }}
+                  <template v-if="run.ended_at">
+                    → {{ formatDate(run.ended_at) }}
+                  </template>
+                </p>
+              </div>
+              <button
+                class="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                :disabled="deletingRunId === run.run_id"
+                @click="handleDeleteRun(run.run_id)"
+              >
+                {{ $t('common.delete') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create/Edit Dialog -->
     <Dialog v-model:open="dialogOpen">
       <DialogContent class="sm:max-w-lg">
@@ -192,6 +305,7 @@ import {
   putBotsByBotIdSubagentsByIdSkills,
   deleteBotsByBotIdSubagentsById,
 } from '@memoh/sdk'
+import { listSubagentRuns, deleteSubagentRun, type SubagentRun } from '@/lib/api-subagent-runs'
 
 interface SubagentItem {
   id: string
@@ -219,6 +333,12 @@ const dialogOpen = ref(false)
 const editingId = ref('')
 const skillsInput = ref('')
 
+// Run history state
+const historyOpen = ref(false)
+const runItems = ref<SubagentRun[]>([])
+const runsLoading = ref(false)
+const deletingRunId = ref('')
+
 const form = reactive({
   name: '',
   description: '',
@@ -227,6 +347,10 @@ const form = reactive({
 watch(() => props.botId, () => {
   loadList()
 }, { immediate: true })
+
+watch(historyOpen, (open) => {
+  if (open && runItems.value.length === 0) loadRunHistory()
+})
 
 async function loadList() {
   loading.value = true
@@ -319,5 +443,29 @@ function formatDate(value: string): string {
   if (!value) return '-'
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
+}
+
+async function loadRunHistory() {
+  runsLoading.value = true
+  try {
+    runItems.value = await listSubagentRuns(props.botId)
+  } catch {
+    toast.error(t('bots.subagents.runsLoadFailed'))
+  } finally {
+    runsLoading.value = false
+  }
+}
+
+async function handleDeleteRun(runId: string) {
+  deletingRunId.value = runId
+  try {
+    await deleteSubagentRun(runId)
+    runItems.value = runItems.value.filter((r) => r.run_id !== runId)
+    toast.success(t('bots.subagents.runDeleteSuccess'))
+  } catch {
+    toast.error(t('bots.subagents.runDeleteFailed'))
+  } finally {
+    deletingRunId.value = ''
+  }
 }
 </script>

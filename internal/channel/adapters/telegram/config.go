@@ -65,7 +65,7 @@ func resolveTarget(raw map[string]any) (string, error) {
 		}
 		return name, nil
 	}
-	return "", fmt.Errorf("telegram binding is incomplete")
+	return "", fmt.Errorf("telegram binding is incomplete: set at least one of chat_id, user_id, or username in the channel binding configuration")
 }
 
 func matchBinding(raw map[string]any, criteria channel.BindingCriteria) bool {

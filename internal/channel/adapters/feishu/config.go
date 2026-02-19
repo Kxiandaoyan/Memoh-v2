@@ -65,7 +65,7 @@ func resolveTarget(raw map[string]any) (string, error) {
 	if cfg.UserID != "" {
 		return "user_id:" + cfg.UserID, nil
 	}
-	return "", fmt.Errorf("feishu binding is incomplete")
+	return "", fmt.Errorf("feishu binding is incomplete: set at least one of open_id or user_id in the channel binding configuration")
 }
 
 func matchBinding(raw map[string]any, criteria channel.BindingCriteria) bool {

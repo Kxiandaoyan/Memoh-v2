@@ -193,7 +193,16 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 		capturedActiveChatID := activeChatID
 		capturedUserMsgPersisted := userMessagePersisted
 
-		p.groupDebouncer.Submit(debounceKey, text, func(mergedText string) {
+		// Read per-bot debounce window from bot metadata (group_debounce_ms).
+		// Falls back to the debouncer's global default when not set.
+		var debounceWindow time.Duration
+		if p.policyService != nil && strings.TrimSpace(identity.BotID) != "" {
+			if w, err := p.policyService.GroupDebounceWindow(ctx, identity.BotID); err == nil {
+				debounceWindow = w
+			}
+		}
+
+		p.groupDebouncer.SubmitWithWindow(debounceKey, text, debounceWindow, func(mergedText string) {
 			go func() {
 				bgCtx := context.Background()
 				_ = p.dispatchGroupChat(bgCtx, capturedCfg, capturedMsg, mergedText, capturedSender,

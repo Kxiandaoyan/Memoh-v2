@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -8,8 +9,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/blevesearch/bleve/v2/registry"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	_ "github.com/blevesearch/bleve/v2/analysis/analyzer/standard"
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/ar"
@@ -60,6 +63,11 @@ type BM25Indexer struct {
 
 	mu    sync.RWMutex
 	stats map[string]*bm25Stats
+
+	pool      *pgxpool.Pool
+	dirty     map[string]bool // langs that need a DB flush
+	dirtyMu   sync.Mutex
+	stopSaver chan struct{}
 }
 
 type bm25Stats struct {
@@ -78,6 +86,119 @@ func NewBM25Indexer(log *slog.Logger) *BM25Indexer {
 		k1:     defaultBM25K1,
 		b:      defaultBM25B,
 		stats:  map[string]*bm25Stats{},
+		dirty:  map[string]bool{},
+	}
+}
+
+// SetPool attaches a PostgreSQL pool and loads previously persisted stats,
+// then starts a background goroutine that flushes dirty stats every 30 s.
+func (b *BM25Indexer) SetPool(ctx context.Context, pool *pgxpool.Pool) {
+	if pool == nil {
+		return
+	}
+	b.pool = pool
+	if err := b.loadFromDB(ctx); err != nil {
+		b.logger.Warn("bm25: failed to load stats from DB", slog.Any("error", err))
+	}
+	b.stopSaver = make(chan struct{})
+	go b.periodicSave(b.stopSaver)
+}
+
+// Stop terminates the background saver goroutine and does a final flush.
+func (b *BM25Indexer) Stop() {
+	if b.stopSaver != nil {
+		close(b.stopSaver)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b.flushDirty(ctx)
+}
+
+func (b *BM25Indexer) loadFromDB(ctx context.Context) error {
+	rows, err := b.pool.Query(ctx, `SELECT lang, doc_count, avg_doc_len FROM bm25_stats`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for rows.Next() {
+		var lang string
+		var docCount int
+		var avgDocLen float64
+		if err := rows.Scan(&lang, &docCount, &avgDocLen); err != nil {
+			b.logger.Warn("bm25: scan stats row", slog.Any("error", err))
+			continue
+		}
+		stats := b.ensureStatsLocked(lang)
+		stats.DocCount = docCount
+		stats.AvgDocLen = avgDocLen
+	}
+	return rows.Err()
+}
+
+func (b *BM25Indexer) markDirty(lang string) {
+	b.dirtyMu.Lock()
+	b.dirty[lang] = true
+	b.dirtyMu.Unlock()
+}
+
+func (b *BM25Indexer) flushDirty(ctx context.Context) {
+	if b.pool == nil {
+		return
+	}
+	b.dirtyMu.Lock()
+	if len(b.dirty) == 0 {
+		b.dirtyMu.Unlock()
+		return
+	}
+	langs := make([]string, 0, len(b.dirty))
+	for lang := range b.dirty {
+		langs = append(langs, lang)
+	}
+	b.dirty = map[string]bool{}
+	b.dirtyMu.Unlock()
+
+	b.mu.RLock()
+	type row struct {
+		lang      string
+		docCount  int
+		avgDocLen float64
+	}
+	rows := make([]row, 0, len(langs))
+	for _, lang := range langs {
+		if s, ok := b.stats[lang]; ok {
+			rows = append(rows, row{lang, s.DocCount, s.AvgDocLen})
+		}
+	}
+	b.mu.RUnlock()
+
+	for _, r := range rows {
+		_, err := b.pool.Exec(ctx,
+			`INSERT INTO bm25_stats (lang, doc_count, avg_doc_len, updated_at)
+			 VALUES ($1, $2, $3, NOW())
+			 ON CONFLICT (lang) DO UPDATE
+			   SET doc_count=$2, avg_doc_len=$3, updated_at=NOW()`,
+			r.lang, r.docCount, r.avgDocLen,
+		)
+		if err != nil {
+			b.logger.Warn("bm25: failed to save stats", slog.String("lang", r.lang), slog.Any("error", err))
+		}
+	}
+}
+
+func (b *BM25Indexer) periodicSave(stop <-chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			b.flushDirty(ctx)
+			cancel()
+		case <-stop:
+			return
+		}
 	}
 }
 
@@ -109,7 +230,9 @@ func (b *BM25Indexer) AddDocument(lang string, termFreq map[string]int, docLen i
 	stats := b.ensureStatsLocked(lang)
 	b.updateStatsAddLocked(stats, termFreq, docLen)
 	indices, values = b.buildDocVectorLocked(stats, termFreq, docLen)
+	normalizedLang, _ := b.normalizeAnalyzer(lang)
 	b.mu.Unlock()
+	b.markDirty(normalizedLang)
 	return indices, values
 }
 
@@ -117,7 +240,9 @@ func (b *BM25Indexer) RemoveDocument(lang string, termFreq map[string]int, docLe
 	b.mu.Lock()
 	stats := b.ensureStatsLocked(lang)
 	b.updateStatsRemoveLocked(stats, termFreq, docLen)
+	normalizedLang, _ := b.normalizeAnalyzer(lang)
 	b.mu.Unlock()
+	b.markDirty(normalizedLang)
 }
 
 func (b *BM25Indexer) BuildQueryVector(lang string, termFreq map[string]int) (indices []uint32, values []float32) {

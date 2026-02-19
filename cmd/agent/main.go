@@ -321,7 +321,7 @@ func provideQdrantStore(log *slog.Logger, cfg config.Config, setup embeddingSetu
 	return store, nil
 }
 
-func provideMemoryService(log *slog.Logger, llm memory.LLM, embedder embeddings.Embedder, store *memory.QdrantStore, resolver *embeddings.Resolver, bm25 *memory.BM25Indexer, setup embeddingSetup, pool *pgxpool.Pool) *memory.Service {
+func provideMemoryService(lc fx.Lifecycle, log *slog.Logger, llm memory.LLM, embedder embeddings.Embedder, store *memory.QdrantStore, resolver *embeddings.Resolver, bm25 *memory.BM25Indexer, setup embeddingSetup, pool *pgxpool.Pool) *memory.Service {
 	svc := memory.NewService(log, llm, embedder, store, resolver, bm25, setup.TextModel.ModelID, setup.MultimodalModel.ModelID)
 	if setup.HasEmbeddingModels && setup.TextModel.ModelID != "" {
 		providerKey := setup.TextModel.LlmProviderID
@@ -332,6 +332,17 @@ func provideMemoryService(log *slog.Logger, llm memory.LLM, embedder embeddings.
 		svc.SetEmbeddingCache(cache)
 		log.Info("embedding cache enabled", slog.String("model", setup.TextModel.ModelID))
 	}
+	// Wire BM25 stats persistence: load from DB on start, flush on stop.
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			bm25.SetPool(ctx, pool)
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			bm25.Stop()
+			return nil
+		},
+	})
 	return svc
 }
 
@@ -598,12 +609,15 @@ func startScheduleService(lc fx.Lifecycle, scheduleService *schedule.Service) {
 	})
 }
 
-func startHeartbeatEngine(lc fx.Lifecycle, engine *heartbeat.Engine, pool *pgxpool.Pool, gs *globalsettings.Service) {
+func startHeartbeatEngine(lc fx.Lifecycle, engine *heartbeat.Engine, pool *pgxpool.Pool, gs *globalsettings.Service, cfg config.Config) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			engine.SetPool(pool)
 			if _, loc := gs.GetTimezone(); loc != nil {
 				engine.SetTimezone(loc)
+			}
+			if cfg.MCP.DataRoot != "" {
+				engine.SetDataDir(cfg.MCP.DataRoot)
 			}
 			return engine.Bootstrap(ctx)
 		},

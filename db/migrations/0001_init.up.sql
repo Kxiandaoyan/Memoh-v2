@@ -413,6 +413,7 @@ CREATE TABLE IF NOT EXISTS evolution_logs (
       CHECK (status IN ('running', 'completed', 'failed', 'skipped')),
   changes_summary TEXT,
   files_modified TEXT[],
+  files_snapshot JSONB,
   agent_response TEXT,
   started_at TIMESTAMPTZ DEFAULT now(),
   completed_at TIMESTAMPTZ,
@@ -467,3 +468,11 @@ CREATE INDEX IF NOT EXISTS idx_subagent_runs_status   ON subagent_runs (status);
 CREATE INDEX IF NOT EXISTS idx_subagent_runs_run_id   ON subagent_runs (run_id);
 CREATE INDEX IF NOT EXISTS idx_subagent_runs_created  ON subagent_runs (bot_id, created_at DESC);
 
+-- BM25 corpus statistics persistence
+CREATE TABLE IF NOT EXISTS bm25_stats (
+    lang        VARCHAR(32)              NOT NULL,
+    doc_count   INTEGER                  NOT NULL DEFAULT 0,
+    avg_doc_len DOUBLE PRECISION         NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (lang)
+);

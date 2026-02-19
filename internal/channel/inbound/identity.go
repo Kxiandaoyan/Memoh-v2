@@ -78,6 +78,9 @@ type PolicyService interface {
 	BotType(ctx context.Context, botID string) (string, error)
 	BotOwnerUserID(ctx context.Context, botID string) (string, error)
 	GroupRequireMention(ctx context.Context, botID string) (bool, error)
+	// GroupDebounceWindow returns the per-bot group debounce window from bot metadata
+	// (key: group_debounce_ms). Returns 0 if not configured.
+	GroupDebounceWindow(ctx context.Context, botID string) (time.Duration, error)
 }
 
 // PreauthService handles preauth key validation.

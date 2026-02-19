@@ -150,16 +150,26 @@
           class="border-l-2 pl-4 py-2"
           :class="statusBorderClass(log.status)"
         >
-          <div class="flex items-center gap-2">
-            <Badge :variant="statusBadgeVariant(log.status)" class="text-xs">
-              {{ $t(`bots.evolution.status${capitalize(log.status)}`) }}
-            </Badge>
-            <span class="text-xs text-muted-foreground">
-              {{ formatDateTime(log.started_at) }}
-            </span>
-            <Badge variant="outline" class="text-xs">
-              {{ log.trigger_reason }}
-            </Badge>
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              <Badge :variant="statusBadgeVariant(log.status)" class="text-xs">
+                {{ $t(`bots.evolution.status${capitalize(log.status)}`) }}
+              </Badge>
+              <span class="text-xs text-muted-foreground">
+                {{ formatDateTime(log.started_at) }}
+              </span>
+              <Badge variant="outline" class="text-xs">
+                {{ log.trigger_reason }}
+              </Badge>
+            </div>
+            <button
+              v-if="log.files_snapshot && Object.keys(log.files_snapshot).length > 0"
+              class="text-xs text-amber-600 dark:text-amber-400 hover:underline shrink-0 disabled:opacity-50"
+              :disabled="rollingBackId === log.id"
+              @click="handleRollback(log.id)"
+            >
+              {{ rollingBackId === log.id ? $t('common.loading') : $t('bots.evolution.rollback') }}
+            </button>
           </div>
           <div
             v-if="log.changes_summary"
@@ -274,6 +284,7 @@ interface EvolutionLogEntry {
   status: string
   changes_summary: string
   agent_response: string
+  files_snapshot?: Record<string, string> | null
   started_at: string
   completed_at: string
 }
@@ -285,6 +296,7 @@ const historyOffset = ref(0)
 const historyLimit = 10
 const expandedLogs = ref(new Set<string>())
 const hasMoreLogs = ref(false)
+const rollingBackId = ref('')
 
 interface Experiment {
   title: string
@@ -487,6 +499,22 @@ function toggleExpandLog(logId: string) {
     expandedLogs.value.delete(logId)
   } else {
     expandedLogs.value.add(logId)
+  }
+}
+
+async function handleRollback(logId: string) {
+  if (!confirm(t('bots.evolution.rollbackConfirm'))) return
+  rollingBackId.value = logId
+  try {
+    await client.post({
+      url: `/bots/${props.botId}/evolution-logs/${logId}/rollback`,
+    })
+    toast.success(t('bots.evolution.rollbackSuccess'))
+    await loadHistory()
+  } catch {
+    toast.error(t('bots.evolution.rollbackFailed'))
+  } finally {
+    rollingBackId.value = ''
   }
 }
 

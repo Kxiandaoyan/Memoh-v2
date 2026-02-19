@@ -14,6 +14,12 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/heartbeat"
 )
 
+// rollbackEvolutionResult is the response body for RollbackEvolutionLog.
+type rollbackEvolutionResult struct {
+	LogID          string   `json:"log_id"`
+	FilesRestored  []string `json:"files_restored"`
+}
+
 // HeartbeatHandler handles HTTP requests for heartbeat configuration.
 type HeartbeatHandler struct {
 	engine         *heartbeat.Engine
@@ -47,6 +53,7 @@ func (h *HeartbeatHandler) Register(e *echo.Echo) {
 	evoGroup.GET("", h.ListEvolutionLogs)
 	evoGroup.GET("/:id", h.GetEvolutionLog)
 	evoGroup.POST("/:id/complete", h.CompleteEvolutionLog)
+	evoGroup.POST("/:id/rollback", h.RollbackEvolutionLog)
 }
 
 // Create godoc
@@ -384,4 +391,36 @@ func (h *HeartbeatHandler) CompleteEvolutionLog(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, item)
+}
+
+// RollbackEvolutionLog restores persona files from the snapshot captured before
+// the evolution run identified by :id.
+//
+// @Summary Rollback evolution log
+// @Description Restore bot persona files (IDENTITY.md, SOUL.md, …) to the state captured before the given evolution run
+// @Tags evolution
+// @Param bot_id path string true "Bot ID"
+// @Param id path string true "Evolution log ID"
+// @Success 200 {object} rollbackEvolutionResult
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /bots/{bot_id}/evolution-logs/{id}/rollback [post]
+func (h *HeartbeatHandler) RollbackEvolutionLog(c echo.Context) error {
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
+	}
+	logID := strings.TrimSpace(c.Param("id"))
+	if logID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id is required")
+	}
+	restored, err := h.engine.RollbackEvolution(c.Request().Context(), botID, logID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no snapshot") {
+			return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, rollbackEvolutionResult{LogID: logID, FilesRestored: restored})
 }

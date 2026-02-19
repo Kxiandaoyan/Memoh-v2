@@ -2,8 +2,11 @@ package heartbeat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,8 +32,9 @@ type Engine struct {
 	jwtSecret string
 	logger    *slog.Logger
 	compactor MemoryCompactor
-	dbPool    *pgxpool.Pool  // optional; enables active-hours column loading
+	dbPool    *pgxpool.Pool  // optional; enables active-hours column loading and evolution snapshots
 	timezone  *time.Location // global timezone used for active-hours checks
+	dataDir   string         // root data directory for bot persona files (set via SetDataDir)
 
 	mu      sync.Mutex
 	cancels map[string]func() // config ID → event subscription cancel
@@ -506,6 +510,8 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 					slog.String("bot_id", cfg.BotID), slog.Any("error", logErr))
 			} else {
 				payload.EvolutionLogID = logRow.ID.String()
+				// Snapshot persona files before evolution so we can roll back later.
+				e.saveEvolutionSnapshot(ctx, logRow.ID.String(), cfg.BotID)
 			}
 		}
 	}
@@ -581,6 +587,117 @@ func (e *Engine) SetPool(pool *pgxpool.Pool) {
 func (e *Engine) SetTimezone(loc *time.Location) {
 	if loc != nil {
 		e.timezone = loc
+	}
+}
+
+// SetDataDir sets the host data directory root used to snapshot persona files
+// before evolution runs. Pass the same value as mcp.DataRoot in config.
+func (e *Engine) SetDataDir(dir string) {
+	e.dataDir = strings.TrimSpace(dir)
+}
+
+// personaFileNames lists the files captured in an evolution snapshot.
+var personaFileNames = []string{"IDENTITY.md", "SOUL.md", "TOOLS.md", "EXPERIMENTS.md", "NOTES.md"}
+
+// snapshotPersonaFiles reads persona files from the bot's data directory and
+// returns their contents as a JSON-serialisable map. Files that are missing or
+// empty are omitted. Returns nil when the data directory is not configured.
+func (e *Engine) snapshotPersonaFiles(botID string) map[string]string {
+	if e.dataDir == "" {
+		return nil
+	}
+	botDir := filepath.Join(e.dataDir, "bots", botID)
+	snapshot := make(map[string]string)
+	for _, name := range personaFileNames {
+		content, err := os.ReadFile(filepath.Join(botDir, name))
+		if err == nil && len(strings.TrimSpace(string(content))) > 0 {
+			snapshot[name] = string(content)
+		}
+	}
+	if len(snapshot) == 0 {
+		return nil
+	}
+	return snapshot
+}
+
+// RollbackEvolution reads the files_snapshot from the given evolution log and
+// writes each captured file back to the bot's data directory. Returns the list
+// of file names that were restored.
+func (e *Engine) RollbackEvolution(ctx context.Context, botID, logID string) ([]string, error) {
+	if e.dbPool == nil {
+		return nil, fmt.Errorf("database pool not configured")
+	}
+	if e.dataDir == "" {
+		return nil, fmt.Errorf("data directory not configured (call SetDataDir)")
+	}
+
+	var rawSnapshot []byte
+	err := e.dbPool.QueryRow(ctx,
+		`SELECT files_snapshot FROM evolution_logs WHERE id=$1 AND bot_id=$2`,
+		logID, botID,
+	).Scan(&rawSnapshot)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("evolution log not found: %s", logID)
+		}
+		return nil, fmt.Errorf("query evolution log: %w", err)
+	}
+	if len(rawSnapshot) == 0 {
+		return nil, fmt.Errorf("no snapshot available for this evolution log")
+	}
+
+	var snapshot map[string]string
+	if err := json.Unmarshal(rawSnapshot, &snapshot); err != nil {
+		return nil, fmt.Errorf("parse snapshot: %w", err)
+	}
+	if len(snapshot) == 0 {
+		return nil, fmt.Errorf("no snapshot available for this evolution log")
+	}
+
+	botDir := filepath.Join(e.dataDir, "bots", botID)
+	if err := os.MkdirAll(botDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create bot dir: %w", err)
+	}
+
+	var restored []string
+	for name, content := range snapshot {
+		fpath := filepath.Join(botDir, filepath.Base(name))
+		if err := os.WriteFile(fpath, []byte(content), 0o644); err != nil {
+			e.logger.Warn("rollback: failed to write file",
+				slog.String("file", name), slog.Any("error", err))
+			continue
+		}
+		restored = append(restored, name)
+	}
+
+	e.logger.Info("evolution rollback completed",
+		slog.String("bot_id", botID),
+		slog.String("log_id", logID),
+		slog.Int("files_restored", len(restored)),
+	)
+	return restored, nil
+}
+
+// saveEvolutionSnapshot persists files_snapshot for the given evolution log ID.
+func (e *Engine) saveEvolutionSnapshot(ctx context.Context, logID, botID string) {
+	if e.dbPool == nil {
+		return
+	}
+	snapshot := e.snapshotPersonaFiles(botID)
+	if snapshot == nil {
+		return
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		e.logger.Warn("evolution snapshot: marshal failed", slog.Any("error", err))
+		return
+	}
+	if _, err := e.dbPool.Exec(ctx,
+		`UPDATE evolution_logs SET files_snapshot=$1 WHERE id=$2`,
+		raw, logID,
+	); err != nil {
+		e.logger.Warn("evolution snapshot: db update failed",
+			slog.String("log_id", logID), slog.Any("error", err))
 	}
 }
 
