@@ -591,7 +591,7 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 			"usage":           resp.Usage,
 		}, 0)
 
-	if err := r.storeRound(ctx, req, resp.Messages, resp.Usage); err != nil {
+	if err := r.storeRoundWithTrace(ctx, req, rc.traceID, resp.Messages, resp.Usage); err != nil {
 		return conversation.ChatResponse{}, err
 	}
 	r.recordTokenUsage(ctx, req.BotID, resp.Usage, rc.model.ModelID, "chat")
@@ -602,11 +602,6 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 		map[string]any{
 			"message_count": len(resp.Messages),
 		}, 0)
-
-	// Log memory stored (async in storeRound)
-	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-		processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
-		nil, 0)
 
 	return conversation.ChatResponse{
 		Messages: resp.Messages,
@@ -926,9 +921,6 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 				processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
 				nil, 0)
-			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-				processlog.StepMemoryStored, processlog.LevelInfo, "Memory extraction queued",
-				nil, 0)
 
 			if r.ovSessionExtractor != nil {
 				r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
@@ -1088,7 +1080,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		if stored {
 			continue
 		}
-		if handled, storeErr := r.tryStoreStream(ctx, req, currentEvent, data, modelID); storeErr != nil {
+		if handled, storeErr := r.tryStoreStream(ctx, req, currentEvent, data, modelID, traceID); storeErr != nil {
 			return storeErr
 		} else if handled {
 			stored = true
@@ -1167,7 +1159,7 @@ func (r *Resolver) logToolCallEvent(ctx context.Context, req conversation.ChatRe
 }
 
 // tryStoreStream attempts to extract final messages from a stream event and persist them.
-func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequest, eventType, data, modelID string) (bool, error) {
+func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequest, eventType, data, modelID, traceID string) (bool, error) {
 	record := func(usage *gatewayUsage) {
 		r.recordTokenUsage(ctx, req.BotID, usage, modelID, "chat")
 	}
@@ -1177,7 +1169,7 @@ func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequ
 		var resp gatewayResponse
 		if err := json.Unmarshal([]byte(data), &resp); err == nil && len(resp.Messages) > 0 {
 			record(resp.Usage)
-			return true, r.storeRound(ctx, req, resp.Messages, resp.Usage)
+			return true, r.storeRoundWithTrace(ctx, req, traceID, resp.Messages, resp.Usage)
 		}
 	}
 
@@ -1192,13 +1184,13 @@ func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequ
 	if err := json.Unmarshal([]byte(data), &envelope); err == nil {
 		if (envelope.Type == "agent_end" || envelope.Type == "done") && len(envelope.Messages) > 0 {
 			record(envelope.Usage)
-			return true, r.storeRound(ctx, req, envelope.Messages, envelope.Usage)
+			return true, r.storeRoundWithTrace(ctx, req, traceID, envelope.Messages, envelope.Usage)
 		}
 		if envelope.Type == "done" && len(envelope.Data) > 0 {
 			var resp gatewayResponse
 			if err := json.Unmarshal(envelope.Data, &resp); err == nil && len(resp.Messages) > 0 {
 				record(resp.Usage)
-				return true, r.storeRound(ctx, req, resp.Messages, resp.Usage)
+				return true, r.storeRoundWithTrace(ctx, req, traceID, resp.Messages, resp.Usage)
 			}
 		}
 	}
@@ -1207,7 +1199,7 @@ func (r *Resolver) tryStoreStream(ctx context.Context, req conversation.ChatRequ
 	var resp gatewayResponse
 	if err := json.Unmarshal([]byte(data), &resp); err == nil && len(resp.Messages) > 0 {
 		record(resp.Usage)
-		return true, r.storeRound(ctx, req, resp.Messages, resp.Usage)
+		return true, r.storeRoundWithTrace(ctx, req, traceID, resp.Messages, resp.Usage)
 	}
 	return false, nil
 }
@@ -1402,7 +1394,19 @@ func (r *Resolver) persistUserMessage(ctx context.Context, req conversation.Chat
 	return err
 }
 
+// memoryTraceCtx carries process-log context into the storeMemory goroutine.
+type memoryTraceCtx struct {
+	traceID string
+	chatID  string
+	userID  string
+	channel string
+}
+
 func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest, messages []conversation.ModelMessage, usage ...*gatewayUsage) error {
+	return r.storeRoundWithTrace(ctx, req, "", messages, usage...)
+}
+
+func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.ChatRequest, traceID string, messages []conversation.ModelMessage, usage ...*gatewayUsage) error {
 	// Sanitize before storing so non-standard items (e.g. item_reference) are never persisted.
 	messages = sanitizeMessages(messages)
 	// Add user query as the first message if not already present in the round.
@@ -1447,6 +1451,12 @@ func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest,
 		usagePtr = usage[0]
 	}
 	r.storeMessages(ctx, req, fullRound, usagePtr)
+	mtc := memoryTraceCtx{
+		traceID: traceID,
+		chatID:  req.ChatID,
+		userID:  req.UserID,
+		channel: req.CurrentChannel,
+	}
 	go func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -1456,7 +1466,7 @@ func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest,
 				)
 			}
 		}()
-		r.storeMemory(context.WithoutCancel(ctx), req.BotID, fullRound)
+		r.storeMemory(context.WithoutCancel(ctx), req.BotID, fullRound, mtc)
 	}()
 	return nil
 }
@@ -1656,11 +1666,14 @@ func (r *Resolver) resolveDisplayName(ctx context.Context, req conversation.Chat
 	return "User"
 }
 
-func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []conversation.ModelMessage) {
+func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []conversation.ModelMessage, mtc memoryTraceCtx) {
 	if r.memoryService == nil {
 		if r.logger != nil {
 			r.logger.Warn("storeMemory: memoryService is nil, skipping")
 		}
+		r.logProcessStep(ctx, botID, mtc.chatID, mtc.traceID, mtc.userID, mtc.channel,
+			processlog.StepMemoryExtractFailed, processlog.LevelWarn, "Memory service not configured",
+			nil, 0)
 		return
 	}
 	if strings.TrimSpace(botID) == "" {
@@ -1700,22 +1713,34 @@ func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []con
 				slog.Int("input_messages", len(messages)),
 			)
 		}
+		r.logProcessStep(ctx, botID, mtc.chatID, mtc.traceID, mtc.userID, mtc.channel,
+			processlog.StepMemoryExtractFailed, processlog.LevelWarn, "No text messages to extract",
+			map[string]any{"input_messages": len(messages)}, 0)
 		return
 	}
 
 	// Inject bot-specific memory model into context so the LLM client
 	// uses the model configured in bot settings instead of the global default.
+	preferredModel := ""
 	if r.queries != nil {
 		if pgBotID, parseErr := db.ParseUUID(botID); parseErr == nil {
 			if settingsRow, sErr := r.queries.GetSettingsByBotID(ctx, pgBotID); sErr == nil {
 				if mid := strings.TrimSpace(settingsRow.MemoryModelID.String); mid != "" {
 					ctx = memory.WithPreferredModel(ctx, mid)
+					preferredModel = mid
 				}
 			}
 		}
 	}
 
-	// Log memory storage attempt
+	// Log memory extraction started
+	r.logProcessStep(ctx, botID, mtc.chatID, mtc.traceID, mtc.userID, mtc.channel,
+		processlog.StepMemoryExtractStarted, processlog.LevelInfo, "Memory extraction started",
+		map[string]any{
+			"message_count":   len(memMsgs),
+			"preferred_model": preferredModel,
+		}, 0)
+
 	if r.logger != nil {
 		r.logger.Info("storing memory",
 			slog.String("bot_id", botID),
@@ -1725,10 +1750,11 @@ func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []con
 		)
 	}
 
-	r.addMemory(ctx, botID, memMsgs, sharedMemoryNamespace, botID)
+	r.addMemory(ctx, botID, memMsgs, sharedMemoryNamespace, botID, mtc)
 }
 
-func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Message, namespace, scopeID string) {
+func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Message, namespace, scopeID string, mtc memoryTraceCtx) {
+	start := time.Now()
 	filters := map[string]any{
 		"namespace": namespace,
 		"scopeId":   scopeID,
@@ -1739,6 +1765,7 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 		BotID:    botID,
 		Filters:  filters,
 	})
+	durationMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		if r.logger != nil {
 			r.logger.Warn("store memory failed",
@@ -1747,10 +1774,12 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 				slog.Any("error", err),
 			)
 		}
+		r.logProcessStep(ctx, botID, mtc.chatID, mtc.traceID, mtc.userID, mtc.channel,
+			processlog.StepMemoryExtractFailed, processlog.LevelError, "Memory extraction failed: "+err.Error(),
+			map[string]any{"error": err.Error()}, durationMs)
 		return
 	}
 
-	// Log successful memory storage
 	if r.logger != nil {
 		r.logger.Info("memory processed",
 			slog.String("bot_id", botID),
@@ -1759,6 +1788,12 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 			slog.Int("results_count", len(result.Results)),
 		)
 	}
+	r.logProcessStep(ctx, botID, mtc.chatID, mtc.traceID, mtc.userID, mtc.channel,
+		processlog.StepMemoryExtractCompleted, processlog.LevelInfo, "Memory extraction completed",
+		map[string]any{
+			"messages_processed": len(msgs),
+			"results_count":     len(result.Results),
+		}, durationMs)
 }
 
 // --- model failover ---
