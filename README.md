@@ -11,7 +11,15 @@
 
 每个 Bot 拥有独立容器、独立记忆、独立技能、自我进化能力 —— 你的私人 AI 智能体平台。
 
-[English](./README_EN.md) · [功能详解](./doc/features.md) · [安装与升级](./doc/installation.md) · [使用教程](./doc/README.md) · [界面截图](./doc/screenshots.md)
+---
+
+**快速导航**
+
+[🚀 安装与升级](./doc/installation.md) · [📖 功能详解](./doc/features.md) · [💡 概念指南](./doc/concepts.md) · [📚 使用教程](./doc/README.md)
+
+[🖼️ 界面截图](./doc/screenshots.md) · [⚖️ 与 OpenClaw 对比](./doc/comparison.md) · [⚠️ 已知局限性](./doc/known-limitations.md)
+
+[📊 功能审计](./doc/FEATURE_AUDIT.md) · [📝 提示词清单](./doc/PROMPTS_INVENTORY.md) · [🗂️ 开发计划归档](./doc/README.md#开发计划归档) · [🌐 English](./README_EN.md)
 
 </div>
 
@@ -51,7 +59,7 @@ docker compose up -d
 5. Bot → 频道           连接 Telegram / 飞书等消息平台（可选）
 ```
 
-> 详细安装、升级、卸载、数据迁移指南请查看 **[安装与升级](./doc/installation.md)**。
+> 详细安装、升级、卸载、数据迁移指南请查看顶部导航 → **安装与升级**。
 
 ---
 
@@ -104,7 +112,7 @@ docker compose up -d
 
 ## 核心功能
 
-> 每项功能的完整说明请查看 **[功能详解](./doc/features.md)**。
+> 每项功能的完整说明请查看顶部导航 → **功能详解**。
 
 - **Bot 管理与模板** — 13 套思维模型模板（含 10 位真实思想家），两步创建专业化 Bot
 - **对话与流式推送** — SSE 实时流式 + 同步两种模式，自动上下文管理与记忆召回
@@ -118,22 +126,6 @@ docker compose up -d
 - **OpenViking 分层上下文** — L0/L1/L2 三层结构化记忆，大幅减少 Token 消耗
 - **Token 用量与诊断** — Dashboard 曲线图 + 多 Bot 对比，一键服务健康检查
 - **跨 Bot 协作** — `/shared` 共享工作区，文件驱动的简单协调机制
-
----
-
-## 文档导航
-
-| 文档 | 说明 |
-|------|------|
-| **[功能详解](./doc/features.md)** | 12 项核心功能的完整介绍 |
-| **[概念指南](./doc/concepts.md)** | 模型类型、人设体系、Provider 配置示例 |
-| **[安装与升级](./doc/installation.md)** | 一键安装 / 升级 / 卸载 / 数据迁移 |
-| **[已知局限性](./doc/known-limitations.md)** | 当前不足与变通方案 |
-| **[与 OpenClaw 对比](./doc/comparison.md)** | 42 项全面对比 |
-| **[使用教程](./doc/README.md)** | 18 篇操作教程（快速上手到高级技巧） |
-| **[界面截图](./doc/screenshots.md)** | 更多界面展示 |
-| **[项目完成进度](./doc/FEATURE_AUDIT.md)** | 74 项功能审计 |
-| **[项目提示词](./doc/PROMPTS_INVENTORY.md)** | 全部提示词清单 |
 
 ---
 
