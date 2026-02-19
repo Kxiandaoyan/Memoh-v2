@@ -62,7 +62,7 @@ type ConversationSettingsReader interface {
 
 // OVSessionExtractor commits a conversation to OpenViking for memory extraction.
 type OVSessionExtractor interface {
-	ExtractSession(ctx context.Context, botID, chatID string, messages []conversation.ModelMessage)
+	ExtractSession(ctx context.Context, botID, chatID string, messages []conversation.ModelMessage) (output string, err error)
 }
 
 // OVContextLoader loads lightweight OpenViking context for conversation injection.
@@ -1571,7 +1571,36 @@ func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.Cha
 			}, 0)
 		ovMsgs := make([]conversation.ModelMessage, len(memoryRound))
 		copy(ovMsgs, memoryRound)
-		go r.ovSessionExtractor.ExtractSession(context.WithoutCancel(ctx), req.BotID, req.ChatID, ovMsgs)
+		ovCtx := context.WithoutCancel(ctx)
+		ovBotID := req.BotID
+		ovChatID := req.ChatID
+		ovUserID := req.UserID
+		ovChannel := req.CurrentChannel
+		ovTraceID := traceID
+		go func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					r.logger.Error("OV session extraction panic recovered",
+						slog.String("bot_id", ovBotID),
+						slog.Any("panic", rec),
+					)
+				}
+			}()
+			start := time.Now()
+			output, err := r.ovSessionExtractor.ExtractSession(ovCtx, ovBotID, ovChatID, ovMsgs)
+			dur := int(time.Since(start).Milliseconds())
+			if err != nil {
+				r.logProcessStep(ovCtx, ovBotID, ovChatID, ovTraceID, ovUserID, ovChannel,
+					processlog.StepOpenVikingSessionFailed, processlog.LevelError,
+					"OpenViking session extraction failed: "+err.Error(),
+					map[string]any{"error": err.Error()}, dur)
+			} else if output != "" {
+				r.logProcessStep(ovCtx, ovBotID, ovChatID, ovTraceID, ovUserID, ovChannel,
+					processlog.StepOpenVikingSessionCompleted, processlog.LevelInfo,
+					"OpenViking session extraction completed",
+					map[string]any{"output": output}, dur)
+			}
+		}()
 	}
 
 	return nil

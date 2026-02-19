@@ -34,6 +34,8 @@ DO $$ BEGIN
         'skills_loaded',
         'openviking_context',
         'openviking_session',
+        'openviking_session_completed',
+        'openviking_session_failed',
         'evolution_started',
         'evolution_completed',
         'evolution_failed'

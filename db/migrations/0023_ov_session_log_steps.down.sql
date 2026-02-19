@@ -1,0 +1,2 @@
+-- 0023_ov_session_log_steps (rollback)
+-- PostgreSQL does not support removing enum values; no action needed.

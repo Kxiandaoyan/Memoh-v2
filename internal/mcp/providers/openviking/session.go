@@ -59,12 +59,13 @@ func (s *SessionExtractor) isEnabled(ctx context.Context, botID string) bool {
 
 // ExtractSession commits the conversation messages to an OpenViking session,
 // triggering automatic memory extraction. This is safe to call from a goroutine.
-func (s *SessionExtractor) ExtractSession(ctx context.Context, botID, chatID string, messages []conversation.ModelMessage) {
+// Returns (output, error): empty output with nil error means extraction was skipped.
+func (s *SessionExtractor) ExtractSession(ctx context.Context, botID, chatID string, messages []conversation.ModelMessage) (string, error) {
 	if !s.isEnabled(ctx, botID) {
-		return
+		return "", nil
 	}
 	if len(messages) == 0 {
-		return
+		return "", nil
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, sessionExtractionTimeout)
@@ -86,13 +87,13 @@ func (s *SessionExtractor) ExtractSession(ctx context.Context, botID, chatID str
 		})
 	}
 	if len(simplified) == 0 {
-		return
+		return "", nil
 	}
 
 	msgJSON, err := json.Marshal(simplified)
 	if err != nil {
 		s.logger.Warn("failed to marshal messages for OV session", slog.Any("error", err))
-		return
+		return "", err
 	}
 
 	sessionID := chatID
@@ -128,17 +129,20 @@ finally:
 		s.logger.Warn("OV session extraction exec failed",
 			slog.String("bot_id", botID),
 			slog.Any("error", err))
-		return
+		return "", fmt.Errorf("exec failed: %w", err)
 	}
 	if result.ExitCode != 0 {
+		errMsg := truncate(result.Stderr, 500)
 		s.logger.Warn("OV session extraction python error",
 			slog.String("bot_id", botID),
 			slog.Int("exit_code", int(result.ExitCode)),
-			slog.String("stderr", truncate(result.Stderr, 500)))
-		return
+			slog.String("stderr", errMsg))
+		return "", fmt.Errorf("exit code %d: %s", result.ExitCode, errMsg)
 	}
+	output := truncate(strings.TrimSpace(result.Stdout), 300)
 	s.logger.Info("OV session extraction completed",
 		slog.String("bot_id", botID),
 		slog.String("chat_id", chatID),
-		slog.String("output", truncate(strings.TrimSpace(result.Stdout), 300)))
+		slog.String("output", output))
+	return output, nil
 }

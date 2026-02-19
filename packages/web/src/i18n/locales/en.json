@@ -841,6 +841,8 @@
       "skills_loaded": "Skills Loaded",
       "openviking_context": "OV Context",
       "openviking_session": "OV Session",
+      "openviking_session_completed": "OV Session Done",
+      "openviking_session_failed": "OV Session Failed",
       "evolution_started": "Evolution Start",
       "evolution_completed": "Evolution Done",
       "evolution_failed": "Evolution Failed"

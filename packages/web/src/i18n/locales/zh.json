@@ -837,6 +837,8 @@
       "skills_loaded": "技能加载",
       "openviking_context": "OpenViking 上下文",
       "openviking_session": "OpenViking 会话",
+      "openviking_session_completed": "OpenViking 会话完成",
+      "openviking_session_failed": "OpenViking 会话失败",
       "evolution_started": "进化开始",
       "evolution_completed": "进化完成",
       "evolution_failed": "进化失败"
