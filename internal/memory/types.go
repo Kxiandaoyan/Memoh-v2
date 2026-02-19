@@ -54,6 +54,14 @@ type SearchRequest struct {
 	Sources          []string       `json:"sources,omitempty"`
 	EmbeddingEnabled *bool          `json:"embedding_enabled,omitempty"`
 	NoStats          bool           `json:"no_stats,omitempty"`
+	// MMR reranking: retrieve OverfetchFactor×Limit candidates, then apply
+	// Maximal Marginal Relevance to balance relevance and diversity.
+	UseMMR         bool    `json:"use_mmr,omitempty"`
+	MMRLambda      float64 `json:"mmr_lambda,omitempty"`       // 0.0=max diversity, 1.0=max relevance; default 0.7
+	OverfetchRatio int     `json:"overfetch_ratio,omitempty"`  // fetch OverfetchRatio×Limit before MMR; default 3
+	// Temporal decay: reduce scores for older memories exponentially.
+	UseTemporalDecay  bool    `json:"use_temporal_decay,omitempty"`
+	DecayHalfLifeDays float64 `json:"decay_half_life_days,omitempty"` // default 30
 }
 
 type UpdateRequest struct {

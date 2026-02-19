@@ -52,3 +52,17 @@
 |------|------|
 | [项目完成进度](FEATURE_AUDIT.md) | 74 项功能逐一审计，对照代码验证完成度评分 |
 | [项目提示词](PROMPTS_INVENTORY.md) | 全部提示词完整清单、参数、数据流、Token 估算 |
+
+---
+
+## 开发计划归档
+
+记录本项目每个重大改造阶段的设计方案与实施细节，便于后续参考和继续迭代。
+
+| 计划 | 说明 | 状态 |
+|------|------|------|
+| [超越 OpenClaw 三梯队改造](plans/plan-01-surpass-openclaw.md) | MMR 重排序、Embedding 缓存、工具循环检测、子智能体持久化、心跳活跃时段、Prompt 双模式、群组防抖 | ✅ 已完成 |
+| [增强日志系统与单轮导出](plans/plan-02-enhanced-logging.md) | 丰富 12 个日志步骤数据字段，新增 trace 导出 API 及前端复制按钮 | ✅ 已完成 |
+| [智能化 / Token / 记忆力全面审计](plans/plan-03-intelligence-audit.md) | 14 项 P0-P2 改进：Token 估算、分块裁剪、记忆阈值、MMR、时间衰减、Embedding 缓存等 | ✅ 已完成 |
+| [定时任务通知可靠性修复](plans/plan-04-schedule-reliability.md) | Prompt 强制 send 指令 + Go 侧工具结果兜底发送 | ✅ 已完成 |
+| [README 拆分文档结构化](plans/plan-05-readme-restructure.md) | 将 README 拆分为精简着陆页 + doc/ 多文档结构 | ✅ 已完成 |

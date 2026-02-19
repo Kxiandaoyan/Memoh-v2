@@ -1,6 +1,8 @@
 import { block, quote } from './utils'
 import { AgentSkill } from '../types'
 
+export type SystemMode = 'full' | 'minimal'
+
 export interface SystemParams {
   date: Date
   language: string
@@ -17,6 +19,13 @@ export interface SystemParams {
   taskContent?: string
   allowSelfEvolution?: boolean
   attachments?: string[]
+  /**
+   * 'full'    – complete prompt with all sections (default, best for interactive sessions)
+   * 'minimal' – trimmed prompt that omits verbose instructions not needed for automated
+   *             contexts (scheduled tasks, sub-agents). Saves ~400-600 tokens and yields
+   *             a longer stable prefix for LLM prompt caching.
+   */
+  mode?: SystemMode
 }
 
 export const skillPrompt = (skill: AgentSkill) => {
@@ -42,7 +51,9 @@ export const system = ({
   toolsContent,
   taskContent,
   allowSelfEvolution = true,
+  mode = 'full',
 }: SystemParams) => {
+  const isMinimal = mode === 'minimal'
   const tz = timezone || 'UTC'
 
   // ── Static section (stable prefix for LLM prompt caching) ──────────
@@ -80,7 +91,8 @@ Before anything else:
 ${allowSelfEvolution
   ? `- Read ${quote('IDENTITY.md')} to remember who you are
 - Read ${quote('SOUL.md')} to remember how to behave
-- Read ${quote('TOOLS.md')} to remember how to use the tools`
+- Read ${quote('TOOLS.md')} to remember how to use the tools
+${isMinimal ? '' : '- Self-evolution is enabled: you may update your persona files based on conversation insights'}`
   : `- Read ${quote('TOOLS.md')} to remember how to use the tools
 - Do NOT modify ${quote('IDENTITY.md')}, ${quote('SOUL.md')}, or ${quote('TOOLS.md')} — your persona is managed by your creator`}
 
@@ -127,7 +139,7 @@ You are able to receive and send messages or files to different channels.
 
 When you need to resolve a user or group on a channel (e.g. turn an open_id, user_id, or chat_id into a display name or handle), use the ${quote('lookup_channel_user')} tool: pass ${quote('platform')} (e.g. feishu, telegram), ${quote('input')} (the platform-specific id), and optionally ${quote('kind')} (${quote('user')} or ${quote('group')}). It returns name, handle, and id for that entry.
 
-## Attachments
+${isMinimal ? '## Attachments\n\nUse `<attachments>\\n- /path/to/file\\n</attachments>` blocks to send files.' : `## Attachments
 
 ### Receive
 
@@ -152,12 +164,15 @@ External URLs are also supported.
 Important rules for attachments blocks:
 - Only include file paths (one per line, prefixed by ${quote('- ')})
 - Do not include any extra text inside ${quote('<attachments>...</attachments>')}
-- You may output the attachments block anywhere in your response; it will be parsed and removed from visible text.
+- You may output the attachments block anywhere in your response; it will be parsed and removed from visible text.\`}
 
 ## Skills
 
 There are ${skills.length} skills available, you can use ${quote('use_skill')} to use a skill.
-${skills.map(skill => `- ${skill.name}: ${skill.description}`).join('\n')}
+${isMinimal
+  ? skills.map(skill => `- ${skill.name}`).join('\n')
+  : skills.map(skill => `- ${skill.name}: ${skill.description}`).join('\n')
+}
 
 ## IDENTITY.md
 

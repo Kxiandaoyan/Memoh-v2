@@ -365,6 +365,9 @@ CREATE TABLE IF NOT EXISTS heartbeat_configs (
   interval_seconds INTEGER NOT NULL DEFAULT 0,
   prompt TEXT NOT NULL DEFAULT '',
   event_triggers JSONB NOT NULL DEFAULT '[]'::jsonb,
+  active_hours_start SMALLINT NOT NULL DEFAULT 0,
+  active_hours_end   SMALLINT NOT NULL DEFAULT 23,
+  active_days        SMALLINT[] NOT NULL DEFAULT '{0,1,2,3,4,5,6}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -425,4 +428,42 @@ CREATE TABLE IF NOT EXISTS global_settings (
   value TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- embedding_cache: stores text→vector mappings to avoid redundant API calls
+CREATE TABLE IF NOT EXISTS embedding_cache (
+  id         UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider   TEXT    NOT NULL,
+  model      TEXT    NOT NULL,
+  hash       TEXT    NOT NULL,
+  embedding  JSONB   NOT NULL,
+  dims       INT     NOT NULL,
+  updated_at BIGINT  NOT NULL,
+  CONSTRAINT embedding_cache_unique UNIQUE (provider, model, hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_lookup  ON embedding_cache (provider, model, hash);
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_updated ON embedding_cache (updated_at ASC);
+
+-- subagent_runs: persists sub-agent run state from the Agent Gateway
+CREATE TABLE IF NOT EXISTS subagent_runs (
+  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id         TEXT        NOT NULL UNIQUE,
+  bot_id         TEXT        NOT NULL,
+  name           TEXT        NOT NULL,
+  task           TEXT        NOT NULL,
+  status         TEXT        NOT NULL DEFAULT 'running'
+                             CHECK (status IN ('running', 'completed', 'failed', 'aborted')),
+  spawn_depth    INT         NOT NULL DEFAULT 0,
+  parent_run_id  TEXT,
+  result_summary TEXT,
+  error_message  TEXT,
+  started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at       TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_subagent_runs_bot_id   ON subagent_runs (bot_id);
+CREATE INDEX IF NOT EXISTS idx_subagent_runs_status   ON subagent_runs (status);
+CREATE INDEX IF NOT EXISTS idx_subagent_runs_run_id   ON subagent_runs (run_id);
+CREATE INDEX IF NOT EXISTS idx_subagent_runs_created  ON subagent_runs (bot_id, created_at DESC);
 

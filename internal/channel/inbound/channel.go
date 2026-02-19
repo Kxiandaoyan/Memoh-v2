@@ -35,15 +35,16 @@ type RouteResolver interface {
 
 // ChannelInboundProcessor routes channel inbound messages to the chat gateway.
 type ChannelInboundProcessor struct {
-	runner        flow.Runner
-	routeResolver RouteResolver
-	message       messagepkg.Writer
-	registry      *channel.Registry
-	logger        *slog.Logger
-	jwtSecret     string
-	tokenTTL      time.Duration
-	identity      *IdentityResolver
-	policyService PolicyService
+	runner         flow.Runner
+	routeResolver  RouteResolver
+	message        messagepkg.Writer
+	registry       *channel.Registry
+	logger         *slog.Logger
+	jwtSecret      string
+	tokenTTL       time.Duration
+	identity       *IdentityResolver
+	policyService  PolicyService
+	groupDebouncer *messagepkg.GroupDebouncer
 }
 
 // NewChannelInboundProcessor creates a processor with channel identity-based resolution.
@@ -82,6 +83,13 @@ func NewChannelInboundProcessor(
 }
 
 // IdentityMiddleware returns the identity resolution middleware.
+// SetGroupDebouncer enables group message debouncing. When set, messages
+// from non-DM conversations are buffered for the debounce window and merged
+// into a single agent invocation. Pass nil to disable.
+func (p *ChannelInboundProcessor) SetGroupDebouncer(d *messagepkg.GroupDebouncer) {
+	p.groupDebouncer = d
+}
+
 func (p *ChannelInboundProcessor) IdentityMiddleware() channel.Middleware {
 	if p == nil || p.identity == nil {
 		return nil
@@ -172,6 +180,28 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 		return nil
 	}
 	userMessagePersisted := p.persistInboundUser(ctx, resolved.RouteID, identity, msg, text, "active_chat")
+
+	// For group conversations with the debouncer enabled, buffer the message text
+	// and fire the agent with a merged query after the window expires.
+	if p.groupDebouncer != nil && !isDirectConversationType(msg.Conversation.Type) {
+		debounceKey := strings.TrimSpace(identity.BotID) + ":" + strings.TrimSpace(activeChatID)
+		capturedMsg := msg
+		capturedCfg := cfg
+		capturedSender := sender
+		capturedIdentity := identity
+		capturedResolved := resolved
+		capturedActiveChatID := activeChatID
+		capturedUserMsgPersisted := userMessagePersisted
+
+		p.groupDebouncer.Submit(debounceKey, text, func(mergedText string) {
+			go func() {
+				bgCtx := context.Background()
+				_ = p.dispatchGroupChat(bgCtx, capturedCfg, capturedMsg, mergedText, capturedSender,
+					capturedIdentity, capturedResolved, capturedActiveChatID, capturedUserMsgPersisted)
+			}()
+		})
+		return nil
+	}
 
 	// Issue chat token for reply routing.
 	chatToken := ""
@@ -1092,4 +1122,140 @@ func formatTokenUsage(usage *gatewayUsage) string {
 	// Show completion tokens in k format (e.g., "⚡ 1.2k")
 	kTokens := float64(usage.CompletionTokens) / 1000.0
 	return fmt.Sprintf("⚡ %.1fk", kTokens)
+}
+
+// dispatchGroupChat is called by the GroupDebouncer after the debounce window
+// expires. It runs the full chat processing pipeline (token generation, stream
+// open, runner.StreamChat) with the given merged text.
+func (p *ChannelInboundProcessor) dispatchGroupChat(
+	ctx context.Context,
+	cfg channel.ChannelConfig,
+	msg channel.InboundMessage,
+	text string,
+	sender channel.StreamReplySender,
+	identity InboundIdentity,
+	resolved route.ResolveConversationResult,
+	activeChatID string,
+	userMessagePersisted bool,
+) error {
+	chatToken := ""
+	if p.jwtSecret != "" && strings.TrimSpace(msg.ReplyTarget) != "" {
+		signed, _, err := auth.GenerateChatToken(auth.ChatToken{
+			BotID:             identity.BotID,
+			ChatID:            activeChatID,
+			RouteID:           resolved.RouteID,
+			UserID:            identity.UserID,
+			ChannelIdentityID: identity.ChannelIdentityID,
+		}, p.jwtSecret, p.tokenTTL)
+		if err == nil {
+			chatToken = signed
+		}
+	}
+	token := ""
+	if identity.UserID != "" && p.jwtSecret != "" {
+		signed, _, err := auth.GenerateToken(identity.UserID, p.jwtSecret, p.tokenTTL)
+		if err == nil {
+			token = "Bearer " + signed
+		}
+	}
+	if token == "" && chatToken != "" {
+		token = "Bearer " + chatToken
+	}
+
+	target := strings.TrimSpace(msg.ReplyTarget)
+	if target == "" {
+		return fmt.Errorf("reply target missing for group debounce dispatch")
+	}
+	sourceMessageID := strings.TrimSpace(msg.Message.ID)
+	replyRef := &channel.ReplyRef{Target: target}
+	if sourceMessageID != "" {
+		replyRef.MessageID = sourceMessageID
+	}
+	stream, err := sender.OpenStream(ctx, target, channel.StreamOptions{
+		Reply:           replyRef,
+		SourceMessageID: sourceMessageID,
+		Metadata: map[string]any{
+			"route_id": resolved.RouteID,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stream.Close(context.WithoutCancel(ctx)) }()
+
+	if err := stream.Push(ctx, channel.StreamEvent{
+		Type:   channel.StreamEventStatus,
+		Status: channel.StreamStatusStarted,
+	}); err != nil {
+		return err
+	}
+
+	chunkCh, streamErrCh := p.runner.StreamChat(ctx, conversation.ChatRequest{
+		BotID:                   identity.BotID,
+		ChatID:                  activeChatID,
+		Token:                   token,
+		UserID:                  identity.UserID,
+		SourceChannelIdentityID: identity.ChannelIdentityID,
+		DisplayName:             identity.DisplayName,
+		RouteID:                 resolved.RouteID,
+		ChatToken:               chatToken,
+		ExternalMessageID:       sourceMessageID,
+		ConversationType:        msg.Conversation.Type,
+		ReplyTarget:             strings.TrimSpace(msg.ReplyTarget),
+		Query:                   text,
+		CurrentChannel:          msg.Channel.String(),
+		Channels:                []string{msg.Channel.String()},
+		UserMessagePersisted:    userMessagePersisted,
+	})
+
+	var (
+		finalMessages  []conversation.ModelMessage
+		streamErr      error
+		collectedUsage *gatewayUsage
+	)
+	for chunkCh != nil || streamErrCh != nil {
+		select {
+		case chunk, ok := <-chunkCh:
+			if !ok {
+				chunkCh = nil
+				continue
+			}
+			events, messages, usage, parseErr := mapStreamChunkToChannelEvents(chunk)
+			if parseErr != nil {
+				if p.logger != nil {
+					p.logger.Warn("group debounce stream chunk parse failed",
+						slog.String("channel", msg.Channel.String()),
+						slog.Any("error", parseErr),
+					)
+				}
+				continue
+			}
+			if usage != nil && usage.TotalTokens > 0 {
+				collectedUsage = usage
+			}
+			for _, event := range events {
+				if pushErr := stream.Push(ctx, event); pushErr != nil {
+					if p.logger != nil {
+						p.logger.Warn("group debounce stream push failed", slog.Any("error", pushErr))
+					}
+				}
+			}
+			if messages != nil {
+				finalMessages = append(finalMessages, messages...)
+			}
+		case err, ok := <-streamErrCh:
+			if !ok {
+				streamErrCh = nil
+				continue
+			}
+			streamErr = err
+		}
+	}
+
+	if streamErr != nil {
+		return streamErr
+	}
+	_ = finalMessages
+	_ = collectedUsage
+	return nil
 }

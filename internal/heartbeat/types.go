@@ -28,22 +28,34 @@ type Config struct {
 	EventTriggers   []EventTrigger `json:"event_triggers"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
+	// Active hours (0-23, inclusive, in the configured timezone).
+	// Heartbeats outside this window are silently skipped.
+	ActiveHoursStart int   `json:"active_hours_start"` // default 0
+	ActiveHoursEnd   int   `json:"active_hours_end"`   // default 23
+	// Active weekdays (0=Sunday … 6=Saturday). Empty slice means all days.
+	ActiveDays       []int `json:"active_days"`
 }
 
 // CreateRequest is the payload for creating a heartbeat config.
 type CreateRequest struct {
-	Enabled         *bool          `json:"enabled,omitempty"`
-	IntervalSeconds int            `json:"interval_seconds"`
-	Prompt          string         `json:"prompt"`
-	EventTriggers   []EventTrigger `json:"event_triggers"`
+	Enabled          *bool          `json:"enabled,omitempty"`
+	IntervalSeconds  int            `json:"interval_seconds"`
+	Prompt           string         `json:"prompt"`
+	EventTriggers    []EventTrigger `json:"event_triggers"`
+	ActiveHoursStart *int           `json:"active_hours_start,omitempty"`
+	ActiveHoursEnd   *int           `json:"active_hours_end,omitempty"`
+	ActiveDays       []int          `json:"active_days,omitempty"`
 }
 
 // UpdateRequest is the payload for updating a heartbeat config.
 type UpdateRequest struct {
-	Enabled         *bool          `json:"enabled,omitempty"`
-	IntervalSeconds *int           `json:"interval_seconds,omitempty"`
-	Prompt          *string        `json:"prompt,omitempty"`
-	EventTriggers   []EventTrigger `json:"event_triggers,omitempty"`
+	Enabled          *bool          `json:"enabled,omitempty"`
+	IntervalSeconds  *int           `json:"interval_seconds,omitempty"`
+	Prompt           *string        `json:"prompt,omitempty"`
+	EventTriggers    []EventTrigger `json:"event_triggers,omitempty"`
+	ActiveHoursStart *int           `json:"active_hours_start,omitempty"`
+	ActiveHoursEnd   *int           `json:"active_hours_end,omitempty"`
+	ActiveDays       []int          `json:"active_days,omitempty"`
 }
 
 // ListResponse wraps a list of heartbeat configs.

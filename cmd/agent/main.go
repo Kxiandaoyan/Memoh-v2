@@ -157,6 +157,7 @@ func main() {
 			provideServerHandler(handlers.NewScheduleHandler),
 			provideServerHandler(handlers.NewHeartbeatHandler),
 			provideServerHandler(handlers.NewSubagentHandler),
+			provideServerHandler(provideSubagentRunsHandler),
 			provideServerHandler(handlers.NewTokenUsageHandler),
 			provideServerHandler(handlers.NewDiagnosticsHandler),
 			provideServerHandler(handlers.NewGlobalSettingsHandler),
@@ -320,8 +321,18 @@ func provideQdrantStore(log *slog.Logger, cfg config.Config, setup embeddingSetu
 	return store, nil
 }
 
-func provideMemoryService(log *slog.Logger, llm memory.LLM, embedder embeddings.Embedder, store *memory.QdrantStore, resolver *embeddings.Resolver, bm25 *memory.BM25Indexer, setup embeddingSetup) *memory.Service {
-	return memory.NewService(log, llm, embedder, store, resolver, bm25, setup.TextModel.ModelID, setup.MultimodalModel.ModelID)
+func provideMemoryService(log *slog.Logger, llm memory.LLM, embedder embeddings.Embedder, store *memory.QdrantStore, resolver *embeddings.Resolver, bm25 *memory.BM25Indexer, setup embeddingSetup, pool *pgxpool.Pool) *memory.Service {
+	svc := memory.NewService(log, llm, embedder, store, resolver, bm25, setup.TextModel.ModelID, setup.MultimodalModel.ModelID)
+	if setup.HasEmbeddingModels && setup.TextModel.ModelID != "" {
+		providerKey := setup.TextModel.LlmProviderID
+		if providerKey == "" {
+			providerKey = "default"
+		}
+		cache := memory.NewEmbeddingCache(pool, providerKey, setup.TextModel.ModelID, log)
+		svc.SetEmbeddingCache(cache)
+		log.Info("embedding cache enabled", slog.String("model", setup.TextModel.ModelID))
+	}
+	return svc
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +361,10 @@ func provideHeartbeatTriggerer(resolver *flow.Resolver) heartbeat.Triggerer {
 
 func provideProcessLogService(log *slog.Logger, queries *dbsqlc.Queries) *processlog.Service {
 	return processlog.NewService(log, queries)
+}
+
+func provideSubagentRunsHandler(pool *pgxpool.Pool, log *slog.Logger) *handlers.SubagentRunsHandler {
+	return handlers.NewSubagentRunsHandler(pool, log)
 }
 
 func provideChatResolver(log *slog.Logger, cfg config.Config, gs *globalsettings.Service, modelsService *models.Service, queries *dbsqlc.Queries, memoryService *memory.Service, chatService *conversation.Service, msgService *message.DBService, settingsService *settings.Service, processLogSvc *processlog.Service, containerdHandler *handlers.ContainerdHandler, manager *mcp.Manager) *flow.Resolver {
@@ -381,7 +396,9 @@ func provideChannelRegistry(log *slog.Logger, hub *local.RouteHub) *channel.Regi
 }
 
 func provideChannelRouter(log *slog.Logger, registry *channel.Registry, routeService *route.DBService, msgService *message.DBService, resolver *flow.Resolver, identityService *identities.Service, botService *bots.Service, policyService *policy.Service, preauthService *preauth.Service, bindService *bind.Service, rc *boot.RuntimeConfig) *inbound.ChannelInboundProcessor {
-	return inbound.NewChannelInboundProcessor(log, registry, routeService, msgService, resolver, identityService, botService, policyService, preauthService, bindService, rc.JwtSecret, 5*time.Minute)
+	proc := inbound.NewChannelInboundProcessor(log, registry, routeService, msgService, resolver, identityService, botService, policyService, preauthService, bindService, rc.JwtSecret, 5*time.Minute)
+	proc.SetGroupDebouncer(message.NewGroupDebouncer(3 * time.Second))
+	return proc
 }
 
 func provideChannelManager(log *slog.Logger, registry *channel.Registry, channelService *channel.Service, channelRouter *inbound.ChannelInboundProcessor) *channel.Manager {
@@ -581,9 +598,13 @@ func startScheduleService(lc fx.Lifecycle, scheduleService *schedule.Service) {
 	})
 }
 
-func startHeartbeatEngine(lc fx.Lifecycle, engine *heartbeat.Engine) {
+func startHeartbeatEngine(lc fx.Lifecycle, engine *heartbeat.Engine, pool *pgxpool.Pool, gs *globalsettings.Service) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			engine.SetPool(pool)
+			if _, loc := gs.GetTimezone(); loc != nil {
+				engine.SetTimezone(loc)
+			}
 			return engine.Bootstrap(ctx)
 		},
 		OnStop: func(_ context.Context) error {

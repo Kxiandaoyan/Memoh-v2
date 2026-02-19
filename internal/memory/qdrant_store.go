@@ -192,6 +192,12 @@ func (s *QdrantStore) Upsert(ctx context.Context, points []qdrantPoint) error {
 }
 
 func (s *QdrantStore) Search(ctx context.Context, vector []float32, limit int, filters map[string]any, vectorName string) ([]qdrantPoint, []float64, error) {
+	return s.SearchWithVectors(ctx, vector, limit, filters, vectorName, false)
+}
+
+// SearchWithVectors is like Search but optionally returns the stored dense vectors
+// so callers can compute pairwise cosine similarity for MMR reranking.
+func (s *QdrantStore) SearchWithVectors(ctx context.Context, vector []float32, limit int, filters map[string]any, vectorName string, withVectors bool) ([]qdrantPoint, []float64, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -200,14 +206,22 @@ func (s *QdrantStore) Search(ctx context.Context, vector []float32, limit int, f
 	if vectorName != "" && s.usesNamedVectors {
 		using = qdrant.PtrOf(vectorName)
 	}
-	results, err := s.client.Query(ctx, &qdrant.QueryPoints{
+	query := &qdrant.QueryPoints{
 		CollectionName: s.collection,
 		Query:          qdrant.NewQueryDense(vector),
 		Using:          using,
 		Limit:          qdrant.PtrOf(uint64(limit)),
 		Filter:         filter,
 		WithPayload:    qdrant.NewWithPayload(true),
-	})
+	}
+	if withVectors {
+		if vectorName != "" && s.usesNamedVectors {
+			query.WithVectors = qdrant.NewWithVectorsInclude(vectorName)
+		} else {
+			query.WithVectors = qdrant.NewWithVectorsEnable(true)
+		}
+	}
+	results, err := s.client.Query(ctx, query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,10 +229,14 @@ func (s *QdrantStore) Search(ctx context.Context, vector []float32, limit int, f
 	points := make([]qdrantPoint, 0, len(results))
 	scores := make([]float64, 0, len(results))
 	for _, scored := range results {
-		points = append(points, qdrantPoint{
+		p := qdrantPoint{
 			ID:      pointIDToString(scored.GetId()),
 			Payload: valueMapToInterface(scored.GetPayload()),
-		})
+		}
+		if withVectors {
+			p.Vector = extractDenseVector(scored.GetVectors(), vectorName, s.usesNamedVectors)
+		}
+		points = append(points, p)
 		scores = append(scores, float64(scored.GetScore()))
 	}
 	return points, scores, nil
@@ -470,6 +488,32 @@ func extractSparseFromVectorOutput(vecOut *qdrant.VectorOutput) ([]uint32, []flo
 		return vecOut.GetIndices().GetData(), vecOut.GetData()
 	}
 	return nil, nil
+}
+
+// extractDenseVector extracts the float32 dense vector from a VectorsOutput.
+// vectorName is used when the collection uses named vectors; pass "" for unnamed.
+func extractDenseVector(vectors *qdrant.VectorsOutput, vectorName string, usesNamedVectors bool) []float32 {
+	if vectors == nil {
+		return nil
+	}
+	if usesNamedVectors && vectorName != "" {
+		if namedOut := vectors.GetVectors(); namedOut != nil {
+			vecOut, ok := namedOut.GetVectors()[vectorName]
+			if ok && vecOut != nil {
+				if dense := vecOut.GetDense(); dense != nil {
+					return dense.GetData()
+				}
+				return vecOut.GetData()
+			}
+		}
+	}
+	if vecOut := vectors.GetVector(); vecOut != nil {
+		if dense := vecOut.GetDense(); dense != nil {
+			return dense.GetData()
+		}
+		return vecOut.GetData()
+	}
+	return nil
 }
 
 func (s *QdrantStore) Count(ctx context.Context, filters map[string]any) (uint64, error) {

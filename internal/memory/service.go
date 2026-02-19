@@ -26,6 +26,7 @@ type Service struct {
 	logger                   *slog.Logger
 	defaultTextModelID       string
 	defaultMultimodalModelID string
+	embeddingCache           *EmbeddingCache
 }
 
 func NewService(log *slog.Logger, llm LLM, embedder embeddings.Embedder, store *QdrantStore, resolver *embeddings.Resolver, bm25 *BM25Indexer, defaultTextModelID, defaultMultimodalModelID string) *Service {
@@ -39,6 +40,31 @@ func NewService(log *slog.Logger, llm LLM, embedder embeddings.Embedder, store *
 		defaultTextModelID:       defaultTextModelID,
 		defaultMultimodalModelID: defaultMultimodalModelID,
 	}
+}
+
+// SetEmbeddingCache attaches an optional embedding cache. When set, all
+// embedder.Embed calls are served from cache if a hit exists.
+func (s *Service) SetEmbeddingCache(c *EmbeddingCache) {
+	s.embeddingCache = c
+}
+
+// embedText wraps embedder.Embed with an optional cache lookup/store.
+func (s *Service) embedText(ctx context.Context, text string) ([]float32, error) {
+	if s.embeddingCache != nil {
+		if vec, ok := s.embeddingCache.Get(ctx, text); ok {
+			return vec, nil
+		}
+	}
+	vec, err := s.embedder.Embed(ctx, text)
+	if err != nil {
+		return nil, err
+	}
+	if s.embeddingCache != nil {
+		if cacheErr := s.embeddingCache.Set(ctx, text, vec); cacheErr != nil {
+			s.logger.Warn("embedding cache set failed", slog.Any("error", cacheErr))
+		}
+	}
+	return vec, nil
 }
 
 func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, error) {
@@ -205,25 +231,51 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse
 		if s.embedder == nil {
 			return SearchResponse{}, fmt.Errorf("embedder not configured")
 		}
-		vector, err := s.embedder.Embed(ctx, req.Query)
+		vector, err := s.embedText(ctx, req.Query)
 		if err != nil {
 			return SearchResponse{}, err
 		}
 		vectorName := s.vectorNameForText()
+
+		useMMR := req.UseMMR
+		overfetch := req.OverfetchRatio
+		if useMMR && overfetch <= 0 {
+			overfetch = defaultOverfetchRatio
+		}
+		fetchLimit := req.Limit
+		if useMMR && fetchLimit > 0 {
+			fetchLimit = req.Limit * overfetch
+		}
+
 		if len(req.Sources) == 0 {
-			points, scores, err := s.store.Search(ctx, vector, req.Limit, filters, vectorName)
+			points, scores, err := s.store.SearchWithVectors(ctx, vector, fetchLimit, filters, vectorName, useMMR)
 			if err != nil {
 				return SearchResponse{}, err
 			}
-			results := make([]MemoryItem, 0, len(points))
+			items := make([]MemoryItem, 0, len(points))
 			for idx, point := range points {
 				item := payloadToMemoryItem(point.ID, point.Payload)
 				if idx < len(scores) {
 					item.Score = scores[idx]
 				}
-				results = append(results, item)
+				items = append(items, item)
 			}
-			return SearchResponse{Results: results}, nil
+			if useMMR {
+				candidates := make([]mmrCandidate, len(items))
+				for i, item := range items {
+					var vec []float32
+					if i < len(points) {
+						vec = points[i].Vector
+					}
+					candidates[i] = mmrCandidate{item: item, vector: vec}
+				}
+				lambda := req.MMRLambda
+				if lambda <= 0 {
+					lambda = defaultMMRLambda
+				}
+				items = mmrRerank(candidates, lambda, req.Limit)
+			}
+			return SearchResponse{Results: items}, nil
 		}
 		pointsBySource, scoresBySource, err := s.store.SearchBySources(ctx, vector, req.Limit, filters, req.Sources, vectorName)
 		if err != nil {
@@ -420,7 +472,7 @@ func (s *Service) Update(ctx context.Context, req UpdateRequest) (MemoryItem, er
 		if s.embedder == nil {
 			return MemoryItem{}, fmt.Errorf("embedder not configured")
 		}
-		vector, err := s.embedder.Embed(ctx, req.Memory)
+		vector, err := s.embedText(ctx, req.Memory)
 		if err != nil {
 			return MemoryItem{}, err
 		}
@@ -837,7 +889,7 @@ func (s *Service) applyAdd(ctx context.Context, text string, filters map[string]
 		if s.embedder == nil {
 			return MemoryItem{}, fmt.Errorf("embedder not configured")
 		}
-		vector, err := s.embedder.Embed(ctx, text)
+		vector, err := s.embedText(ctx, text)
 		if err != nil {
 			return MemoryItem{}, err
 		}
@@ -947,7 +999,7 @@ func (s *Service) applyUpdate(ctx context.Context, id, text string, filters map[
 		if s.embedder == nil {
 			return MemoryItem{}, fmt.Errorf("embedder not configured")
 		}
-		vector, err := s.embedder.Embed(ctx, text)
+		vector, err := s.embedText(ctx, text)
 		if err != nil {
 			return MemoryItem{}, err
 		}
@@ -1338,4 +1390,154 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// ---------------------------------------------------------------------------
+// MMR reranking
+// ---------------------------------------------------------------------------
+
+const (
+	defaultMMRLambda      = 0.7
+	defaultOverfetchRatio = 3
+)
+
+// mmrCandidate holds a memory item together with its raw dense vector for
+// pairwise cosine similarity computation during MMR reranking.
+type mmrCandidate struct {
+	item   MemoryItem
+	vector []float32
+}
+
+// mmrRerank selects the top-k items from candidates using Maximal Marginal
+// Relevance: MMR = λ × relevance − (1-λ) × max_cosine_to_selected.
+//
+// Items whose stored vector is nil fall back to pure relevance ranking.
+func mmrRerank(candidates []mmrCandidate, lambda float64, topK int) []MemoryItem {
+	if len(candidates) == 0 {
+		return nil
+	}
+	if topK <= 0 || topK > len(candidates) {
+		topK = len(candidates)
+	}
+	if lambda <= 0 {
+		lambda = defaultMMRLambda
+	}
+
+	selected := make([]MemoryItem, 0, topK)
+	remaining := make([]mmrCandidate, len(candidates))
+	copy(remaining, candidates)
+
+	for len(selected) < topK && len(remaining) > 0 {
+		bestIdx := 0
+		bestScore := math.Inf(-1)
+		for i, cand := range remaining {
+			relevance := cand.item.Score
+			maxSim := 0.0
+			for _, sel := range selected {
+				// Find the vector for the already-selected item in candidates.
+				sim := cosineSimilarityByID(candidates, sel.ID, cand.vector)
+				if sim > maxSim {
+					maxSim = sim
+				}
+			}
+			mmrScore := lambda*relevance - (1-lambda)*maxSim
+			if mmrScore > bestScore {
+				bestScore = mmrScore
+				bestIdx = i
+			}
+		}
+		chosen := remaining[bestIdx]
+		chosen.item.Score = bestScore
+		selected = append(selected, chosen.item)
+		remaining = append(remaining[:bestIdx], remaining[bestIdx+1:]...)
+	}
+	return selected
+}
+
+// cosineSimilarityByID finds the vector for the given item ID among all
+// candidates and computes its cosine similarity with queryVec.
+func cosineSimilarityByID(candidates []mmrCandidate, id string, queryVec []float32) float64 {
+	for _, c := range candidates {
+		if c.item.ID == id && len(c.vector) > 0 && len(queryVec) > 0 {
+			return cosine(c.vector, queryVec)
+		}
+	}
+	return 0
+}
+
+func cosine(a, b []float32) float64 {
+	if len(a) != len(b) {
+		return 0
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		fa, fb := float64(a[i]), float64(b[i])
+		dot += fa * fb
+		normA += fa * fa
+		normB += fb * fb
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// ---------------------------------------------------------------------------
+// Temporal decay
+// ---------------------------------------------------------------------------
+
+const defaultDecayHalfLifeDays = 30.0
+
+var evergreenSources = map[string]bool{
+	"identity": true,
+	"soul":     true,
+	"tools":    true,
+}
+
+// applyTemporalDecay multiplies each item's score by an exponential decay
+// factor based on its age. Items with an evergreen source are left unchanged.
+func applyTemporalDecay(items []MemoryItem, halfLifeDays float64) []MemoryItem {
+	if halfLifeDays <= 0 {
+		halfLifeDays = defaultDecayHalfLifeDays
+	}
+	lambda := math.Log(2) / halfLifeDays
+	now := time.Now()
+	out := make([]MemoryItem, len(items))
+	copy(out, items)
+	for i, item := range out {
+		source := ""
+		if item.Metadata != nil {
+			if s, ok := item.Metadata["source"].(string); ok {
+				source = strings.ToLower(strings.TrimSpace(s))
+			}
+		}
+		if evergreenSources[source] {
+			continue
+		}
+		if strings.TrimSpace(item.CreatedAt) == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, item.CreatedAt)
+		if err != nil {
+			// Try common alternative formats.
+			t, err = time.Parse("2006-01-02T15:04:05Z", item.CreatedAt)
+			if err != nil {
+				t, err = time.Parse("2006-01-02 15:04:05", item.CreatedAt)
+				if err != nil {
+					continue
+				}
+			}
+		}
+		ageInDays := now.Sub(t).Hours() / 24
+		if ageInDays < 0 {
+			ageInDays = 0
+		}
+		multiplier := math.Exp(-lambda * ageInDays)
+		out[i].Score *= multiplier
+	}
+	// Re-sort by adjusted score.
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Score > out[j].Score
+	})
+	return out
 }

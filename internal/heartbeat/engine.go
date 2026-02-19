@@ -7,9 +7,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/automation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/boot"
@@ -27,6 +29,8 @@ type Engine struct {
 	jwtSecret string
 	logger    *slog.Logger
 	compactor MemoryCompactor
+	dbPool    *pgxpool.Pool  // optional; enables active-hours column loading
+	timezone  *time.Location // global timezone used for active-hours checks
 
 	mu      sync.Mutex
 	cancels map[string]func() // config ID → event subscription cancel
@@ -452,6 +456,15 @@ func (e *Engine) eventLoop(cfg Config, ch <-chan msgEvent.Event) {
 
 // fire executes the heartbeat by calling the triggerer.
 func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
+	// Skip firing if outside the configured active hours window.
+	if !e.isWithinActiveHours(ctx, cfg) {
+		e.logger.Debug("heartbeat skipped: outside active hours",
+			slog.String("config_id", cfg.ID),
+			slog.String("bot_id", cfg.BotID),
+		)
+		return nil
+	}
+
 	// Memory compaction heartbeats are handled directly, bypassing the conversation flow.
 	if strings.Contains(cfg.Prompt, MemoryCompactPromptMarker) {
 		return e.fireMemoryCompact(ctx, cfg, reason)
@@ -556,6 +569,77 @@ func parseTriggers(raw []byte) []EventTrigger {
 		}
 	}
 	return triggers
+}
+
+// SetPool registers the database pool used to load active-hours configuration.
+// This is optional; without it the active-hours check is skipped.
+func (e *Engine) SetPool(pool *pgxpool.Pool) {
+	e.dbPool = pool
+}
+
+// SetTimezone sets the timezone used for active-hours checks.
+func (e *Engine) SetTimezone(loc *time.Location) {
+	if loc != nil {
+		e.timezone = loc
+	}
+}
+
+// loadActiveHours fetches the active_hours_start, active_hours_end, and active_days
+// columns for the given heartbeat config ID directly from the database.
+// Returns (start=0, end=23, days=nil, false) if unavailable.
+func (e *Engine) loadActiveHours(ctx context.Context, configID string) (start, end int, days []int, ok bool) {
+	if e.dbPool == nil {
+		return 0, 23, nil, false
+	}
+	row := e.dbPool.QueryRow(ctx,
+		`SELECT active_hours_start, active_hours_end, active_days
+		 FROM heartbeat_configs WHERE id=$1`,
+		configID,
+	)
+	var pgStart, pgEnd int16
+	var pgDays []int16
+	if err := row.Scan(&pgStart, &pgEnd, &pgDays); err != nil {
+		return 0, 23, nil, false
+	}
+	days = make([]int, len(pgDays))
+	for i, d := range pgDays {
+		days[i] = int(d)
+	}
+	return int(pgStart), int(pgEnd), days, true
+}
+
+// isWithinActiveHours returns true when the current time (in the engine timezone)
+// falls within the configured active window for a heartbeat config.
+// If active hours have not been configured, it always returns true.
+func (e *Engine) isWithinActiveHours(ctx context.Context, cfg Config) bool {
+	start, end, days, ok := e.loadActiveHours(ctx, cfg.ID)
+	if !ok {
+		return true
+	}
+
+	loc := e.timezone
+	if loc == nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	hour := now.Hour()
+	weekday := int(now.Weekday())
+
+	// Check hour window.
+	if hour < start || hour > end {
+		return false
+	}
+
+	// Empty days list means all days are active.
+	if len(days) == 0 {
+		return true
+	}
+	for _, d := range days {
+		if d == weekday {
+			return true
+		}
+	}
+	return false
 }
 
 func toConfig(row sqlc.HeartbeatConfig) Config {

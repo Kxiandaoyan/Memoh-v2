@@ -30,6 +30,42 @@ export const getSubagentTools = ({
   const botId = identity.botId.trim()
   const base = `/bots/${botId}/subagents`
 
+  // Persist run state to the Go server so runs survive restarts.
+  const persistRunCreate = async (runId: string, name: string, task: string) => {
+    try {
+      await fetch('/subagent-runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          run_id: runId,
+          bot_id: botId,
+          name,
+          task,
+          spawn_depth: spawnDepth + 1,
+          parent_run_id: parentRunId ?? null,
+        }),
+      })
+    } catch {
+      // Non-critical — in-memory registry still tracks the run.
+    }
+  }
+
+  const persistRunUpdate = async (runId: string, status: string, result?: string, error?: string) => {
+    try {
+      await fetch(`/subagent-runs/${runId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          result_summary: result ?? null,
+          error_message: error ?? null,
+        }),
+      })
+    } catch {
+      // Non-critical.
+    }
+  }
+
   // ── CRUD tools (unchanged) ──────────────────────────────────────────
 
   const listSubagents = tool({
@@ -129,6 +165,9 @@ export const getSubagentTools = ({
 
       registry.register(run)
 
+      // Persist run registration to Go server (non-blocking).
+      persistRunCreate(runId, target.name, task)
+
       // Fire-and-forget
       ;(async () => {
         try {
@@ -152,10 +191,15 @@ export const getSubagentTools = ({
             ? lastContent
             : lastContent != null ? JSON.stringify(lastContent) : '(no output)'
           registry.complete(runId, summary)
+          persistRunUpdate(runId, 'completed', summary)
         } catch (err: unknown) {
-          if (abortController.signal.aborted) return
+          if (abortController.signal.aborted) {
+            persistRunUpdate(runId, 'aborted')
+            return
+          }
           const message = err instanceof Error ? err.message : String(err)
           registry.fail(runId, message)
+          persistRunUpdate(runId, 'failed', undefined, message)
         }
       })()
 
@@ -204,6 +248,9 @@ export const getSubagentTools = ({
       }
       if (!target) return { error: 'Provide either run_id or name' }
       const killed = registry.abort(target)
+      if (killed > 0) {
+        persistRunUpdate(target, 'aborted')
+      }
       return {
         success: killed > 0,
         killed_count: killed,

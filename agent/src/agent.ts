@@ -30,6 +30,7 @@ import {
 import type { ContainerFileAttachment } from './types/attachment'
 import { getMCPTools } from './tools/mcp'
 import { getTools } from './tools'
+import { wrapToolsWithLoopDetection, clearLoopDetectionState } from './tools/loop-detection'
 import { buildIdentityHeaders } from './utils/headers'
 import { normalizeBaseUrl } from './utils/url'
 import {
@@ -159,7 +160,7 @@ export const createAgent = (
     return result
   }
 
-  const generateSystemPrompt = async () => {
+  const generateSystemPrompt = async (mode: 'full' | 'minimal' = 'full') => {
     const { identityContent, soulContent, toolsContent } =
       await loadSystemFiles()
     return system({
@@ -176,10 +177,11 @@ export const createAgent = (
       toolsContent,
       taskContent: botTask,
       allowSelfEvolution,
+      mode,
     })
   }
 
-  const getAgentTools = async () => {
+  const getAgentTools = async (sessionId?: string) => {
     const baseUrl = normalizeBaseUrl(auth.baseUrl)
     const botId = identity.botId.trim()
     if (!baseUrl || !botId) {
@@ -203,9 +205,14 @@ export const createAgent = (
       botId,
     })
     const tools = getTools(allowedActions, { fetch, model: modelConfig, identity, auth, enableSkill, mcpConnections, registry })
+    const merged = { ...mcpTools, ...tools } as ToolSet
+    const wrappedTools = sessionId ? wrapToolsWithLoopDetection(merged, sessionId) : merged
     return {
-      tools: { ...mcpTools, ...tools } as ToolSet,
-      close: closeMCP,
+      tools: wrappedTools,
+      close: async () => {
+        await closeMCP()
+        if (sessionId) clearLoopDetectionState(sessionId)
+      },
     }
   }
 
@@ -288,8 +295,9 @@ export const createAgent = (
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
     input.skills.forEach((skill) => enableSkill(skill))
-    const systemPrompt = await generateSystemPrompt()
-    const { tools, close } = await getAgentTools()
+    const systemPrompt = await generateSystemPrompt('full')
+    const sessionId = `ask:${identity.botId}:${Date.now()}`
+    const { tools, close } = await getAgentTools(sessionId)
     const { response, reasoning, text, usage } = await generateText({
       model,
       messages,
@@ -339,7 +347,8 @@ export const createAgent = (
       })
     }
     const messages = [...params.messages, userPrompt]
-    const { tools, close } = await getAgentTools()
+    const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
+    const { tools, close } = await getAgentTools(sessionId)
     const { response, reasoning, text, usage } = await generateText({
       model,
       messages,
@@ -376,11 +385,12 @@ export const createAgent = (
     }
     const messages = [...params.messages, scheduleMessage]
     params.skills.forEach((skill) => enableSkill(skill))
-    const { tools, close } = await getAgentTools()
+    const sessionId = `schedule:${identity.botId}:${params.schedule.id}:${Date.now()}`
+    const { tools, close } = await getAgentTools(sessionId)
     const { response, reasoning, text, usage } = await generateText({
       model,
       messages,
-      system: await generateSystemPrompt(),
+      system: await generateSystemPrompt('minimal'),
       stopWhen: stepCountIs(Infinity),
       onFinish: async () => {
         await close()
@@ -422,7 +432,7 @@ export const createAgent = (
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
     input.skills.forEach((skill) => enableSkill(skill))
-    const systemPrompt = await generateSystemPrompt()
+    const systemPrompt = await generateSystemPrompt('full')
     const attachmentsExtractor = new AttachmentsStreamExtractor()
     const result: {
       messages: ModelMessage[];
@@ -433,7 +443,8 @@ export const createAgent = (
       reasoning: [],
       usage: null,
     }
-    const { tools, close } = await getAgentTools()
+    const sessionId = `stream:${identity.botId}:${Date.now()}`
+    const { tools, close } = await getAgentTools(sessionId)
     let closeCalled = false
     const safeClose = async () => {
       if (!closeCalled) {
