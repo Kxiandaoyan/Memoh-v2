@@ -16,7 +16,7 @@ import {
   MCPConnection,
   Schedule,
 } from './types'
-import { system, schedule, user, subagentSystem } from './prompts'
+import { system, schedule, heartbeat, user, subagentSystem } from './prompts'
 import { AuthFetcher } from './index'
 import { createModel } from './model'
 import { AgentAction } from './types/action'
@@ -398,12 +398,16 @@ export const createAgent = (
     messages: ModelMessage[];
     skills: string[];
   }) => {
+    const isHeartbeat = params.schedule.triggerType === 'heartbeat'
+    const promptText = isHeartbeat
+      ? heartbeat({ schedule: params.schedule, date: new Date(), timezone })
+      : schedule({ schedule: params.schedule, date: new Date(), timezone })
     const scheduleMessage: UserModelMessage = {
       role: 'user',
       content: [
         {
           type: 'text',
-          text: schedule({ schedule: params.schedule, date: new Date(), timezone }),
+          text: promptText,
         },
       ],
     }

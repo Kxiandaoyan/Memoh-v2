@@ -1,5 +1,6 @@
 export * from './system'
 export * from './schedule'
+export * from './heartbeat'
 export * from './user'
 export * from './subagent'
 export * from './utils'

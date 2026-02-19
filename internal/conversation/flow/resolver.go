@@ -340,9 +340,10 @@ type gatewaySchedule struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Pattern     string `json:"pattern"`
+	Pattern     string `json:"pattern,omitempty"`
 	MaxCalls    *int   `json:"maxCalls,omitempty"`
 	Command     string `json:"command"`
+	TriggerType string `json:"triggerType,omitempty"`
 }
 
 // triggerScheduleRequest is the payload for POST /chat/trigger-schedule.
@@ -861,6 +862,13 @@ type triggerParams struct {
 // It resolves the conversation context, posts to the agent gateway, records token usage,
 // and stores the conversation round.
 func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token string) error {
+	if strings.TrimSpace(p.schedule.ID) == "" {
+		return fmt.Errorf("trigger pre-validation: schedule id is required")
+	}
+	if strings.TrimSpace(p.schedule.Command) == "" {
+		return fmt.Errorf("trigger pre-validation: schedule command is required")
+	}
+
 	r.logger.Info("executeTrigger: channel routing",
 		slog.String("bot_id", p.botID),
 		slog.String("usage_type", p.usageType),
@@ -1130,6 +1138,7 @@ func (r *Resolver) TriggerSchedule(ctx context.Context, botID string, payload sc
 			Pattern:     payload.Pattern,
 			MaxCalls:    payload.MaxCalls,
 			Command:     payload.Command,
+			TriggerType: "schedule",
 		},
 		usageType:   "schedule",
 		platform:    payload.Platform,
@@ -1161,7 +1170,9 @@ func (r *Resolver) TriggerHeartbeat(ctx context.Context, botID string, payload h
 			ID:          payload.HeartbeatID,
 			Name:        "heartbeat",
 			Description: fmt.Sprintf("Heartbeat trigger (reason: %s)", payload.Reason),
+			Pattern:     payload.IntervalPattern,
 			Command:     payload.Prompt,
+			TriggerType: "heartbeat",
 		},
 		usageType:            "heartbeat",
 		evolutionLogID:       payload.EvolutionLogID,
@@ -1398,8 +1409,9 @@ func (r *Resolver) postChat(ctx context.Context, payload gatewayRequest, token s
 		return gatewayResponse{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		r.logger.Error("gateway error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("body_prefix", truncate(string(respBody), 300)))
-		return gatewayResponse{}, fmt.Errorf("agent gateway error: %s", strings.TrimSpace(string(respBody)))
+		safe := sanitizeGatewayError(string(respBody))
+		r.logger.Error("gateway error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("error_summary", safe))
+		return gatewayResponse{}, fmt.Errorf("agent gateway error (status %d): %s", resp.StatusCode, safe)
 	}
 
 	var parsed gatewayResponse
@@ -1439,8 +1451,9 @@ func (r *Resolver) postTriggerSchedule(ctx context.Context, payload triggerSched
 		return gatewayResponse{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		r.logger.Error("gateway trigger-schedule error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("body_prefix", truncate(string(respBody), 300)))
-		return gatewayResponse{}, fmt.Errorf("agent gateway error: %s", strings.TrimSpace(string(respBody)))
+		safe := sanitizeGatewayError(string(respBody))
+		r.logger.Error("gateway trigger-schedule error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("error_summary", safe))
+		return gatewayResponse{}, fmt.Errorf("agent gateway error (status %d): %s", resp.StatusCode, safe)
 	}
 
 	var parsed gatewayResponse
@@ -1449,6 +1462,24 @@ func (r *Resolver) postTriggerSchedule(ctx context.Context, payload triggerSched
 		return gatewayResponse{}, fmt.Errorf("failed to parse gateway response: %w", err)
 	}
 	return parsed, nil
+}
+
+// sanitizeGatewayError extracts the user-safe error message from a gateway
+// error response body, stripping sensitive fields like API keys.
+func sanitizeGatewayError(body string) string {
+	var obj struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(body), &obj); err == nil {
+		if obj.Error != "" {
+			return obj.Error
+		}
+		if obj.Message != "" {
+			return obj.Message
+		}
+	}
+	return truncate(body, 200)
 }
 
 func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req conversation.ChatRequest, chunkCh chan<- conversation.StreamChunk, modelID, traceID string) error {
@@ -1477,8 +1508,9 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
-		r.logger.Error("gateway stream error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("body_prefix", truncate(string(errBody), 300)))
-		return fmt.Errorf("agent gateway error: %s", strings.TrimSpace(string(errBody)))
+		safe := sanitizeGatewayError(string(errBody))
+		r.logger.Error("gateway stream error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("error_summary", safe))
+		return fmt.Errorf("agent gateway error (status %d): %s", resp.StatusCode, safe)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)

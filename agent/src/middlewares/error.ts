@@ -23,11 +23,14 @@ export const errorMiddleware = new Elysia({ name: 'error' })
     switch (code) {
       case 'VALIDATION':
         set.status = 400
+        const sanitized = message
+          .replace(/"apiKey"\s*:\s*"[^"]*"/g, '"apiKey":"[REDACTED]"')
+          .replace(/"baseUrl"\s*:\s*"[^"]*"/g, '"baseUrl":"[REDACTED]"')
         return {
           success: false,
           error: 'Validation failed',
           code: 'VALIDATION_ERROR',
-          details: error.message,
+          details: sanitized,
         } satisfies ErrorResponse
 
       case 'NOT_FOUND':

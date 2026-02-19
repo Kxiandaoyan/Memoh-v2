@@ -488,11 +488,16 @@ func (e *Engine) fire(ctx context.Context, cfg Config, reason string) error {
 		return fmt.Errorf("generate token: %w", err)
 	}
 
+	intervalPattern := ""
+	if cfg.IntervalSeconds > 0 {
+		intervalPattern = "@every " + strconv.Itoa(cfg.IntervalSeconds) + "s"
+	}
 	payload := TriggerPayload{
-		HeartbeatID: cfg.ID,
-		Prompt:      cfg.Prompt,
-		Reason:      reason,
-		OwnerUserID: ownerUserID,
+		HeartbeatID:     cfg.ID,
+		Prompt:          cfg.Prompt,
+		Reason:          reason,
+		OwnerUserID:     ownerUserID,
+		IntervalPattern: intervalPattern,
 	}
 
 	// If this is an evolution heartbeat, create an evolution log entry.

@@ -48,9 +48,10 @@ export const ScheduleModel = z.object({
   id: z.string().min(1, 'Schedule ID is required'),
   name: z.string().min(1, 'Schedule name is required'),
   description: z.string().min(1, 'Schedule description is required'),
-  pattern: z.string().min(1, 'Schedule pattern is required'),
+  pattern: z.string().optional().default(''),
   maxCalls: z.number().nullable().optional(),
   command: z.string().min(1, 'Schedule command is required'),
+  triggerType: z.enum(['schedule', 'heartbeat']).optional().default('schedule'),
 })
 
 export const ImageAttachmentModel = z.object({

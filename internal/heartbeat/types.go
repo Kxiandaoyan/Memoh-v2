@@ -70,11 +70,12 @@ type Triggerer interface {
 
 // TriggerPayload describes the parameters passed to the agent when a heartbeat fires.
 type TriggerPayload struct {
-	HeartbeatID    string `json:"heartbeat_id"`
-	Prompt         string `json:"prompt"`
-	Reason         string `json:"reason"` // "periodic", event trigger name, or "manual"
-	OwnerUserID    string `json:"owner_user_id"`
-	EvolutionLogID string `json:"evolution_log_id,omitempty"` // set when this is an evolution heartbeat
+	HeartbeatID     string `json:"heartbeat_id"`
+	Prompt          string `json:"prompt"`
+	Reason          string `json:"reason"` // "periodic", event trigger name, or "manual"
+	OwnerUserID     string `json:"owner_user_id"`
+	EvolutionLogID  string `json:"evolution_log_id,omitempty"`  // set when this is an evolution heartbeat
+	IntervalPattern string `json:"interval_pattern,omitempty"` // e.g. "@every 3600s"
 }
 
 // EvolutionReflectionPrompt is the default prompt used for self-evolution heartbeat.
