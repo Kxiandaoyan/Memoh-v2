@@ -111,13 +111,4 @@ During heartbeats or at the end of a busy day, review recent notes and extract t
 
 Old daily notes can be trimmed once distilled. The goal is a lean, high-signal `NOTES.md` — not an infinite scroll.
 
-## Shared Workspace
-
-`/shared` is a workspace shared across all bots. All bots can read and write freely.
-
-### Rules
-- **Use descriptive filenames** to avoid conflicts: `daily-research.md`, `content-drafts.md`.
-- **Include timestamps.** Always note when you last updated a shared file.
-- **Read before you act.** Check `/shared` for context from other agents before starting work that might overlap.
-
 ---
