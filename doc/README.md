@@ -1,10 +1,27 @@
-# Memoh-v2 使用教程
+# Memoh-v2 文档中心
+
+> 返回 [项目首页](../README.md) · [English](../README_EN.md)
+
+---
+
+## 项目文档
+
+| 文档 | 说明 |
+|------|------|
+| [功能详解](features.md) | 12 项核心功能完整介绍（Bot 管理、记忆、容器、进化、MCP 等） |
+| [概念指南](concepts.md) | 模型类型（Chat vs Embedding）、常见模型速查表、人设体系、Provider 配置 |
+| [安装与升级](installation.md) | 一键安装 / 升级 / 卸载 / 数据库管理 / 数据迁移 / 脚本一览 |
+| [已知局限性](known-limitations.md) | 当前不足的客观评估与变通方案 |
+| [与 OpenClaw 对比](comparison.md) | 42 项全面对比（Memoh-v2 胜 27 项） |
+
+**English versions:**
+[Features](features_en.md) · [Concepts](concepts_en.md) · [Installation](installation_en.md) · [Limitations](known-limitations_en.md) · [Comparison](comparison_en.md)
+
+---
+
+## 使用教程
 
 本目录包含 Memoh-v2 的完整使用教程和技巧，帮助你快速上手并充分利用平台的所有功能。
-
-> 安装部署请参考项目根目录的 README。
-
-## 目录
 
 | 编号 | 文档 | 说明 |
 |------|------|------|
@@ -26,6 +43,8 @@
 | 16 | [管理员设置](16-admin-settings.md) | 个人资料、密码、渠道绑定 |
 | 17 | [使用技巧](17-tips.md) | 实用技巧与最佳实践 |
 | 18 | [OpenViking 上下文数据库](18-openviking.md) | 知识库管理、分层上下文、原生工具 |
+
+---
 
 ## 项目内部文档
 
