@@ -676,6 +676,8 @@
       "vlmModelHint": "OpenViking 使用的视觉/多模态模型，用于图片理解等。不选则自动使用聊天模型。必须选择 OpenAI 兼容接口的模型，Coding Plan 等非标准接口不可用",
       "backgroundModel": "后台模型",
       "backgroundModelHint": "用于后台任务（心跳、定时任务、子代理）的低成本模型。不设置则使用聊天模型。建议选择价格便宜的小模型以节省 Token 开销",
+      "imageModel": "图片模型",
+      "imageModelHint": "用于图片生成的 AI 模型（如 Gemini 2.0 Flash Image）。设置后 generate_image 工具将使用此模型及其 Provider 凭证。不设置则使用对话模型的 Provider",
       "searchProvider": "搜索提供方",
       "searchProviderPlaceholder": "选择搜索提供方",
       "searchProviderHint": "Bot 联网搜索时使用的服务",

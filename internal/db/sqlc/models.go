@@ -31,6 +31,7 @@ type Bot struct {
 	EmbeddingModelID    pgtype.UUID        `json:"embedding_model_id"`
 	VlmModelID          pgtype.UUID        `json:"vlm_model_id"`
 	BackgroundModelID   pgtype.UUID        `json:"background_model_id"`
+	ImageModelID        pgtype.UUID        `json:"image_model_id"`
 	SearchProviderID    pgtype.UUID        `json:"search_provider_id"`
 	Identity            pgtype.Text        `json:"identity"`
 	Soul                pgtype.Text        `json:"soul"`

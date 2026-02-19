@@ -15,6 +15,7 @@ type Settings struct {
 	EmbeddingModelID     string `json:"embedding_model_id"`
 	VlmModelID           string `json:"vlm_model_id"`
 	BackgroundModelID    string `json:"background_model_id"`
+	ImageModelID         string `json:"image_model_id"`
 	SearchProviderID     string `json:"search_provider_id"`
 	MaxContextLoadTime   int    `json:"max_context_load_time"`
 	DMHistoryLimit       int    `json:"dm_history_limit"`
@@ -30,6 +31,7 @@ type UpsertRequest struct {
 	EmbeddingModelID    string `json:"embedding_model_id,omitempty"`
 	VlmModelID          string `json:"vlm_model_id,omitempty"`
 	BackgroundModelID   string `json:"background_model_id,omitempty"`
+	ImageModelID        string `json:"image_model_id,omitempty"`
 	SearchProviderID    string `json:"search_provider_id,omitempty"`
 	MaxContextLoadTime  *int   `json:"max_context_load_time,omitempty"`
 	Language            string `json:"language,omitempty"`

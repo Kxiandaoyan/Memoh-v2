@@ -680,6 +680,8 @@
       "vlmModelHint": "Vision/multimodal model used by OpenViking for image understanding. Defaults to Chat Model if not set. Must use an OpenAI-compatible API; Coding Plan or other non-standard endpoints are not supported",
       "backgroundModel": "Background Model",
       "backgroundModelHint": "Cheaper model used for background tasks (heartbeats, scheduled tasks, sub-agents). Falls back to Chat Model if not set. Recommended: a small, cost-effective model to reduce token costs",
+      "imageModel": "Image Model",
+      "imageModelHint": "Model for image generation (e.g. Gemini 2.0 Flash Image). When set, the generate_image tool uses this model and its provider credentials. Falls back to Chat Model provider if not set",
       "searchProvider": "Search Provider",
       "searchProviderPlaceholder": "Select search provider",
       "searchProviderHint": "Service used when the bot searches the web",

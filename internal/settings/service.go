@@ -113,6 +113,14 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 		}
 		backgroundModelUUID = modelID
 	}
+	imageModelUUID := pgtype.UUID{}
+	if value := strings.TrimSpace(req.ImageModelID); value != "" {
+		modelID, err := s.resolveModelUUID(ctx, value)
+		if err != nil {
+			return Settings{}, err
+		}
+		imageModelUUID = modelID
+	}
 	searchProviderUUID := pgtype.UUID{}
 	if value := strings.TrimSpace(req.SearchProviderID); value != "" {
 		providerID, err := db.ParseUUID(value)
@@ -133,6 +141,7 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 		EmbeddingModelID:    embeddingModelUUID,
 		VlmModelID:          vlmModelUUID,
 		BackgroundModelID:   backgroundModelUUID,
+		ImageModelID:        imageModelUUID,
 		SearchProviderID:    searchProviderUUID,
 	})
 	if err != nil {
@@ -179,6 +188,7 @@ func normalizeBotSettingsReadRow(row sqlc.GetSettingsByBotIDRow) Settings {
 		row.EmbeddingModelID,
 		row.VlmModelID,
 		row.BackgroundModelID,
+		row.ImageModelID,
 		row.SearchProviderID,
 	)
 }
@@ -194,6 +204,7 @@ func normalizeBotSettingsWriteRow(row sqlc.UpsertBotSettingsRow) Settings {
 		row.EmbeddingModelID,
 		row.VlmModelID,
 		row.BackgroundModelID,
+		row.ImageModelID,
 		row.SearchProviderID,
 	)
 }
@@ -208,6 +219,7 @@ func normalizeBotSettingsFields(
 	embeddingModelID pgtype.Text,
 	vlmModelID pgtype.Text,
 	backgroundModelID pgtype.Text,
+	imageModelID pgtype.Text,
 	searchProviderID pgtype.UUID,
 ) Settings {
 	settings := normalizeBotSetting(maxContextLoadTime, language, allowGuest, groupRequireMention)
@@ -216,6 +228,7 @@ func normalizeBotSettingsFields(
 	settings.EmbeddingModelID = strings.TrimSpace(embeddingModelID.String)
 	settings.VlmModelID = strings.TrimSpace(vlmModelID.String)
 	settings.BackgroundModelID = strings.TrimSpace(backgroundModelID.String)
+	settings.ImageModelID = strings.TrimSpace(imageModelID.String)
 	if searchProviderID.Valid {
 		settings.SearchProviderID = uuid.UUID(searchProviderID.Bytes).String()
 	}

@@ -22,6 +22,7 @@ SET max_context_load_time = 1440,
     embedding_model_id = NULL,
     vlm_model_id = NULL,
     background_model_id = NULL,
+    image_model_id = NULL,
     search_provider_id = NULL,
     updated_at = now()
 WHERE id = $1
@@ -44,6 +45,7 @@ SELECT
   embedding_models.model_id AS embedding_model_id,
   vlm_models.model_id AS vlm_model_id,
   background_models.model_id AS background_model_id,
+  image_models.model_id AS image_model_id,
   search_providers.id AS search_provider_id
 FROM bots
 LEFT JOIN models AS chat_models ON chat_models.id = bots.chat_model_id
@@ -51,6 +53,7 @@ LEFT JOIN models AS memory_models ON memory_models.id = bots.memory_model_id
 LEFT JOIN models AS embedding_models ON embedding_models.id = bots.embedding_model_id
 LEFT JOIN models AS vlm_models ON vlm_models.id = bots.vlm_model_id
 LEFT JOIN models AS background_models ON background_models.id = bots.background_model_id
+LEFT JOIN models AS image_models ON image_models.id = bots.image_model_id
 LEFT JOIN search_providers ON search_providers.id = bots.search_provider_id
 WHERE bots.id = $1
 `
@@ -66,6 +69,7 @@ type GetSettingsByBotIDRow struct {
 	EmbeddingModelID    pgtype.Text `json:"embedding_model_id"`
 	VlmModelID          pgtype.Text `json:"vlm_model_id"`
 	BackgroundModelID   pgtype.Text `json:"background_model_id"`
+	ImageModelID        pgtype.Text `json:"image_model_id"`
 	SearchProviderID    pgtype.UUID `json:"search_provider_id"`
 }
 
@@ -83,6 +87,7 @@ func (q *Queries) GetSettingsByBotID(ctx context.Context, id pgtype.UUID) (GetSe
 		&i.EmbeddingModelID,
 		&i.VlmModelID,
 		&i.BackgroundModelID,
+		&i.ImageModelID,
 		&i.SearchProviderID,
 	)
 	return i, err
@@ -100,10 +105,11 @@ WITH updated AS (
       embedding_model_id = COALESCE($7::uuid, bots.embedding_model_id),
       vlm_model_id = COALESCE($8::uuid, bots.vlm_model_id),
       background_model_id = COALESCE($9::uuid, bots.background_model_id),
-      search_provider_id = COALESCE($10::uuid, bots.search_provider_id),
+      image_model_id = COALESCE($10::uuid, bots.image_model_id),
+      search_provider_id = COALESCE($11::uuid, bots.search_provider_id),
       updated_at = now()
-  WHERE bots.id = $11
-  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.group_require_mention, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.background_model_id, bots.search_provider_id
+  WHERE bots.id = $12
+  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.group_require_mention, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.background_model_id, bots.image_model_id, bots.search_provider_id
 )
 SELECT
   updated.id AS bot_id,
@@ -116,6 +122,7 @@ SELECT
   embedding_models.model_id AS embedding_model_id,
   vlm_models.model_id AS vlm_model_id,
   background_models.model_id AS background_model_id,
+  image_models.model_id AS image_model_id,
   search_providers.id AS search_provider_id
 FROM updated
 LEFT JOIN models AS chat_models ON chat_models.id = updated.chat_model_id
@@ -123,6 +130,7 @@ LEFT JOIN models AS memory_models ON memory_models.id = updated.memory_model_id
 LEFT JOIN models AS embedding_models ON embedding_models.id = updated.embedding_model_id
 LEFT JOIN models AS vlm_models ON vlm_models.id = updated.vlm_model_id
 LEFT JOIN models AS background_models ON background_models.id = updated.background_model_id
+LEFT JOIN models AS image_models ON image_models.id = updated.image_model_id
 LEFT JOIN search_providers ON search_providers.id = updated.search_provider_id
 `
 
@@ -136,6 +144,7 @@ type UpsertBotSettingsParams struct {
 	EmbeddingModelID    pgtype.UUID `json:"embedding_model_id"`
 	VlmModelID          pgtype.UUID `json:"vlm_model_id"`
 	BackgroundModelID   pgtype.UUID `json:"background_model_id"`
+	ImageModelID        pgtype.UUID `json:"image_model_id"`
 	SearchProviderID    pgtype.UUID `json:"search_provider_id"`
 	ID                  pgtype.UUID `json:"id"`
 }
@@ -151,6 +160,7 @@ type UpsertBotSettingsRow struct {
 	EmbeddingModelID    pgtype.Text `json:"embedding_model_id"`
 	VlmModelID          pgtype.Text `json:"vlm_model_id"`
 	BackgroundModelID   pgtype.Text `json:"background_model_id"`
+	ImageModelID        pgtype.Text `json:"image_model_id"`
 	SearchProviderID    pgtype.UUID `json:"search_provider_id"`
 }
 
@@ -165,6 +175,7 @@ func (q *Queries) UpsertBotSettings(ctx context.Context, arg UpsertBotSettingsPa
 		arg.EmbeddingModelID,
 		arg.VlmModelID,
 		arg.BackgroundModelID,
+		arg.ImageModelID,
 		arg.SearchProviderID,
 		arg.ID,
 	)
@@ -180,6 +191,7 @@ func (q *Queries) UpsertBotSettings(ctx context.Context, arg UpsertBotSettingsPa
 		&i.EmbeddingModelID,
 		&i.VlmModelID,
 		&i.BackgroundModelID,
+		&i.ImageModelID,
 		&i.SearchProviderID,
 	)
 	return i, err

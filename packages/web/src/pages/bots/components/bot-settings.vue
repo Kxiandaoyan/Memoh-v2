@@ -68,6 +68,18 @@
       </div>
 
       <div class="space-y-2">
+        <Label>{{ $t('bots.settings.imageModel') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.imageModelHint') }}</p>
+        <ModelSelect
+          v-model="form.image_model_id"
+          :models="models"
+          :providers="providers"
+          model-type="chat"
+          :placeholder="$t('bots.settings.imageModel')"
+        />
+      </div>
+
+      <div class="space-y-2">
         <Label>{{ $t('bots.settings.searchProvider') }}</Label>
         <p class="text-xs text-muted-foreground">{{ $t('bots.settings.searchProviderHint') }}</p>
         <SearchProviderSelect
@@ -420,6 +432,7 @@ const form = reactive({
   embedding_model_id: '',
   vlm_model_id: '',
   background_model_id: '',
+  image_model_id: '',
   search_provider_id: '',
   max_context_load_time: 0,
   language: '',
@@ -439,6 +452,7 @@ watch(settings, (val) => {
   form.embedding_model_id = val.embedding_model_id ?? ''
   form.vlm_model_id = val.vlm_model_id ?? ''
   form.background_model_id = (val as any).background_model_id ?? ''
+  form.image_model_id = (val as any).image_model_id ?? ''
   form.search_provider_id = val.search_provider_id ?? ''
   form.max_context_load_time = val.max_context_load_time ?? 0
   form.language = val.language ?? ''
@@ -477,6 +491,7 @@ const hasSettingsChanges = computed(() => {
     || form.embedding_model_id !== (s.embedding_model_id ?? '')
     || form.vlm_model_id !== (s.vlm_model_id ?? '')
     || form.background_model_id !== (s.background_model_id ?? '')
+    || form.image_model_id !== (s.image_model_id ?? '')
     || form.search_provider_id !== (s.search_provider_id ?? '')
     || form.max_context_load_time !== (s.max_context_load_time ?? 0)
     || form.language !== (s.language ?? '')

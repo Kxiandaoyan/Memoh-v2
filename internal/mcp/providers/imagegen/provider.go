@@ -24,7 +24,7 @@ import (
 
 const (
 	toolGenerateImage = "generate_image"
-	defaultModel      = "gemini-2.0-flash-preview-image-generation"
+	fallbackModel     = "gemini-2.0-flash-preview-image-generation"
 	generateTimeout   = 120 * time.Second
 )
 
@@ -118,9 +118,9 @@ func (e *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		return mcpgw.BuildToolErrorResult("channel context is required (platform and target)"), nil
 	}
 
-	apiKey, baseURL, err := e.resolveGeminiAPIKey(ctx, botID)
+	modelName, apiKey, baseURL, err := e.resolveImageModel(ctx, botID)
 	if err != nil {
-		return mcpgw.BuildToolErrorResult(fmt.Sprintf("cannot resolve Gemini API key: %v", err)), nil
+		return mcpgw.BuildToolErrorResult(fmt.Sprintf("cannot resolve image model: %v", err)), nil
 	}
 
 	e.wg.Add(1)
@@ -129,13 +129,14 @@ func (e *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		bgCtx, bgCancel := context.WithTimeout(e.ctx, generateTimeout)
 		defer bgCancel()
 		e.generateAndSend(bgCtx, generateRequest{
-			apiKey:  apiKey,
-			baseURL: baseURL,
-			botID:   botID,
-			prompt:  prompt,
-			size:    size,
-			platform: platform,
-			target:   target,
+			modelName: modelName,
+			apiKey:    apiKey,
+			baseURL:   baseURL,
+			botID:     botID,
+			prompt:    prompt,
+			size:      size,
+			platform:  platform,
+			target:    target,
 		})
 	}()
 
@@ -146,13 +147,14 @@ func (e *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 }
 
 type generateRequest struct {
-	apiKey  string
-	baseURL string
-	botID   string
-	prompt  string
-	size    string
-	platform string
-	target   string
+	modelName string
+	apiKey    string
+	baseURL   string
+	botID     string
+	prompt    string
+	size      string
+	platform  string
+	target    string
 }
 
 func (e *Executor) generateAndSend(ctx context.Context, req generateRequest) {
@@ -218,7 +220,7 @@ func (e *Executor) callGeminiImageAPI(ctx context.Context, req generateRequest) 
 		ResponseModalities: []string{"TEXT", "IMAGE"},
 	}
 
-	result, err := client.Models.GenerateContent(ctx, defaultModel, genai.Text(req.prompt), config)
+	result, err := client.Models.GenerateContent(ctx, req.modelName, genai.Text(req.prompt), config)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini API call failed: %w", err)
 	}
@@ -247,31 +249,52 @@ func (e *Executor) sendErrorNotification(ctx context.Context, req generateReques
 	}
 }
 
-func (e *Executor) resolveGeminiAPIKey(ctx context.Context, botID string) (string, string, error) {
+// resolveImageModel returns (modelName, apiKey, baseURL) for image generation.
+// Priority: bot's image_model_id setting -> chat model (Google provider only) with fallback model name.
+func (e *Executor) resolveImageModel(ctx context.Context, botID string) (string, string, string, error) {
 	botSettings, err := e.settings.GetBot(ctx, botID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get bot settings: %w", err)
+		return "", "", "", fmt.Errorf("failed to get bot settings: %w", err)
 	}
+
+	// If a dedicated image model is configured, use it directly.
+	if imageModelID := strings.TrimSpace(botSettings.ImageModelID); imageModelID != "" {
+		model, err := e.models.GetByModelID(ctx, imageModelID)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get image model %q: %w", imageModelID, err)
+		}
+		provider, err := models.FetchProviderByID(ctx, e.queries, model.LlmProviderID)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get image model provider: %w", err)
+		}
+		apiKey := strings.TrimSpace(provider.ApiKey)
+		if apiKey == "" {
+			return "", "", "", fmt.Errorf("image model provider has no API key configured")
+		}
+		return model.ModelID, apiKey, strings.TrimSpace(provider.BaseUrl), nil
+	}
+
+	// Fallback: use the chat model's provider credentials with the default Gemini model name.
 	chatModelID := strings.TrimSpace(botSettings.ChatModelID)
 	if chatModelID == "" {
-		return "", "", fmt.Errorf("bot has no chat model configured")
+		return "", "", "", fmt.Errorf("bot has no image model or chat model configured")
 	}
 	model, err := e.models.GetByModelID(ctx, chatModelID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get model %q: %w", chatModelID, err)
+		return "", "", "", fmt.Errorf("failed to get model %q: %w", chatModelID, err)
 	}
 	provider, err := models.FetchProviderByID(ctx, e.queries, model.LlmProviderID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get provider: %w", err)
+		return "", "", "", fmt.Errorf("failed to get provider: %w", err)
 	}
 	if provider.ClientType != string(providers.ClientTypeGoogle) {
-		return "", "", fmt.Errorf("image generation requires a Google/Gemini provider (current: %s)", provider.ClientType)
+		return "", "", "", fmt.Errorf("image generation requires a Google/Gemini provider or a dedicated Image Model in bot settings (current chat provider: %s)", provider.ClientType)
 	}
 	apiKey := strings.TrimSpace(provider.ApiKey)
 	if apiKey == "" {
-		return "", "", fmt.Errorf("Gemini provider has no API key configured")
+		return "", "", "", fmt.Errorf("Gemini provider has no API key configured")
 	}
-	return apiKey, strings.TrimSpace(provider.BaseUrl), nil
+	return fallbackModel, apiKey, strings.TrimSpace(provider.BaseUrl), nil
 }
 
 func randomHex(n int) string {
