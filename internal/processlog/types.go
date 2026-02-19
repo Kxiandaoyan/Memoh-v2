@@ -95,3 +95,42 @@ type CreateRequest struct {
 	Data       map[string]any  `json:"data,omitempty"`
 	DurationMs int             `json:"duration_ms,omitempty"`
 }
+
+// TraceExport is a self-contained diagnostic report for a single conversation round.
+type TraceExport struct {
+	Version        string            `json:"version"`
+	ExportedAt     time.Time         `json:"exported_at"`
+	TraceID        string            `json:"trace_id"`
+	BotID          string            `json:"bot_id"`
+	ChatID         string            `json:"chat_id"`
+	Channel        string            `json:"channel,omitempty"`
+	TimeRange      TraceTimeRange    `json:"time_range"`
+	TotalDurationMs int              `json:"total_duration_ms"`
+	Summary        TraceSummary      `json:"summary"`
+	Steps          []TraceExportStep `json:"steps"`
+}
+
+type TraceTimeRange struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
+}
+
+type TraceSummary struct {
+	UserQuery         string         `json:"user_query"`
+	AssistantResponse string         `json:"assistant_response,omitempty"`
+	Model             string         `json:"model,omitempty"`
+	Provider          string         `json:"provider,omitempty"`
+	TokenUsage        map[string]any `json:"token_usage,omitempty"`
+	StepsCount        int            `json:"steps_count"`
+	Errors            []string       `json:"errors,omitempty"`
+	Warnings          []string       `json:"warnings,omitempty"`
+}
+
+type TraceExportStep struct {
+	Step       ProcessLogStep  `json:"step"`
+	Level      ProcessLogLevel `json:"level"`
+	Message    string          `json:"message,omitempty"`
+	Data       map[string]any  `json:"data,omitempty"`
+	DurationMs int             `json:"duration_ms,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+}

@@ -240,10 +240,14 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 
 	platform := schedule.Platform
 	replyTarget := schedule.ReplyTarget
-	if strings.TrimSpace(platform) == "" {
+	if strings.TrimSpace(platform) == "" || strings.TrimSpace(replyTarget) == "" {
 		if p, t := s.resolveDefaultRoute(ctx, schedule.BotID); p != "" {
-			platform = p
-			replyTarget = t
+			if strings.TrimSpace(platform) == "" {
+				platform = p
+			}
+			if strings.TrimSpace(replyTarget) == "" {
+				replyTarget = t
+			}
 			s.logger.Info("runSchedule: resolved fallback channel from routes",
 				slog.String("schedule_id", schedule.ID),
 				slog.String("platform", platform),
@@ -251,6 +255,16 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 			)
 		}
 	}
+
+	s.logger.Info("runSchedule: triggering",
+		slog.String("schedule_id", schedule.ID),
+		slog.String("bot_id", schedule.BotID),
+		slog.String("platform", platform),
+		slog.String("reply_target", replyTarget),
+		slog.String("command", schedule.Command),
+		slog.String("schedule_platform", schedule.Platform),
+		slog.String("schedule_reply_target", schedule.ReplyTarget),
+	)
 
 	err = s.triggerer.TriggerSchedule(ctx, schedule.BotID, TriggerPayload{
 		ID:          schedule.ID,
@@ -264,6 +278,10 @@ func (s *Service) runSchedule(ctx context.Context, schedule Schedule) error {
 		ReplyTarget: replyTarget,
 	}, token)
 	if err != nil {
+		s.logger.Warn("runSchedule: trigger failed",
+			slog.String("schedule_id", schedule.ID),
+			slog.Any("error", err),
+		)
 		return err
 	}
 

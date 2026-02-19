@@ -16,10 +16,13 @@ type CronPool struct {
 	cron   *cron.Cron
 	parser cron.Parser
 	logger *slog.Logger
+	loc    *time.Location
 
-	mu    sync.Mutex
-	jobs  map[string]cron.EntryID
-	locks map[string]*sync.Mutex
+	mu       sync.Mutex
+	jobs     map[string]cron.EntryID
+	locks    map[string]*sync.Mutex
+	patterns map[string]string
+	funcs    map[string]func()
 }
 
 // NewCronPool creates an idle CronPool. Call Start() to begin scheduling.
@@ -35,12 +38,81 @@ func NewCronPool(log *slog.Logger, loc *time.Location) *CronPool {
 	)
 	c := cron.New(cron.WithParser(parser), cron.WithLocation(loc))
 	return &CronPool{
-		cron:   c,
-		parser: parser,
-		logger: log.With(slog.String("component", "cron_pool"), slog.String("timezone", loc.String())),
-		jobs:   make(map[string]cron.EntryID),
-		locks:  make(map[string]*sync.Mutex),
+		cron:     c,
+		parser:   parser,
+		logger:   log.With(slog.String("component", "cron_pool")),
+		loc:      loc,
+		jobs:     make(map[string]cron.EntryID),
+		locks:    make(map[string]*sync.Mutex),
+		patterns: make(map[string]string),
+		funcs:    make(map[string]func()),
 	}
+}
+
+// SetLocation recreates the cron scheduler with a new timezone and
+// re-registers all existing jobs. Existing jobs will fire according
+// to the new timezone from this point forward.
+func (p *CronPool) SetLocation(loc *time.Location) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.loc.String() == loc.String() {
+		return
+	}
+	p.logger.Info("cron pool timezone changing, recreating scheduler",
+		slog.String("old", p.loc.String()),
+		slog.String("new", loc.String()),
+	)
+
+	p.cron.Stop()
+
+	p.loc = loc
+	newCron := cron.New(cron.WithParser(p.parser), cron.WithLocation(loc))
+
+	oldJobs := p.jobs
+	p.jobs = make(map[string]cron.EntryID, len(oldJobs))
+
+	var failed int
+	for id := range oldJobs {
+		pattern, ok1 := p.patterns[id]
+		fn, ok2 := p.funcs[id]
+		if !ok1 || !ok2 {
+			failed++
+			continue
+		}
+		jobMu := p.locks[id]
+		if jobMu == nil {
+			jobMu = &sync.Mutex{}
+			p.locks[id] = jobMu
+		}
+		wrapped := func() {
+			if !jobMu.TryLock() {
+				return
+			}
+			defer jobMu.Unlock()
+			fn()
+		}
+		entryID, err := newCron.AddFunc(pattern, wrapped)
+		if err != nil {
+			p.logger.Warn("failed to re-register job after timezone change",
+				slog.String("job_id", id), slog.Any("error", err))
+			failed++
+			continue
+		}
+		p.jobs[id] = entryID
+	}
+
+	p.cron = newCron
+	p.cron.Start()
+
+	p.logger.Info("cron pool timezone updated",
+		slog.String("timezone", loc.String()),
+		slog.Int("jobs_migrated", len(p.jobs)),
+		slog.Int("jobs_failed", failed),
+	)
 }
 
 // ValidatePattern checks if a cron pattern is syntactically valid.
@@ -83,6 +155,8 @@ func (p *CronPool) Add(id, pattern string, fn func()) error {
 		return err
 	}
 	p.jobs[id] = entryID
+	p.patterns[id] = pattern
+	p.funcs[id] = fn
 	return nil
 }
 
@@ -94,6 +168,8 @@ func (p *CronPool) Remove(id string) {
 		p.cron.Remove(entryID)
 		delete(p.jobs, id)
 		delete(p.locks, id)
+		delete(p.patterns, id)
+		delete(p.funcs, id)
 	}
 }
 

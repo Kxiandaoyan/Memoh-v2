@@ -49,3 +49,38 @@ export async function getProcessLogStats(botId: string): Promise<ProcessLogStats
   })
   return response.json()
 }
+
+export interface TraceExport {
+  version: string
+  exported_at: string
+  trace_id: string
+  bot_id: string
+  chat_id: string
+  channel?: string
+  time_range: { start: string; end: string }
+  total_duration_ms: number
+  summary: {
+    user_query: string
+    assistant_response?: string
+    model?: string
+    provider?: string
+    token_usage?: Record<string, any>
+    steps_count: number
+    errors?: string[]
+    warnings?: string[]
+  }
+  steps: Array<{
+    step: string
+    level: string
+    message?: string
+    data?: Record<string, any>
+    duration_ms?: number
+    created_at: string
+  }>
+}
+
+export async function exportTrace(traceId: string): Promise<TraceExport> {
+  const response = await client.get({ url: `/logs/trace/${traceId}/export`, throwOnError: true }) as any
+  if (response?.json) return response.json()
+  return response?.data ?? response
+}

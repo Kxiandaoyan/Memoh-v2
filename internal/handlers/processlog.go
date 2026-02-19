@@ -35,6 +35,7 @@ func NewProcessLogHandler(botService *bots.Service, service *processlog.Service,
 func (h *ProcessLogHandler) Register(e *echo.Echo) {
 	e.GET("/logs/recent", h.GetRecentLogs)
 	e.GET("/logs/trace/:traceId", h.GetLogsByTrace)
+	e.GET("/logs/trace/:traceId/export", h.ExportTrace)
 	e.GET("/logs/chat/:chatId", h.GetLogsByChat)
 	e.GET("/logs/stats", h.GetStats)
 }
@@ -99,6 +100,23 @@ func (h *ProcessLogHandler) GetLogsByTrace(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, logs)
+}
+
+// ExportTrace returns a structured diagnostic report for a single trace
+func (h *ProcessLogHandler) ExportTrace(c echo.Context) error {
+	ctx := c.Request().Context()
+	traceID := c.Param("traceId")
+
+	export, err := h.service.ExportTrace(ctx, traceID)
+	if err != nil {
+		h.logger.Warn("failed to export trace", slog.Any("error", err))
+		return err
+	}
+	if export == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "trace not found")
+	}
+
+	return c.JSON(http.StatusOK, export)
 }
 
 // GetLogsByChat returns logs for a specific chat

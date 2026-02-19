@@ -50,16 +50,19 @@ func (s *Service) Init(ctx context.Context) error {
 	tzName := ""
 	if err == nil && row.Value != "" {
 		tzName = row.Value
+		s.logger.Info("timezone loaded from database", slog.String("timezone", tzName))
 	} else {
 		tzName = s.cfg.Server.Timezone
+		s.logger.Info("timezone from config (DB empty or not set)", slog.String("timezone", tzName))
 	}
 	if tzName == "" {
 		tzName = "UTC"
+		s.logger.Info("timezone empty, defaulting to UTC")
 	}
 
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		s.logger.Warn("invalid timezone in DB/config, falling back to UTC",
+		s.logger.Warn("invalid timezone, falling back to UTC",
 			slog.String("timezone", tzName), slog.Any("error", err))
 		tzName = "UTC"
 		loc = time.UTC
@@ -70,7 +73,10 @@ func (s *Service) Init(ctx context.Context) error {
 	s.timezoneLoc = loc
 	s.mu.Unlock()
 
-	s.logger.Info("timezone initialized", slog.String("timezone", tzName))
+	s.logger.Info("timezone initialized",
+		slog.String("timezone", tzName),
+		slog.String("location", loc.String()),
+	)
 	return nil
 }
 

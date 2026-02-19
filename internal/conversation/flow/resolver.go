@@ -197,9 +197,9 @@ type gatewayIdentity struct {
 	ContainerID       string `json:"containerId"`
 	ChannelIdentityID string `json:"channelIdentityId"`
 	DisplayName       string `json:"displayName"`
-	CurrentPlatform   string `json:"currentPlatform,omitempty"`
+	CurrentPlatform   string `json:"currentPlatform"`
 	ConversationType  string `json:"conversationType,omitempty"`
-	ReplyTarget       string `json:"replyTarget,omitempty"`
+	ReplyTarget       string `json:"replyTarget"`
 	SessionToken      string `json:"sessionToken,omitempty"`
 }
 
@@ -214,7 +214,7 @@ type gatewayRequest struct {
 	Model              gatewayModelConfig          `json:"model"`
 	ActiveContextTime  int                         `json:"activeContextTime"`
 	Language           string                      `json:"language,omitempty"`
-	Timezone           string                      `json:"timezone,omitempty"`
+	Timezone           string                      `json:"timezone"`
 	Channels           []string                    `json:"channels"`
 	CurrentChannel     string                      `json:"currentChannel"`
 	AllowedActions     []string                    `json:"allowedActions,omitempty"`
@@ -275,9 +275,12 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 		processlog.StepUserMessageReceived, processlog.LevelInfo, "User message received",
 		map[string]any{
-			"query":     truncate(req.Query, 500),
-			"channels":  req.Channels,
-			"timestamp": time.Now().Unix(),
+			"query":             req.Query,
+			"channels":          req.Channels,
+			"platform":          req.CurrentChannel,
+			"identity_id":       req.SourceChannelIdentityID,
+			"conversation_type": req.ConversationType,
+			"timestamp":         time.Now().Unix(),
 		}, 0)
 
 	if strings.TrimSpace(req.Query) == "" {
@@ -369,17 +372,18 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	memSearchStart := time.Now()
 	if memoryMsg := r.loadMemoryContextMessage(ctx, req); memoryMsg != nil {
 		memDur := int(time.Since(memSearchStart).Milliseconds())
+		contentStr := string(memoryMsg.Content)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemorySearched, processlog.LevelInfo, "Memory searched",
 			map[string]any{
-				"query":    truncate(req.Query, 200),
-				"duration": memDur,
+				"query":       truncate(req.Query, 200),
+				"has_results": true,
+				"duration":    memDur,
 			}, memDur)
-		contentStr := string(memoryMsg.Content)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemoryLoaded, processlog.LevelInfo, "Memory loaded",
 			map[string]any{
-				"memory_content": truncate(contentStr, 500),
+				"memory_content": truncate(contentStr, 1000),
 			}, 0)
 		messages = append(messages, *memoryMsg)
 	} else {
@@ -387,8 +391,9 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemorySearched, processlog.LevelInfo, "Memory searched (no results)",
 			map[string]any{
-				"query":    truncate(req.Query, 200),
-				"duration": memDur,
+				"query":       truncate(req.Query, 200),
+				"has_results": false,
+				"duration":    memDur,
 			}, memDur)
 	}
 	if r.ovContextLoader != nil {
@@ -490,6 +495,15 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		}
 	}
 
+	tz := r.timezone
+	if tz == "" {
+		tz = "UTC"
+	}
+	r.logger.Info("resolve: timezone for gateway",
+		slog.String("bot_id", req.BotID),
+		slog.String("timezone", tz),
+	)
+
 	payload := gatewayRequest{
 		Model: gatewayModelConfig{
 			ModelID:    chatModel.ModelID,
@@ -502,7 +516,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		},
 		ActiveContextTime:  maxCtx,
 		Language:            botSettings.Language,
-		Timezone:           r.timezone,
+		Timezone:           tz,
 		Channels:           nonNilStrings(req.Channels),
 		CurrentChannel:     req.CurrentChannel,
 		AllowedActions:     req.AllowedActions,
@@ -528,15 +542,21 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 
 	// Log prompt built
+	systemPromptLen := len(botIdentity) + len(botSoul) + len(botTask)
 	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 		processlog.StepPromptBuilt, processlog.LevelInfo, "Prompt built",
 		map[string]any{
-			"model":         chatModel.ModelID,
-			"message_count": len(messages),
-			"has_identity":  botIdentity != "",
-			"has_soul":      botSoul != "",
-			"has_task":      botTask != "",
-			"skills_count":  len(usableSkills),
+			"model":                chatModel.ModelID,
+			"provider":             provider.ClientType,
+			"message_count":        len(messages),
+			"has_identity":         botIdentity != "",
+			"has_soul":             botSoul != "",
+			"has_task":             botTask != "",
+			"skills_count":         len(usableSkills),
+			"system_prompt_length": systemPromptLen,
+			"context_window":       chatModel.ContextWindow,
+			"timezone":             tz,
+			"language":             botSettings.Language,
 		}, 0)
 
 	return resolvedContext{payload: payload, model: chatModel, provider: provider, traceID: traceID}, nil
@@ -556,9 +576,11 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 		processlog.StepLLMRequestSent, processlog.LevelInfo, "LLM request sent",
 		map[string]any{
 			"model":         rc.model.ModelID,
+			"provider":      rc.provider.ClientType,
 			"message_count": len(rc.payload.Messages),
 		}, 0)
 
+	syncStart := time.Now()
 	resp, err := r.postChat(ctx, rc.payload, req.Token)
 	if err != nil {
 		// Log LLM error
@@ -583,13 +605,17 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 	}
 
 	// Log LLM response received
+	syncDur := int(time.Since(syncStart).Milliseconds())
+	responsePreview := extractAssistantPreview(resp.Messages, 300)
 	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 		processlog.StepLLMResponseReceived, processlog.LevelInfo, "LLM response received",
 		map[string]any{
-			"model":           rc.model.ModelID,
-			"response_length": len(resp.Messages),
-			"usage":           resp.Usage,
-		}, 0)
+			"model":            rc.model.ModelID,
+			"provider":         rc.provider.ClientType,
+			"response_length":  len(resp.Messages),
+			"response_preview": responsePreview,
+			"usage":            resp.Usage,
+		}, syncDur)
 
 	if err := r.storeRoundWithTrace(ctx, req, rc.traceID, resp.Messages, resp.Usage); err != nil {
 		return conversation.ChatResponse{}, err
@@ -600,7 +626,8 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 	r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 		processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
 		map[string]any{
-			"message_count": len(resp.Messages),
+			"message_count":    len(resp.Messages),
+			"response_preview": responsePreview,
 		}, 0)
 
 	return conversation.ChatResponse{
@@ -647,6 +674,7 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		Token:                token,
 		HistoryLimitOverride: p.historyLimitOverride,
 		CurrentChannel:       p.platform,
+		ReplyTarget:          p.replyTarget,
 	}
 	if p.platform != "" {
 		req.Channels = []string{p.platform}
@@ -677,14 +705,49 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		Schedule:       p.schedule,
 	}
 
+	r.logProcessStep(ctx, p.botID, p.botID, rc.traceID, p.ownerUserID, p.platform,
+		processlog.StepLLMRequestSent, processlog.LevelInfo, fmt.Sprintf("Trigger request sent (%s)", p.usageType),
+		map[string]any{
+			"model":         rc.model.ModelID,
+			"provider":      rc.provider.ClientType,
+			"message_count": len(gwPayload.Messages),
+			"schedule_id":   p.schedule.ID,
+			"platform":      p.platform,
+			"reply_target":  p.replyTarget,
+		}, 0)
+
+	triggerStart := time.Now()
 	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
+	triggerDur := int(time.Since(triggerStart).Milliseconds())
 	if err != nil {
 		r.logger.Warn("executeTrigger: postTriggerSchedule failed", slog.String("bot_id", p.botID), slog.Any("error", err))
+		r.logProcessStep(ctx, p.botID, p.botID, rc.traceID, p.ownerUserID, p.platform,
+			processlog.StepLLMResponseReceived, processlog.LevelError, "Trigger request failed: "+err.Error(),
+			map[string]any{"error": err.Error()}, triggerDur)
 		r.completeEvolutionLogOnError(ctx, p.evolutionLogID, err)
 		return err
 	}
+
+	responsePreview := extractAssistantPreview(resp.Messages, 300)
+	r.logProcessStep(ctx, p.botID, p.botID, rc.traceID, p.ownerUserID, p.platform,
+		processlog.StepLLMResponseReceived, processlog.LevelInfo, fmt.Sprintf("Trigger response received (%s)", p.usageType),
+		map[string]any{
+			"model":            rc.model.ModelID,
+			"response_length":  len(resp.Messages),
+			"response_preview": responsePreview,
+			"usage":            resp.Usage,
+		}, triggerDur)
+
 	r.recordTokenUsage(ctx, p.botID, resp.Usage, rc.model.ModelID, p.usageType)
 	r.completeEvolutionLogFromResponse(ctx, p.evolutionLogID, resp)
+
+	r.logProcessStep(ctx, p.botID, p.botID, rc.traceID, p.ownerUserID, p.platform,
+		processlog.StepResponseSent, processlog.LevelInfo, fmt.Sprintf("Trigger round stored (%s)", p.usageType),
+		map[string]any{
+			"message_count":    len(resp.Messages),
+			"response_preview": responsePreview,
+		}, 0)
+
 	if err := r.storeRound(ctx, req, resp.Messages, resp.Usage); err != nil {
 		r.logger.Warn("executeTrigger: storeRound failed", slog.String("bot_id", p.botID), slog.Any("error", err))
 		return err
@@ -866,8 +929,11 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			processlog.StepLLMRequestSent, processlog.LevelInfo, "LLM request sent (stream)",
 			map[string]any{
 				"model":         rc.model.ModelID,
+				"provider":      rc.provider.ClientType,
 				"message_count": len(rc.payload.Messages),
 			}, 0)
+
+		streamStartTime := time.Now()
 
 		// Log stream started
 		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
@@ -928,17 +994,20 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			}
 		}
 
+		streamDurMs := int(time.Since(streamStartTime).Milliseconds())
 		if streamErr != nil {
 			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 				processlog.StepStreamError, processlog.LevelError, "Stream error",
-				map[string]any{"error": streamErr.Error()}, 0)
+				map[string]any{"error": streamErr.Error()}, streamDurMs)
 			errCh <- streamErr
 		} else {
 			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
 				processlog.StepStreamCompleted, processlog.LevelInfo, "Stream completed",
-				nil, 0)
+				map[string]any{
+					"model": rc.model.ModelID,
+				}, streamDurMs)
 			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
-				processlog.StepResponseSent, processlog.LevelInfo, "Response sent",
+				processlog.StepResponseSent, processlog.LevelInfo, "Response sent (stream)",
 				nil, 0)
 		}
 	}()
@@ -1140,7 +1209,7 @@ func (r *Resolver) logToolCallEvent(ctx context.Context, req conversation.ChatRe
 	switch envelope.Type {
 	case "tool_call_start":
 		timers[envelope.ToolCallID] = time.Now()
-		inputStr := truncate(fmt.Sprintf("%v", envelope.Input), 500)
+		inputStr := truncate(fmt.Sprintf("%v", envelope.Input), 2000)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepToolCallStarted, processlog.LevelInfo,
 			fmt.Sprintf("Tool call: %s", envelope.ToolName),
@@ -1156,7 +1225,7 @@ func (r *Resolver) logToolCallEvent(ctx context.Context, req conversation.ChatRe
 			durationMs = int(time.Since(start).Milliseconds())
 			delete(timers, envelope.ToolCallID)
 		}
-		resultStr := truncate(fmt.Sprintf("%v", envelope.Result), 500)
+		resultStr := truncate(fmt.Sprintf("%v", envelope.Result), 2000)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepToolCallCompleted, processlog.LevelInfo,
 			fmt.Sprintf("Tool completed: %s (%dms)", envelope.ToolName, durationMs),
@@ -1497,7 +1566,9 @@ func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.Cha
 	if r.ovSessionExtractor != nil {
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepOpenVikingSession, processlog.LevelInfo, "OpenViking session extraction queued",
-			nil, 0)
+			map[string]any{
+				"message_count": len(memoryRound),
+			}, 0)
 		ovMsgs := make([]conversation.ModelMessage, len(memoryRound))
 		copy(ovMsgs, memoryRound)
 		go r.ovSessionExtractor.ExtractSession(context.WithoutCancel(ctx), req.BotID, req.ChatID, ovMsgs)
@@ -1823,11 +1894,23 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 			slog.Int("results_count", len(result.Results)),
 		)
 	}
+	var extractedPreview string
+	for _, item := range result.Results {
+		if extractedPreview != "" {
+			extractedPreview += " | "
+		}
+		extractedPreview += item.Memory
+		if len(extractedPreview) > 500 {
+			extractedPreview = extractedPreview[:500] + "..."
+			break
+		}
+	}
 	r.logProcessStep(ctx, botID, mtc.chatID, mtc.traceID, mtc.userID, mtc.channel,
 		processlog.StepMemoryExtractCompleted, processlog.LevelInfo, "Memory extraction completed",
 		map[string]any{
 			"messages_processed": len(msgs),
 			"results_count":     len(result.Results),
+			"extracted_preview":  extractedPreview,
 		}, durationMs)
 }
 
@@ -2051,6 +2134,18 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func extractAssistantPreview(messages []conversation.ModelMessage, maxLen int) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			text := messages[i].TextContent()
+			if text != "" {
+				return truncate(text, maxLen)
+			}
+		}
+	}
+	return ""
 }
 
 func parseResolverUUID(id string) (pgtype.UUID, error) {

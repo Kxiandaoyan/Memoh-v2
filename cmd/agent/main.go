@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -525,7 +526,11 @@ func provideGlobalSettings(log *slog.Logger, queries *dbsqlc.Queries, cfg config
 
 func provideCronPool(log *slog.Logger, gs *globalsettings.Service) *automation.CronPool {
 	_, loc := gs.GetTimezone()
-	return automation.NewCronPool(log, loc)
+	pool := automation.NewCronPool(log, loc)
+	gs.OnTimezoneChange(func(_ string, loc *time.Location) {
+		pool.SetLocation(loc)
+	})
+	return pool
 }
 
 func startCronPool(lc fx.Lifecycle, pool *automation.CronPool) {

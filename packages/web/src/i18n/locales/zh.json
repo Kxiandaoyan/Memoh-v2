@@ -811,6 +811,8 @@
     "stepsLabel": "步骤",
     "showData": "展开数据",
     "hideData": "收起数据",
+    "exportTrace": "复制诊断报告到剪贴板",
+    "exportSuccess": "已复制到剪贴板",
     "steps": {
       "user_message_received": "用户消息",
       "history_loaded": "历史加载",

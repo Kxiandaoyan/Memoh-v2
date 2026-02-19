@@ -815,6 +815,8 @@
     "stepsLabel": "steps",
     "showData": "Show data",
     "hideData": "Hide data",
+    "exportTrace": "Copy diagnostic report to clipboard",
+    "exportSuccess": "Copied to clipboard",
     "steps": {
       "user_message_received": "User Message",
       "history_loaded": "History Loaded",

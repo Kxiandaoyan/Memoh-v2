@@ -72,11 +72,11 @@
       <div
         v-for="group in traceGroups"
         :key="group.traceId"
-        class="rounded-xl border bg-card overflow-hidden"
+        class="rounded-xl border bg-card overflow-hidden relative"
       >
         <!-- Trace Header (Level 1) -->
         <button
-          class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
+          class="w-full flex items-center gap-3 pl-4 pr-10 py-3 text-left hover:bg-accent/50 transition-colors"
           @click="toggleTrace(group.traceId)"
         >
           <FontAwesomeIcon
@@ -112,6 +112,18 @@
           <span class="text-xs font-mono shrink-0 w-20 text-right" :class="durationColor(group.totalDuration)">
             {{ group.totalDuration > 0 ? formatDuration(group.totalDuration) : '-' }}
           </span>
+        </button>
+        <!-- Export button -->
+        <button
+          class="absolute right-2 top-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors z-10"
+          :class="{ 'text-green-500': exportedTraceId === group.traceId }"
+          :title="$t('logs.exportTrace')"
+          @click.stop="exportTraceToClipboard(group.traceId)"
+        >
+          <FontAwesomeIcon
+            :icon="['fas', exportedTraceId === group.traceId ? 'check' : 'clipboard']"
+            class="text-xs"
+          />
         </button>
 
         <!-- Step Details (Level 2) -->
@@ -192,6 +204,7 @@ import { useI18n } from 'vue-i18n'
 import { client } from '@memoh/sdk/client'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import type { ProcessLog } from '@/lib/api-logs'
+import { exportTrace } from '@/lib/api-logs'
 
 const { t } = useI18n()
 
@@ -218,6 +231,7 @@ const botList = ref<BotInfo[]>([])
 const selectedBotId = ref('')
 const expandedTraces = ref<Set<string>>(new Set())
 const expandedData = ref<Set<string>>(new Set())
+const exportedTraceId = ref<string | null>(null)
 
 const stepLabels: Record<string, string> = {
   user_message_received: t('logs.steps.user_message_received'),
@@ -350,6 +364,20 @@ function toggleData(logId: string) {
     expandedData.value.add(logId)
   }
   expandedData.value = new Set(expandedData.value)
+}
+
+async function exportTraceToClipboard(traceId: string) {
+  try {
+    const data = await exportTrace(traceId)
+    const json = JSON.stringify(data, null, 2)
+    await navigator.clipboard.writeText(json)
+    exportedTraceId.value = traceId
+    setTimeout(() => {
+      exportedTraceId.value = null
+    }, 2000)
+  } catch (e) {
+    console.error('Failed to export trace', e)
+  }
 }
 
 async function loadBots() {

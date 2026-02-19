@@ -218,6 +218,97 @@ func (s *Service) GetStats(ctx context.Context, botID string) ([]ProcessLogStats
 	return stats, nil
 }
 
+// ExportTrace builds a self-contained diagnostic report for a single trace.
+func (s *Service) ExportTrace(ctx context.Context, traceID string) (*TraceExport, error) {
+	logs, err := s.GetLogsByTrace(ctx, traceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, nil
+	}
+
+	export := &TraceExport{
+		Version:    "1.0",
+		ExportedAt: time.Now().UTC(),
+		TraceID:    traceID,
+		BotID:      logs[0].BotID,
+		ChatID:     logs[0].ChatID,
+		Channel:    logs[0].Channel,
+	}
+
+	var summary TraceSummary
+	var errors, warnings []string
+	var totalDur int
+	start := logs[0].CreatedAt
+	end := logs[0].CreatedAt
+
+	steps := make([]TraceExportStep, 0, len(logs))
+	for _, l := range logs {
+		if l.CreatedAt.Before(start) {
+			start = l.CreatedAt
+		}
+		if l.CreatedAt.After(end) {
+			end = l.CreatedAt
+		}
+		totalDur += l.DurationMs
+
+		switch l.Step {
+		case StepUserMessageReceived:
+			if q, ok := l.Data["query"].(string); ok {
+				summary.UserQuery = q
+			}
+		case StepPromptBuilt:
+			if m, ok := l.Data["model"].(string); ok {
+				summary.Model = m
+			}
+			if p, ok := l.Data["provider"].(string); ok {
+				summary.Provider = p
+			}
+		case StepLLMResponseReceived:
+			if u, ok := l.Data["usage"]; ok {
+				if um, ok := u.(map[string]any); ok {
+					summary.TokenUsage = um
+				}
+			}
+			if rp, ok := l.Data["response_preview"].(string); ok && summary.AssistantResponse == "" {
+				summary.AssistantResponse = rp
+			}
+		case StepResponseSent:
+			if rp, ok := l.Data["response_preview"].(string); ok && summary.AssistantResponse == "" {
+				summary.AssistantResponse = rp
+			}
+		}
+
+		if l.Level == LevelError {
+			errors = append(errors, l.Message)
+		}
+		if l.Level == LevelWarn {
+			warnings = append(warnings, l.Message)
+		}
+
+		steps = append(steps, TraceExportStep{
+			Step:       l.Step,
+			Level:      l.Level,
+			Message:    l.Message,
+			Data:       l.Data,
+			DurationMs: l.DurationMs,
+			CreatedAt:  l.CreatedAt,
+		})
+	}
+
+	summary.StepsCount = len(steps)
+	summary.Errors = errors
+	summary.Warnings = warnings
+
+	export.TimeRange = TraceTimeRange{Start: start, End: end}
+	export.TotalDurationMs = totalDur
+	export.Summary = summary
+	export.Steps = steps
+
+	return export, nil
+}
+
 // CleanupOldLogs removes logs older than the specified duration
 func (s *Service) CleanupOldLogs(ctx context.Context, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan)
