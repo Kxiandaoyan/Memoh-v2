@@ -978,8 +978,11 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 
 	// Fallback delivery: if the LLM never called the send MCP tool, push the
 	// response to the channel directly so the user receives it.
+	// Skip for heartbeat triggers — their maintenance reports are noise for the user.
 	// Priority: (1) LLM text response, (2) last tool-result readable content.
+	isHeartbeat := p.schedule.TriggerType == "heartbeat"
 	if r.triggerSender != nil &&
+		!isHeartbeat &&
 		strings.TrimSpace(p.platform) != "" &&
 		strings.TrimSpace(p.replyTarget) != "" {
 		if !hasSendToolCallInMessages(resp.Messages) {

@@ -26,6 +26,6 @@ Execute the following maintenance task:
 ${params.schedule.command}
 
 ---
-MANDATORY FOLLOW-UP: After completing the task above, you MUST call the \`send\` tool to deliver a brief result summary to the user. Use the current session platform and target (do NOT specify them explicitly unless you have an override). Do NOT skip this step even if the task produced no output — always report what happened.
+IMPORTANT: This is a background maintenance task. Do NOT call the \`send\` tool to message the user — heartbeat results should be silent. Only use \`send\` if the task itself explicitly requires notifying the user about something urgent (e.g. a critical alert). Routine reports like "no pending tasks" must NOT be sent.
   `.trim()
 }
