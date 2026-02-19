@@ -1,6 +1,6 @@
 # Memoh-v2 功能完成度审计报告
 
-> 审计日期：2026-02-18
+> 审计日期：2026-02-19（最后更新）
 >
 > 审计方法：逐项对照 README.md 中声称的功能，搜索并阅读对应源代码，验证实现状态。
 >
@@ -12,21 +12,25 @@
 
 | 大类 | 满分项 | 部分完成项 | 未实现项 | 平均分 |
 |------|--------|-----------|---------|--------|
-| 1. Bot 管理与模板 (9项) | 8 | 1 | 0 | 96 |
+| 1. Bot 管理与模板 (9项) | 9 | 0 | 0 | 100 |
 | 2. 对话与流式推送 (4项) | 4 | 0 | 0 | 100 |
-| 3. 记忆系统 (7项) | 6 | 1 | 0 | 96 |
+| 3. 记忆系统 (7项) | 7 | 0 | 0 | 100 |
 | 4. 容器系统 (8项) | 8 | 0 | 0 | 100 |
 | 5. 频道接入 (6项) | 6 | 0 | 0 | 100 |
 | 6. MCP 工具系统 (4项) | 4 | 0 | 0 | 100 |
 | 7. 心跳与定时任务 (7项) | 7 | 0 | 0 | 100 |
 | 8. 自我进化系统 (5项) | 5 | 0 | 0 | 100 |
-| 9. 子智能体与技能 (5项) | 3 | 2 | 0 | 84 |
+| 9. 子智能体与技能 (5项) | 5 | 0 | 0 | 100 |
 | 10. OpenViking (5项) | 5 | 0 | 0 | 100 |
 | 11. Token 用量与诊断 (4项) | 4 | 0 | 0 | 100 |
 | 12. 跨 Bot 协作 (3项) | 3 | 0 | 0 | 100 |
+| 13. 记忆算法增强 (4项) | 4 | 0 | 0 | 100 |
+| 14. Token 效率优化 (6项) | 6 | 0 | 0 | 100 |
+| 15. 系统可靠性 (5项) | 5 | 0 | 0 | 100 |
+| 16. 工程质量 (4项) | 4 | 0 | 0 | 100 |
 | 安装与运维脚本 (6项) | 6 | 0 | 0 | 100 |
-| 对比表附加声明 (1项) | 0 | 1 | 0 | 70 |
-| **合计 (74项)** | **69** | **5** | **0** | **97.4** |
+| 对比表附加声明 (1项) | 1 | 0 | 0 | 100 |
+| **合计 (93项)** | **93** | **0** | **0** | **100** |
 
 ---
 
@@ -202,27 +206,89 @@
 
 ---
 
-## 需关注的 5 项差距
+---
 
-| 序号 | 功能点 | 当前分数 | 差距说明 | 建议改进 |
-|------|--------|----------|----------|----------|
-| 1 | 记忆空间隔离 | 100 | README 措辞已修正为"按 bot_id 索引隔离"，与实际实现一致 | ✅ 已完成 |
-| 2 | 记忆 UI 批量删除 + 用量统计 | 100 | 批量多选删除 + 用量统计卡片均已实现 | ✅ 已完成 |
-| 3 | 技能上下文智能筛选 | 100 | Jaccard 关键词匹配 + top-N 截断 + 退化保护已实现 | ✅ 已完成 |
-| 4 | ClawHub UI 集成 | 100 | 搜索 + 安装 Tab + 后端代理 API 均已实现 | ✅ 已完成 |
-| 5 | 流式模式 Failover | 100 | 同步+流式双模式 failover 均已实现 | ✅ 已完成 |
+## 13. 记忆算法增强
+
+> 2026-02-19 新增，对标并超越 OpenClaw 的记忆质量
+
+| # | 功能点 | 分数 | 审计结论 | 关键代码 |
+|---|--------|------|----------|----------|
+| 13.1 | MMR 多样性重排序（基于真实 embedding 向量） | 100 | `mmrRerank()` 使用 Qdrant 返回的真实 float32 向量做余弦相似度，迭代选取 `MMR = λ×relevance − (1-λ)×max_cosine_to_selected`，λ=0.7；比 OpenClaw 的文本 Jaccard 精度更高 | `internal/memory/service.go` mmrRerank |
+| 13.2 | 时间衰减评分 | 100 | `applyTemporalDecay()` 使用指数衰减 `exp(-ln2/halfLife * ageInDays)`，默认半衰期 30 天；`identity/soul/tools` 来源的 evergreen 条目跳过衰减 | `internal/memory/service.go` applyTemporalDecay |
+| 13.3 | Embedding Cache（PostgreSQL 持久化） | 100 | `embedding_cache` 表（迁移 0024），SHA-256 hash 为 key，多实例共享；超过 50,000 条按 `updated_at ASC` LRU 淘汰最旧 10% | `internal/memory/embedding_cache.go`, `db/migrations/0024_embedding_cache.up.sql` |
+| 13.4 | 记忆相关性阈值过滤 | 100 | 搜索结果应用最低分数阈值，过滤低质量匹配，避免无关记忆浪费 token 并误导 LLM | `internal/conversation/flow/resolver.go` loadMemoryContextMessage |
+
+---
+
+## 14. Token 效率优化
+
+> 2026-02-19 新增，系统性降低 token 消耗
+
+| # | 功能点 | 分数 | 审计结论 | 关键代码 |
+|---|--------|------|----------|----------|
+| 14.1 | 语言感知 Token 估算 + 安全余量 | 100 | CJK 内容用 1.5 chars/token，Latin 用 3.5 chars/token；统一加 1.2× 安全余量，解决中文内容误差高达 50% 的问题 | `internal/conversation/flow/resolver.go` estimateTokens |
+| 14.2 | 系统提示词计入 Token 预算 | 100 | `pruneMessagesByTokenBudget` 预算改为 `(contextWindow - systemPromptTokens) * 0.6`，防止系统提示过长时实际超出上下文窗口 | `resolver.go` pruneMessagesByTokenBudget |
+| 14.3 | 分块裁剪 + 保护最近 3 轮 | 100 | 消息分 2 个 chunk 裁剪，优先丢弃旧半段；平均消息过大时自适应减小 chunk 比例；始终保留最近 3 轮 assistant 回复 | `resolver.go` pruneMessagesByTokenBudget |
+| 14.4 | 工具结果软裁剪 | 100 | 单条工具结果上限 `contextWindow * 0.3 * 4` 字符，超限时保留头尾各 1500 字符并加截断提示 | `resolver.go` softTrimToolResults |
+| 14.5 | 主动摘要策略 | 100 | 消息数超过 `historyLimit * 0.8` 时预触发摘要生成；支持多级摘要合并（旧摘要 + 新消息）；比被动异步摘要更早降低上下文压力 | `resolver.go` asyncSummarize |
+| 14.6 | 记忆独立 Token 预算 | 100 | 记忆注入分配独立预算 `contextWindow * 0.05`，不与历史消息共享，高记忆使用不再挤占对话历史空间 | `resolver.go` loadMemoryContextMessage |
+
+---
+
+## 15. 系统可靠性
+
+> 2026-02-19 新增，提升生产稳定性
+
+| # | 功能点 | 分数 | 审计结论 | 关键代码 |
+|---|--------|------|----------|----------|
+| 15.1 | 工具调用循环检测（三重检测器） | 100 | `repeatedNoProgress`（同工具+同参数+同结果 ≥8次）、`pingPong`（A→B→A→B ≥6对）、`globalCircuitBreaker`（窗口内相同调用 ≥25次）；装饰器模式包装所有工具，循环终止时抛出 `[LoopDetected]` 错误 | `agent/src/tools/loop-detection.ts` |
+| 15.2 | 子智能体运行记录持久化 | 100 | `subagent_runs` 表（迁移 0025），记录 run_id/bot_id/status/spawn_depth/parent_run_id/result_summary；REST API 完整（POST/PATCH/GET）；`subagent.ts` 在 spawn/complete/fail/abort 时同步更新 | `internal/handlers/subagent_runs.go`, `db/migrations/0025_subagent_runs.up.sql` |
+| 15.3 | 心跳活跃时段配置 | 100 | `active_hours_start/end/days` 三字段（迁移 0026）；`isWithinActiveHours()` 使用 bot 自己的时区判断，支持精选活跃星期（如只工作日）；凌晨不再误触发 | `internal/heartbeat/engine.go`, `db/migrations/0026_heartbeat_active_hours.up.sql` |
+| 15.4 | 定时任务通知可靠性 | 100 | Prompt 强制 `MANDATORY FOLLOW-UP: call send tool`；Go 侧 `extractLastToolResultSummary()` 兜底：LLM 只有工具调用无文字时从工具结果提取摘要发送给用户 | `agent/src/prompts/schedule.ts`, `resolver.go` extractLastToolResultSummary |
+| 15.5 | 群组消息防抖队列 | 100 | `GroupDebouncer` 3 秒等待窗口，窗口内多条消息以 `\n---\n` 合并为一个请求再触发 Agent；DM 直接透传；`dispatchGroupChat` 方法承载完整 pipeline | `internal/message/debounce.go`, `internal/channel/inbound/channel.go` |
+
+---
+
+## 16. 工程质量
+
+> 2026-02-19 新增，提升开发调试体验与输出质量
+
+| # | 功能点 | 分数 | 审计结论 | 关键代码 |
+|---|--------|------|----------|----------|
+| 16.1 | 系统提示词 full/minimal 双模式 | 100 | `SystemMode = 'full' \| 'minimal'`；`minimal` 省略技能详细描述、attachments 格式说明、自我进化说明；`triggerSchedule`/`askAsSubagent` 使用 minimal（节省约 400-600 token），`ask`/`stream` 使用 full | `agent/src/prompts/system.ts`, `agent/src/agent.ts` |
+| 16.2 | Telegram Markdown → HTML 转换 | 100 | `markdownToTelegramHTML()` 完整转换：`**bold**`→`<b>`、`` `code` ``→`<code>`、代码块→`<pre><code>`、链接→`<a>`、文件路径自动包 `<code>` 防 Telegram 误解析；使用 `parse_mode: HTML` 发送 | `internal/channel/adapters/telegram/markdown.go` |
+| 16.3 | 流程日志增强（12 步骤数据丰富） | 100 | `user_message_received` 增加 platform/identity_id；`prompt_built` 增加 provider/timezone/system_prompt_length；`llm_response_received` 增加 response_preview；`stream_completed` 增加 duration_ms；tool 步骤截断上限从 500→2000 字符 | `internal/conversation/flow/resolver.go` |
+| 16.4 | Trace 诊断导出（API + 前端复制按钮） | 100 | `GET /logs/trace/:traceId/export` 返回结构化 JSON 诊断报告（含 summary/steps/token_usage/errors）；前端每个 trace 头部有剪贴板图标，点击即复制，Toast 提示确认 | `internal/processlog/service.go` ExportTrace, `packages/web/src/pages/logs/index.vue` |
+
+---
+
+## 历史差距已全部解决
+
+| 序号 | 功能点 | 解决时间 | 说明 |
+|------|--------|---------|------|
+| 1 | 记忆空间隔离 | 2026-02-18 | README 措辞已修正为"按 bot_id 索引隔离"，与实际实现一致 |
+| 2 | 记忆 UI 批量删除 + 用量统计 | 2026-02-18 | 批量多选删除 + 用量统计卡片均已实现 |
+| 3 | 技能上下文智能筛选 | 2026-02-18 | Jaccard 关键词匹配 + top-N 截断 + 退化保护已实现 |
+| 4 | ClawHub UI 集成 | 2026-02-18 | 搜索 + 安装 Tab + 后端代理 API 均已实现 |
+| 5 | 流式模式 Failover | 2026-02-18 | 同步+流式双模式 failover 均已实现 |
+| 6 | 无工具循环检测 | 2026-02-19 | 三重检测器全部上线 |
+| 7 | 无 Embedding 缓存 | 2026-02-19 | PostgreSQL 持久化缓存实现 |
+| 8 | 记忆无时间衰减 | 2026-02-19 | 指数衰减算法实现 |
+| 9 | 子智能体状态重启丢失 | 2026-02-19 | `subagent_runs` 表持久化 |
+| 10 | 心跳无活跃时段控制 | 2026-02-19 | `active_hours/days` 字段 + 时区感知判断 |
 
 ---
 
 ## 结论
 
-Memoh-v2 **74 项功能审计平均得分 97.4 分**。69 项（93%）完全实现，5 项部分完成，0 项未实现。
+Memoh-v2 **93 项功能审计平均得分 100 分**（2026-02-19 更新）。93 项全部完全实现，0 项部分完成，0 项未实现。
 
 核心亮点：
 - 三层人设 + 自我进化 + 进化日志追踪形成完整闭环
-- 记忆系统（向量 + BM25 + LLM 提取 + 定期压缩）全链路实现
+- 记忆系统（向量 + BM25 + LLM 提取 + MMR 重排序 + 时间衰减 + Embedding 缓存）全链路实现
 - 容器隔离 + MCP 工具 + 快照回滚形成安全沙箱
+- 系统可靠性全面提升：工具循环检测 + 子智能体持久化 + 定时任务通知保障 + 群组防抖
+- Token 效率系统性优化：语言感知估算 + 分块裁剪 + 记忆独立预算 + 主动摘要
 - OpenViking 11 个原生工具 + 自动 Session 提取 + 上下文注入完整集成
 - 安装/升级/卸载脚本链路完整
-
-所有 5 项低分功能已全部升级到 100 分：记忆隔离措辞修正、记忆 UI 批量删除+用量统计、技能上下文智能筛选、ClawHub UI 集成、流式 Failover。项目功能完成度达到 **100%**。
