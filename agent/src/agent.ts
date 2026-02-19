@@ -40,6 +40,28 @@ import {
   stripReasoningFromMessages,
   computeMaxToolResultChars,
 } from './utils/sse'
+import type { SystemMode } from './prompts/system'
+
+const HEAD_RATIO = 0.7
+const TAIL_RATIO = 0.2
+
+const CHAR_BUDGETS: Record<SystemMode, { soul: number; tools: number }> = {
+  full:    { soul: 3000, tools: 3000 },
+  minimal: { soul: 800,  tools: 800  },
+  micro:   { soul: 0,    tools: 0    },
+}
+
+const FILE_SIZE_WARN_THRESHOLD = 8000
+
+function truncateHeadTail(content: string, maxChars: number): string {
+  if (maxChars <= 0 || !content) return ''
+  if (content.length <= maxChars) return content
+  const headChars = Math.floor(maxChars * HEAD_RATIO)
+  const tailChars = Math.floor(maxChars * TAIL_RATIO)
+  const head = content.slice(0, headChars)
+  const tail = content.slice(-tailChars)
+  return `${head}\n\n[...truncated — read the full file with the \`read\` tool for complete content...]\n\n${tail}`
+}
 
 export const createAgent = (
   {
@@ -179,14 +201,22 @@ export const createAgent = (
       toolsContent,
     }
 
+    if (result.soulContent.length > FILE_SIZE_WARN_THRESHOLD) {
+      console.warn(`[${identity.botId}] SOUL.md is ${result.soulContent.length} chars — consider distilling to reduce token consumption`)
+    }
+    if (result.toolsContent.length > FILE_SIZE_WARN_THRESHOLD) {
+      console.warn(`[${identity.botId}] TOOLS.md is ${result.toolsContent.length} chars — consider distilling to reduce token consumption`)
+    }
+
     Object.assign(systemFileCache!, { key: cacheKey, data: result, expiry: Date.now() + SYSTEM_FILE_CACHE_TTL_MS })
 
     return result
   }
 
-  const generateSystemPrompt = async (mode: 'full' | 'minimal' = 'full') => {
+  const generateSystemPrompt = async (mode: SystemMode = 'full') => {
     const { identityContent, soulContent, toolsContent } =
       await loadSystemFiles()
+    const budget = CHAR_BUDGETS[mode]
     return system({
       date: new Date(),
       language,
@@ -197,8 +227,8 @@ export const createAgent = (
       skills,
       enabledSkills,
       identityContent,
-      soulContent,
-      toolsContent,
+      soulContent: truncateHeadTail(soulContent, budget.soul),
+      toolsContent: truncateHeadTail(toolsContent, budget.tools),
       taskContent: botTask,
       allowSelfEvolution,
       mode,
@@ -418,7 +448,7 @@ export const createAgent = (
     const { response, reasoning, text, usage } = await generateText({
       model,
       messages,
-      system: await generateSystemPrompt('minimal'),
+      system: await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal'),
       stopWhen: stepCountIs(Infinity),
       onFinish: async () => {
         await close()

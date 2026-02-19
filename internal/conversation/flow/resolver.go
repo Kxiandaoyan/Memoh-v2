@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -1807,11 +1808,40 @@ func rrfMerge(primary, secondary []memory.MemoryItem, k int) []memory.MemoryItem
 	return result
 }
 
+const trivialQueryMaxRunes = 15
+
+func isTrivialQuery(query string) bool {
+	q := strings.TrimSpace(query)
+	if utf8.RuneCountInString(q) > trivialQueryMaxRunes {
+		return false
+	}
+	lower := strings.ToLower(q)
+	trivials := []string{
+		"hi", "hello", "hey", "yo",
+		"ok", "okay", "k",
+		"yes", "no", "yep", "nope", "yeah", "nah",
+		"thanks", "thank you", "thx", "ty",
+		"bye", "goodbye",
+		"好", "好的", "嗯", "嗯嗯", "哦", "是的", "对",
+		"你好", "谢谢", "再见", "行", "可以",
+		"👍", "👌", "🙏",
+	}
+	for _, t := range trivials {
+		if lower == t {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversation.ChatRequest, contextWindow int, traceID string) *conversation.ModelMessage {
 	if r.memoryService == nil {
 		return nil
 	}
 	if strings.TrimSpace(req.Query) == "" || strings.TrimSpace(req.BotID) == "" || strings.TrimSpace(req.ChatID) == "" {
+		return nil
+	}
+	if isTrivialQuery(req.Query) {
 		return nil
 	}
 
