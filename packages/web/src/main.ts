@@ -78,6 +78,7 @@ import {
   faCube,
   faDollarSign,
   faPaintbrush,
+  faArrowUpRightFromSquare,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   faRectangleList,
@@ -85,7 +86,7 @@ import {
   faComments,
   faComment,
 } from '@fortawesome/free-regular-svg-icons'
-import { faSlack, faBrave } from '@fortawesome/free-brands-svg-icons'
+import { faSlack, faBrave, faGithub } from '@fortawesome/free-brands-svg-icons'
 
 library.add(
   faGear,
@@ -145,6 +146,7 @@ library.add(
   faComment,
   faSlack,
   faBrave,
+  faGithub,
   faListCheck,
   faUserGear,
   faChessKing,
@@ -155,6 +157,7 @@ library.add(
   faCube,
   faDollarSign,
   faPaintbrush,
+  faArrowUpRightFromSquare,
 )
 
 createApp(App)

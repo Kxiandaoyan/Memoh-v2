@@ -9,7 +9,7 @@
             alt="logo"
           >
           <span class="text-xl font-bold text-gray-500 dark:text-gray-400">
-            Memoh
+            Memoh-v2
           </span>
         </div>
       </SidebarHeader>
@@ -49,6 +49,23 @@
 
       <SidebarFooter class="border-t p-2">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              as-child
+              class="justify-start px-4 py-5!"
+              tooltip="GitHub"
+            >
+              <a
+                href="https://github.com/Kxiandaoyan/Memoh-v2"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-2 w-full text-muted-foreground hover:text-foreground"
+              >
+                <FontAwesomeIcon :icon="['fab', 'github']" />
+                <span>GitHub</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               class="justify-start px-2 py-2 cursor-default hover:bg-transparent"

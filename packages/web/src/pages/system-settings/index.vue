@@ -161,6 +161,39 @@
           </div>
         </div>
       </section>
+
+      <!-- About -->
+      <section>
+        <h6 class="mb-2 flex items-center">
+          <FontAwesomeIcon
+            :icon="['fas', 'circle-info']"
+            class="mr-2"
+          />
+          {{ $t('systemSettings.about') }}
+        </h6>
+        <Separator />
+        <div class="mt-4">
+          <a
+            href="https://github.com/Kxiandaoyan/Memoh-v2"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-2.5 px-4 py-3 rounded-lg border hover:bg-accent transition-colors"
+          >
+            <FontAwesomeIcon
+              :icon="['fab', 'github']"
+              class="text-xl"
+            />
+            <div>
+              <div class="text-sm font-medium">Memoh-v2</div>
+              <div class="text-xs text-muted-foreground">github.com/Kxiandaoyan/Memoh-v2</div>
+            </div>
+            <FontAwesomeIcon
+              :icon="['fas', 'arrow-up-right-from-square']"
+              class="text-xs text-muted-foreground ml-2"
+            />
+          </a>
+        </div>
+      </section>
     </div>
   </section>
 </template>

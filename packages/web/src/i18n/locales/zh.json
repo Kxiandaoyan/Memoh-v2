@@ -75,7 +75,8 @@
     "subtitle": "管理系统级别的显示偏好、时区和诊断。",
     "display": "显示偏好",
     "timezoneLabel": "全局时区",
-    "timezoneHint": "影响定时任务和 Bot 的时间显示"
+    "timezoneHint": "影响定时任务和 Bot 的时间显示",
+    "about": "关于"
   },
   "settings": {
     "display": "通用",

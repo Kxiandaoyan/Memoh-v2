@@ -75,7 +75,8 @@
     "subtitle": "Manage system-level display preferences, timezone, and diagnostics.",
     "display": "Display Preferences",
     "timezoneLabel": "Global Timezone",
-    "timezoneHint": "Affects scheduled tasks and bot time display"
+    "timezoneHint": "Affects scheduled tasks and bot time display",
+    "about": "About"
   },
   "settings": {
     "display": "General",
