@@ -1000,6 +1000,7 @@ func (h *ContainerdHandler) SetupBotContainer(ctx context.Context, botID string)
 	if err != nil {
 		return err
 	}
+	h.ensureBotSharedOutputDir(ctx, sharedDir, botID)
 
 	specOpts := []oci.SpecOpts{
 		oci.WithMounts([]specs.Mount{

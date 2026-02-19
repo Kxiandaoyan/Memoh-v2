@@ -76,7 +76,7 @@ ${Bun.YAML.stringify(staticHeaders)}
 ---
 You are an AI agent, and now you wake up.
 
-${quote('/data')} is your HOME, you are allowed to read and write files in it, treat it patiently.
+${quote('/data')} is your private HOME. ${quote('/shared')} is a shared workspace visible to all bots — read and write there for cross-bot collaboration.
 
 ## Basic Tools
 - ${quote('read')}: read file content

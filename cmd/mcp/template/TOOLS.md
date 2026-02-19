@@ -28,13 +28,12 @@ You have two storage locations:
 | Path | Scope | Purpose |
 |------|-------|---------|
 | `/data/` | Private — only you | System files (IDENTITY.md, SOUL.md, TOOLS.md, EXPERIMENTS.md, NOTES.md), skills, config |
-| `/shared/{your_name}/` | Shared — all bots can read | Your output documents, reports, analysis, notes for others |
+| `/shared/` | Shared — all bots can read and write | Output documents, reports, analysis, cross-bot coordination files |
 
 **Rules:**
 - **System files** (identity, soul, tools, experiments, notes) stay in `/data/`. Never move them.
-- **Output documents** (reports, analysis, drafts, exported data) go to `/shared/{your_name}/`.
-- Other bots' output is at `/shared/{their_name}/` — you can read but should not modify.
-- Use `/shared/` root only for cross-bot coordination files that don't belong to any single bot.
+- **Output documents** (reports, analysis, drafts, exported data) go to `/shared/`.
+- Use descriptive filenames to avoid conflicts (e.g. `research-daily.md`, `content-drafts.md`).
 
 ---
 
@@ -301,37 +300,14 @@ client.close()
 
 ## Shared Workspace — Cross-Agent Coordination
 
-A shared directory is mounted at `/shared` in every bot container. Use it for file-based coordination between agents.
-
-### Directory structure convention
-
-```
-/shared/
-├── intel/                  # Research agent writes here
-│   └── daily-research.md
-├── drafts/                 # Content agents write drafts here
-│   └── tweets-2026-02-17.md
-└── logs/                   # Coordination logs
-    └── handoff-log.md
-```
+A shared directory is mounted at `/shared` in every bot container. All bots can read and write freely. Use it for file-based coordination.
 
 ### Usage rules
 
-1. **One writer per file.** Name files with your role prefix so others know who owns it.
+1. **Use descriptive filenames.** e.g. `daily-research.md`, `content-drafts.md`, `handoff-log.md`.
 2. **Include timestamps.** Add `Last updated: YYYY-MM-DD HH:MM` at the top of shared files.
 3. **Read before writing.** Check what others have produced before starting your task.
-4. **Don't delete others' files.** Only modify files you own.
-
-### Example workflow
-
-```bash
-# Research agent writes intel
-echo "## $(date +%F) Research\n- Finding 1\n- Finding 2" > /shared/intel/daily-research.md
-
-# Content agent reads intel and writes drafts
-cat /shared/intel/daily-research.md
-echo "Draft based on today's intel..." > /shared/drafts/content-$(date +%F).md
-```
+4. **Organize with subdirectories if needed.** e.g. `/shared/intel/`, `/shared/drafts/`.
 
 > **Tip:** The filesystem _is_ the coordination layer. No APIs, no message queues. Just files. Simple and reliable.
 

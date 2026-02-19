@@ -113,15 +113,11 @@ Old daily notes can be trimmed once distilled. The goal is a lean, high-signal `
 
 ## Shared Workspace
 
-If a `/shared` directory exists, it's a workspace shared across multiple agents. Use it for cross-agent coordination.
+`/shared` is a workspace shared across all bots. All bots can read and write freely.
 
 ### Rules
-- **One writer, many readers.** If you write a file, own it. Don't overwrite other agents' files.
-- **Name files clearly.** Use your name or role as prefix: `research-daily.md`, `content-drafts.md`.
+- **Use descriptive filenames** to avoid conflicts: `daily-research.md`, `content-drafts.md`.
 - **Include timestamps.** Always note when you last updated a shared file.
 - **Read before you act.** Check `/shared` for context from other agents before starting work that might overlap.
-
-### Pattern
-Agent A writes intel → Agent B reads intel → Agent B writes drafts → Agent C reads drafts. The coordination _is_ the filesystem. Simple, reliable, no API needed.
 
 ---
