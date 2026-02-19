@@ -28,6 +28,7 @@ import {
   AttachmentsStreamExtractor,
 } from './utils/attachments'
 import type { ContainerFileAttachment } from './types/attachment'
+import { withRetry, isRetryableLLMError } from './utils/retry'
 import { getMCPTools } from './tools/mcp'
 import { getTools } from './tools'
 import { wrapToolsWithLoopDetection, clearLoopDetectionState } from './tools/loop-detection'
@@ -353,16 +354,20 @@ export const createAgent = (
     const systemPrompt = await generateSystemPrompt('full')
     const sessionId = `ask:${identity.botId}:${Date.now()}`
     const { tools, close } = await getAgentTools(sessionId)
-    const { response, reasoning, text, usage } = await generateText({
-      model,
-      messages,
-      system: systemPrompt,
-      stopWhen: stepCountIs(Infinity),
-      onFinish: async () => {
-        await close()
-      },
-      tools,
-    })
+    const { response, reasoning, text, usage } = await withRetry(
+      () =>
+        generateText({
+          model,
+          messages,
+          system: systemPrompt,
+          stopWhen: stepCountIs(Infinity),
+          onFinish: async () => {
+            await close()
+          },
+          tools,
+        }),
+      isRetryableLLMError,
+    )
     const { cleanedText, attachments: textAttachments } =
       extractAttachmentsFromText(text)
     const { messages: strippedMessages, attachments: messageAttachments } =
@@ -404,17 +409,21 @@ export const createAgent = (
     const messages = [...params.messages, userPrompt]
     const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
     const { tools, close } = await getAgentTools(sessionId)
-    const { response, reasoning, text, usage } = await generateText({
-      model,
-      messages,
-      system: generateSubagentSystemPrompt(),
-      stopWhen: stepCountIs(Infinity),
-      onFinish: async () => {
-        await close()
-      },
-      tools,
-      abortSignal: params.abortSignal,
-    })
+    const { response, reasoning, text, usage } = await withRetry(
+      () =>
+        generateText({
+          model,
+          messages,
+          system: generateSubagentSystemPrompt(),
+          stopWhen: stepCountIs(Infinity),
+          onFinish: async () => {
+            await close()
+          },
+          tools,
+          abortSignal: params.abortSignal,
+        }),
+      isRetryableLLMError,
+    )
     return {
       messages: stripReasoningFromMessages([userPrompt, ...response.messages]),
       reasoning: reasoning.map((part) => part.text),
@@ -446,16 +455,21 @@ export const createAgent = (
     params.skills.forEach((skill) => enableSkill(skill))
     const sessionId = `schedule:${identity.botId}:${params.schedule.id}:${Date.now()}`
     const { tools, close } = await getAgentTools(sessionId)
-    const { response, reasoning, text, usage } = await generateText({
-      model,
-      messages,
-      system: await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal'),
-      stopWhen: stepCountIs(Infinity),
-      onFinish: async () => {
-        await close()
-      },
-      tools,
-    })
+    const systemPromptText = await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal')
+    const { response, reasoning, text, usage } = await withRetry(
+      () =>
+        generateText({
+          model,
+          messages,
+          system: systemPromptText,
+          stopWhen: stepCountIs(Infinity),
+          onFinish: async () => {
+            await close()
+          },
+          tools,
+        }),
+      isRetryableLLMError,
+    )
     return {
       messages: stripReasoningFromMessages([scheduleMessage, ...response.messages]),
       reasoning: reasoning.map((part) => part.text),

@@ -799,7 +799,12 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 		}, 0)
 
 	syncStart := time.Now()
-	resp, err := r.postChat(ctx, rc.payload, req.Token)
+	var resp gatewayResponse
+	err = withGatewayRetry(ctx, func() error {
+		var callErr error
+		resp, callErr = r.postChat(ctx, rc.payload, req.Token)
+		return callErr
+	})
 	if err != nil {
 		// Log LLM error
 		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
@@ -817,12 +822,32 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 					"fallback_model":   fbCtx.model.ModelID,
 					"fallback_provider": fbCtx.provider.ClientType,
 				}, 0)
-			resp, err = r.postChat(ctx, fbCtx.payload, req.Token)
+			err = withGatewayRetry(ctx, func() error {
+				var callErr error
+				resp, callErr = r.postChat(ctx, fbCtx.payload, req.Token)
+				return callErr
+			})
 			if err == nil {
 				rc = fbCtx
 			}
 		}
 		if err != nil {
+			return conversation.ChatResponse{}, err
+		}
+	}
+
+	// Context overflow recovery: if the LLM rejected the prompt as too long,
+	// re-prune more aggressively (0.4 budget ratio) and retry once.
+	if isContextOverflowError(err) {
+		r.logger.Warn("Chat: context overflow detected, retrying with reduced context",
+			slog.String("bot_id", req.BotID),
+			slog.String("original_error", err.Error()))
+		rc.payload.Messages = repruneWithLowerBudget(rc.payload.Messages, rc.model.ContextWindow, 0.4)
+		resp, err = r.postChat(ctx, rc.payload, req.Token)
+		if err != nil {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+				processlog.StepLLMResponseReceived, processlog.LevelError, "LLM request failed after overflow recovery",
+				map[string]any{"error": err.Error()}, 0)
 			return conversation.ChatResponse{}, err
 		}
 	}
@@ -952,7 +977,12 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		}, 0)
 
 	triggerStart := time.Now()
-	resp, err := r.postTriggerSchedule(ctx, triggerReq, token)
+	var resp gatewayResponse
+	err = withGatewayRetry(ctx, func() error {
+		var callErr error
+		resp, callErr = r.postTriggerSchedule(ctx, triggerReq, token)
+		return callErr
+	})
 	triggerDur := int(time.Since(triggerStart).Milliseconds())
 	if err != nil {
 		r.logger.Warn("executeTrigger: postTriggerSchedule failed", slog.String("bot_id", p.botID), slog.Any("error", err))
@@ -1439,7 +1469,7 @@ func (r *Resolver) postChat(ctx context.Context, payload gatewayRequest, token s
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		safe := sanitizeGatewayError(string(respBody))
 		r.logger.Error("gateway error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("error_summary", safe))
-		return gatewayResponse{}, fmt.Errorf("agent gateway error (status %d): %s", resp.StatusCode, safe)
+		return gatewayResponse{}, &gatewayHTTPError{StatusCode: resp.StatusCode, Message: safe}
 	}
 
 	var parsed gatewayResponse
@@ -1481,7 +1511,7 @@ func (r *Resolver) postTriggerSchedule(ctx context.Context, payload triggerSched
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		safe := sanitizeGatewayError(string(respBody))
 		r.logger.Error("gateway trigger-schedule error", slog.String("url", url), slog.Int("status", resp.StatusCode), slog.String("error_summary", safe))
-		return gatewayResponse{}, fmt.Errorf("agent gateway error (status %d): %s", resp.StatusCode, safe)
+		return gatewayResponse{}, &gatewayHTTPError{StatusCode: resp.StatusCode, Message: safe}
 	}
 
 	var parsed gatewayResponse
@@ -2869,9 +2899,12 @@ func limitHistoryTurns(messages []conversation.ModelMessage, limit int) []conver
 const (
 	toolResultContextShare = 0.3
 	toolResultHardMaxChars = 400000
-	toolResultMinKeepChars = 2000
 	toolResultHeadChars    = 1500
 	toolResultTailChars    = 1500
+	// toolResultMinKeepChars is the floor applied after computing maxChars from the
+	// context window. It must be at least head+tail so we never set a budget lower
+	// than what a single trimmed result already occupies.
+	toolResultMinKeepChars = toolResultHeadChars + toolResultTailChars // 3000
 )
 
 type toolTrimDiag struct {
@@ -2880,11 +2913,55 @@ type toolTrimDiag struct {
 	TrimmedChars  int    `json:"trimmed_chars"`
 }
 
+// estimateCharsPerToken samples up to 500 runes of text to determine the CJK
+// ratio and returns a weighted blend of 1.5 chars/token (CJK) and 3.5
+// chars/token (Latin/other). This corrects the previous hardcoded 3.5 that
+// caused CJK tool results to be over-truncated by up to 2.3x.
+func estimateCharsPerToken(text string) float64 {
+	runes := []rune(text)
+	if len(runes) > 500 {
+		runes = runes[:500]
+	}
+	if len(runes) == 0 {
+		return 3.5
+	}
+	cjk := 0
+	for _, r := range runes {
+		if isCJK(r) {
+			cjk++
+		}
+	}
+	ratio := float64(cjk) / float64(len(runes))
+	return 1.5*ratio + 3.5*(1-ratio)
+}
+
+// sampleAllToolResults concatenates the first 500 chars from every tool-role
+// message so estimateCharsPerToken gets a representative content sample.
+func sampleAllToolResults(messages []conversation.ModelMessage) string {
+	const samplePerMsg = 500
+	var sb strings.Builder
+	for _, msg := range messages {
+		if msg.Role != "tool" {
+			continue
+		}
+		t := msg.TextContent()
+		if len(t) > samplePerMsg {
+			t = t[:samplePerMsg]
+		}
+		sb.WriteString(t)
+		if sb.Len() >= 1500 {
+			break
+		}
+	}
+	return sb.String()
+}
+
 func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int) ([]conversation.ModelMessage, []toolTrimDiag) {
 	if contextWindow <= 0 {
 		contextWindow = 128000
 	}
-	maxChars := int(float64(contextWindow) * toolResultContextShare * 3.5)
+	cpt := estimateCharsPerToken(sampleAllToolResults(messages))
+	maxChars := int(float64(contextWindow) * toolResultContextShare * cpt)
 	if maxChars > toolResultHardMaxChars {
 		maxChars = toolResultHardMaxChars
 	}
@@ -2933,6 +3010,65 @@ type pruneDiag struct {
 	EstimatedTotalAfter  int `json:"estimated_total_after"`
 	ProtectedTail       int `json:"protected_tail"`
 	Pruned              bool `json:"pruned"`
+}
+
+// repruneWithLowerBudget re-runs context pruning with a custom budgetRatio
+// (0.0–1.0) instead of the default 0.6. Used for context overflow recovery
+// where we need a more aggressive cut to satisfy the model's context limit.
+func repruneWithLowerBudget(messages []conversation.ModelMessage, contextWindow int, budgetRatio float64) []conversation.ModelMessage {
+	if contextWindow <= 0 {
+		contextWindow = 128000
+	}
+	if budgetRatio <= 0 || budgetRatio > 1 {
+		budgetRatio = 0.4
+	}
+
+	messages, _ = softTrimToolResults(messages, contextWindow)
+
+	systemTokens := 0
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			raw, err := json.Marshal(msg)
+			if err == nil {
+				systemTokens += estimateStringTokens(string(raw))
+			}
+		}
+	}
+	systemTokens = int(float64(systemTokens) * tokenSafetyMargin)
+	agentGatewaySystemPromptEstimate := 2000
+	totalSystemTokens := systemTokens + agentGatewaySystemPromptEstimate
+	budget := int(float64(contextWindow-totalSystemTokens) * budgetRatio)
+	if budget < 4096 {
+		budget = 4096
+	}
+
+	if estimateTokens(messages) <= budget {
+		return messages
+	}
+
+	protectedTail := 6
+	if protectedTail > len(messages) {
+		protectedTail = len(messages)
+	}
+	splitIdx := len(messages) - protectedTail
+	protected := messages[splitIdx:]
+	droppable := messages[:splitIdx]
+
+	protectedTokens := estimateTokens(protected)
+	if protectedTokens >= budget {
+		for len(protected) > 1 && estimateTokens(protected) > budget {
+			protected = protected[1:]
+		}
+		return repairToolPairing(protected)
+	}
+
+	remainBudget := budget - protectedTokens
+	for len(droppable) > 0 && estimateTokens(droppable) > remainBudget {
+		droppable = droppable[1:]
+	}
+
+	result := append(droppable, protected...)
+	return repairToolPairing(result)
 }
 
 func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWindow int) ([]conversation.ModelMessage, []toolTrimDiag, pruneDiag) {

@@ -13,9 +13,32 @@ const HEAD_CHARS = 1500
 const TAIL_CHARS = 1500
 const MAX_TOOL_RESULT_CHARS = Math.floor(DEFAULT_CONTEXT_WINDOW * TOOL_RESULT_CONTEXT_SHARE * CHARS_PER_TOKEN)
 
-export function computeMaxToolResultChars(contextWindow?: number): number {
+/**
+ * Samples the first 300 characters to estimate average chars-per-token,
+ * blending CJK (~1.5 chars/token) and Latin (~3.5 chars/token) content.
+ */
+function estimateCharsPerToken(text: string): number {
+  const sample = text.slice(0, 300)
+  if (sample.length === 0) return CHARS_PER_TOKEN
+  let cjk = 0
+  for (const ch of sample) {
+    const cp = ch.codePointAt(0) ?? 0
+    // CJK Unified Ideographs + Hangul Syllables
+    if ((cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0xac00 && cp <= 0xd7af)) cjk++
+  }
+  const ratio = cjk / sample.length
+  return 1.5 * ratio + 3.5 * (1 - ratio)
+}
+
+/**
+ * Compute the maximum allowed characters for a single tool result.
+ * Accepts an optional content sample to enable CJK-aware estimation;
+ * falls back to 3.5 chars/token for Latin-dominated content.
+ */
+export function computeMaxToolResultChars(contextWindow?: number, contentSample?: string): number {
   const cw = contextWindow && contextWindow > 0 ? contextWindow : DEFAULT_CONTEXT_WINDOW
-  const maxChars = Math.floor(cw * TOOL_RESULT_CONTEXT_SHARE * CHARS_PER_TOKEN)
+  const cpt = contentSample ? estimateCharsPerToken(contentSample) : CHARS_PER_TOKEN
+  const maxChars = Math.floor(cw * TOOL_RESULT_CONTEXT_SHARE * cpt)
   return Math.max(maxChars, HEAD_CHARS + TAIL_CHARS + 200)
 }
 
