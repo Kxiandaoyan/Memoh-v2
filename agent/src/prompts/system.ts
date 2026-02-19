@@ -94,6 +94,16 @@ You MUST respond in the language specified in the ${quote('language')} header ab
 - Don't run destructive commands without asking
 - When in doubt, ask
 
+## Scheduled Tasks
+
+You can create, list, update, and delete scheduled tasks using these tools:
+- ${quote('create_schedule')}: Create a recurring task with a cron pattern. The ${quote('command')} parameter is a natural language instruction (NOT a shell command) that you will receive as a prompt when the schedule fires. The ${quote('pattern')} is a standard cron expression (minute hour day month weekday).
+- ${quote('list_schedule')}: List all scheduled tasks for the current bot.
+- ${quote('update_schedule')}: Update an existing schedule by ID.
+- ${quote('delete_schedule')}: Delete a schedule by ID.
+
+**Important**: These are tool calls, not shell commands. Call them directly as tools with JSON arguments — do NOT try to run them via ${quote('exec')}.
+
 ## Memory
 
 For memory more previous, please use ${quote('search_memory')} tool.

@@ -2,9 +2,12 @@ package embeddings
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,11 +55,73 @@ type Result struct {
 	Usage      Usage
 }
 
+const (
+	embeddingCacheMaxSize = 1024
+	embeddingCacheTTL     = 24 * time.Hour
+)
+
+type embeddingCacheEntry struct {
+	embedding []float32
+	createdAt time.Time
+}
+
+type embeddingCache struct {
+	mu      sync.RWMutex
+	entries map[string]embeddingCacheEntry
+}
+
+func newEmbeddingCache() *embeddingCache {
+	return &embeddingCache{entries: make(map[string]embeddingCacheEntry)}
+}
+
+func (c *embeddingCache) key(model, text string) string {
+	h := sha256.Sum256([]byte(model + "|" + text))
+	return hex.EncodeToString(h[:])
+}
+
+func (c *embeddingCache) get(model, text string) ([]float32, bool) {
+	k := c.key(model, text)
+	c.mu.RLock()
+	entry, ok := c.entries[k]
+	c.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	if time.Since(entry.createdAt) > embeddingCacheTTL {
+		c.mu.Lock()
+		delete(c.entries, k)
+		c.mu.Unlock()
+		return nil, false
+	}
+	return entry.embedding, true
+}
+
+func (c *embeddingCache) set(model, text string, embedding []float32) {
+	k := c.key(model, text)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= embeddingCacheMaxSize {
+		oldest := ""
+		oldestTime := time.Now()
+		for ek, ev := range c.entries {
+			if ev.createdAt.Before(oldestTime) {
+				oldest = ek
+				oldestTime = ev.createdAt
+			}
+		}
+		if oldest != "" {
+			delete(c.entries, oldest)
+		}
+	}
+	c.entries[k] = embeddingCacheEntry{embedding: embedding, createdAt: time.Now()}
+}
+
 type Resolver struct {
 	modelsService *models.Service
 	queries       *sqlc.Queries
 	timeout       time.Duration
 	logger        *slog.Logger
+	cache         *embeddingCache
 }
 
 func NewResolver(log *slog.Logger, modelsService *models.Service, queries *sqlc.Queries, timeout time.Duration) *Resolver {
@@ -65,6 +130,7 @@ func NewResolver(log *slog.Logger, modelsService *models.Service, queries *sqlc.
 		queries:       queries,
 		timeout:       timeout,
 		logger:        log.With(slog.String("service", "embeddings")),
+		cache:         newEmbeddingCache(),
 	}
 }
 
@@ -127,6 +193,16 @@ func (r *Resolver) Embed(ctx context.Context, req Request) (Result, error) {
 		if req.Provider != ProviderOpenAI {
 			return Result{}, errors.New("provider not implemented")
 		}
+		if cached, ok := r.cache.get(req.Model, req.Input.Text); ok {
+			r.logger.Debug("embedding cache hit", slog.String("model", req.Model))
+			return Result{
+				Type:       req.Type,
+				Provider:   req.Provider,
+				Model:      req.Model,
+				Dimensions: req.Dimensions,
+				Embedding:  cached,
+			}, nil
+		}
 		embedder, err := NewOpenAIEmbedder(r.logger, provider.ApiKey, provider.BaseUrl, req.Model, req.Dimensions, timeout)
 		if err != nil {
 			return Result{}, err
@@ -135,6 +211,7 @@ func (r *Resolver) Embed(ctx context.Context, req Request) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		r.cache.set(req.Model, req.Input.Text, vector)
 		return Result{
 			Type:       req.Type,
 			Provider:   req.Provider,

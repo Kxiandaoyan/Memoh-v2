@@ -744,7 +744,8 @@
       "deleteFailed": "删除定时任务失败",
       "enableSuccess": "定时任务已启用",
       "disableSuccess": "定时任务已禁用",
-      "toggleFailed": "切换状态失败"
+      "toggleFailed": "切换状态失败",
+      "loadPartialFailed": "有 {count} 个 Bot 的定时任务加载失败"
     },
     "memory": {
       "title": "所忆皆在此间",

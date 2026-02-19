@@ -37,6 +37,7 @@ import {
   sanitizeToolChunkMetadata,
   truncateMessagesForTransport,
   stripReasoningFromMessages,
+  computeMaxToolResultChars,
 } from './utils/sse'
 
 export const createAgent = (
@@ -79,6 +80,14 @@ export const createAgent = (
     return enabledSkills.map((skill) => skill.name)
   }
 
+  const systemFileCache: {
+    key: string
+    data: { identityContent: string; soulContent: string; toolsContent: string }
+    expiry: number
+  } | null = { key: '', data: { identityContent: '', soulContent: '', toolsContent: '' }, expiry: 0 }
+
+  const SYSTEM_FILE_CACHE_TTL_MS = 60_000
+
   const loadSystemFiles = async () => {
     if (!auth?.bearer || !identity.botId) {
       return {
@@ -87,6 +96,12 @@ export const createAgent = (
         toolsContent: '',
       }
     }
+
+    const cacheKey = `${identity.botId}:${botIdentity}:${botSoul}`
+    if (systemFileCache && systemFileCache.key === cacheKey && Date.now() < systemFileCache.expiry) {
+      return systemFileCache.data
+    }
+
     const readViaMCP = async (path: string): Promise<string> => {
       const url = `${normalizeBaseUrl(auth.baseUrl)}/bots/${identity.botId}/tools`
       const headers: Record<string, string> = {
@@ -122,10 +137,9 @@ export const createAgent = (
       return ''
     }
 
-    // Use DB values when available, fall back to container MD files via MCP.
     const needIdentity = !botIdentity
     const needSoul = !botSoul
-    const needTools = true // TOOLS.md is always read from container
+    const needTools = true
 
     const mcpReads: Promise<string>[] = [
       needIdentity ? readViaMCP('IDENTITY.md') : Promise.resolve(''),
@@ -134,11 +148,15 @@ export const createAgent = (
     ]
     const [mcpIdentity, mcpSoul, toolsContent] = await Promise.all(mcpReads)
 
-    return {
+    const result = {
       identityContent: botIdentity || mcpIdentity,
       soulContent: botSoul || mcpSoul,
       toolsContent,
     }
+
+    Object.assign(systemFileCache!, { key: cacheKey, data: result, expiry: Date.now() + SYSTEM_FILE_CACHE_TTL_MS })
+
+    return result
   }
 
   const generateSystemPrompt = async () => {

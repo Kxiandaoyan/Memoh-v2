@@ -126,6 +126,12 @@ finally:
 		WorkDir: "/data",
 	})
 	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no running task found") || strings.Contains(errMsg, "not found") {
+			s.logger.Info("OV session extraction skipped: container not running",
+				slog.String("bot_id", botID))
+			return "", nil
+		}
 		s.logger.Warn("OV session extraction exec failed",
 			slog.String("bot_id", botID),
 			slog.Any("error", err))

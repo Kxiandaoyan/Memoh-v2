@@ -748,7 +748,8 @@
       "deleteFailed": "Failed to delete schedule",
       "enableSuccess": "Schedule enabled",
       "disableSuccess": "Schedule disabled",
-      "toggleFailed": "Failed to toggle schedule"
+      "toggleFailed": "Failed to toggle schedule",
+      "loadPartialFailed": "Failed to load schedules for {count} bot(s)"
     },
     "memory": {
       "title": "Here lie the memories.",

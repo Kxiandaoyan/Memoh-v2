@@ -6,10 +6,26 @@
  * These helpers truncate oversized fields before yielding SSE events.
  */
 
-const MAX_TOOL_RESULT_CHARS = 50_000 // ~50 KB per tool result
+const DEFAULT_CONTEXT_WINDOW = 128_000
+const TOOL_RESULT_CONTEXT_SHARE = 0.3
+const CHARS_PER_TOKEN = 3.5
+const HEAD_CHARS = 1500
+const TAIL_CHARS = 1500
+const MAX_TOOL_RESULT_CHARS = Math.floor(DEFAULT_CONTEXT_WINDOW * TOOL_RESULT_CONTEXT_SHARE * CHARS_PER_TOKEN)
+
+export function computeMaxToolResultChars(contextWindow?: number): number {
+  const cw = contextWindow && contextWindow > 0 ? contextWindow : DEFAULT_CONTEXT_WINDOW
+  const maxChars = Math.floor(cw * TOOL_RESULT_CONTEXT_SHARE * CHARS_PER_TOKEN)
+  return Math.max(maxChars, HEAD_CHARS + TAIL_CHARS + 200)
+}
 
 function truncateString(s: string, max: number): string {
   if (s.length <= max) return s
+  if (max >= HEAD_CHARS + TAIL_CHARS + 100) {
+    const head = s.slice(0, HEAD_CHARS)
+    const tail = s.slice(-TAIL_CHARS)
+    return head + `\n\n[... content trimmed, original ${s.length} chars ...]\n\n` + tail
+  }
   return s.slice(0, max) + `\n...[truncated: ${s.length} total chars]`
 }
 

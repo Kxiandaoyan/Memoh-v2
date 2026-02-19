@@ -121,6 +121,12 @@ else:
 		WorkDir: "/data",
 	})
 	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no running task found") || strings.Contains(errMsg, "not found") {
+			c.logger.Debug("openviking.LoadContext: container not running, skipping",
+				slog.String("bot_id", botID))
+			return ""
+		}
 		c.logger.Warn("openviking.LoadContext: exec failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return ""
 	}

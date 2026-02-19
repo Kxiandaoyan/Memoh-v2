@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -138,20 +139,30 @@ func (h *ContainerdHandler) toolGatewayMiddleware(session mcpgw.ToolSessionConte
 				return &sdkmcp.ListToolsResult{
 					Tools: convertGatewayToolsToSDK(tools),
 				}, nil
-			case "tools/call":
-				callReq, ok := req.(*sdkmcp.ServerRequest[*sdkmcp.CallToolParamsRaw])
-				if !ok || callReq == nil || callReq.Params == nil {
-					return nil, fmt.Errorf("tools/call params is required")
-				}
-				payload, err := buildToolCallPayloadFromRaw(callReq.Params)
-				if err != nil {
-					return nil, err
-				}
-				result, err := h.toolGateway.CallTool(ctx, session, payload)
-				if err != nil {
-					return nil, err
-				}
-				return convertGatewayCallResultToSDK(result)
+		case "tools/call":
+			callReq, ok := req.(*sdkmcp.ServerRequest[*sdkmcp.CallToolParamsRaw])
+			if !ok || callReq == nil || callReq.Params == nil {
+				return nil, fmt.Errorf("tools/call params is required")
+			}
+			payload, err := buildToolCallPayloadFromRaw(callReq.Params)
+			if err != nil {
+				h.logger.Warn("tools/call payload parse failed",
+					slog.String("bot_id", session.BotID),
+					slog.Any("error", err))
+				return nil, err
+			}
+			h.logger.Info("tools/call",
+				slog.String("bot_id", session.BotID),
+				slog.String("tool", payload.Name))
+			result, err := h.toolGateway.CallTool(ctx, session, payload)
+			if err != nil {
+				h.logger.Warn("tools/call gateway error",
+					slog.String("bot_id", session.BotID),
+					slog.String("tool", payload.Name),
+					slog.Any("error", err))
+				return nil, err
+			}
+			return convertGatewayCallResultToSDK(result)
 			default:
 				return next(ctx, method, req)
 			}

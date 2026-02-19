@@ -47,63 +47,99 @@ func (p *Executor) ListTools(ctx context.Context, session mcpgw.ToolSessionConte
 	return []mcpgw.ToolDescriptor{
 		{
 			Name:        toolScheduleList,
-			Description: "List schedules for current bot",
+			Description: "List all scheduled tasks for the current bot. Returns an array of schedule objects.",
 			InputSchema: emptyObjectSchema(),
 		},
 		{
 			Name:        toolScheduleGet,
-			Description: "Get a schedule by id",
+			Description: "Get details of a specific scheduled task by its ID.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id": map[string]any{"type": "string", "description": "Schedule ID"},
+					"id": map[string]any{"type": "string", "description": "The UUID of the schedule to retrieve"},
 				},
 				"required": []string{"id"},
 			},
 		},
 		{
 			Name:        toolScheduleCreate,
-			Description: "Create a new schedule",
+			Description: "Create a new scheduled task. The task will fire at the specified cron pattern and execute the command as a bot prompt. Returns the created schedule with its ID.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":        map[string]any{"type": "string"},
-					"description": map[string]any{"type": "string"},
-					"pattern":     map[string]any{"type": "string"},
-					"max_calls": map[string]any{
-						"type":        []string{"integer", "null"},
-						"description": "Optional max calls, null means unlimited",
+					"name": map[string]any{
+						"type":        "string",
+						"description": "A short unique name for the schedule (e.g. 'daily_report', 'water_reminder')",
 					},
-					"enabled": map[string]any{"type": "boolean"},
-					"command": map[string]any{"type": "string"},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "Human-readable description of what this schedule does",
+					},
+					"pattern": map[string]any{
+						"type":        "string",
+						"description": "Cron expression: 'minute hour day-of-month month day-of-week' (e.g. '30 9 * * *' for daily at 9:30, '0 */2 * * *' for every 2 hours). Supports optional seconds prefix.",
+					},
+					"command": map[string]any{
+						"type":        "string",
+						"description": "The prompt/instruction text that will be sent to the bot when the schedule fires. This is NOT a shell command — it's a natural language instruction (e.g. 'Send a water reminder to the user').",
+					},
+					"max_calls": map[string]any{
+						"type":        "integer",
+						"description": "Maximum number of times this schedule will fire. Omit or set to null for unlimited.",
+					},
+					"enabled": map[string]any{
+						"type":        "boolean",
+						"description": "Whether the schedule is enabled. Defaults to true if omitted.",
+					},
 				},
 				"required": []string{"name", "description", "pattern", "command"},
 			},
 		},
 		{
 			Name:        toolScheduleUpdate,
-			Description: "Update an existing schedule",
+			Description: "Update an existing scheduled task. Only provided fields will be changed.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id":          map[string]any{"type": "string"},
-					"name":        map[string]any{"type": "string"},
-					"description": map[string]any{"type": "string"},
-					"pattern":     map[string]any{"type": "string"},
-					"max_calls":   map[string]any{"type": []string{"integer", "null"}},
-					"enabled":     map[string]any{"type": "boolean"},
-					"command":     map[string]any{"type": "string"},
+					"id": map[string]any{
+						"type":        "string",
+						"description": "The UUID of the schedule to update",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "New name for the schedule",
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "New description",
+					},
+					"pattern": map[string]any{
+						"type":        "string",
+						"description": "New cron expression",
+					},
+					"max_calls": map[string]any{
+						"type":        "integer",
+						"description": "New max calls limit, or null for unlimited",
+					},
+					"enabled": map[string]any{
+						"type":        "boolean",
+						"description": "Enable or disable the schedule",
+					},
+					"command": map[string]any{
+						"type":        "string",
+						"description": "New prompt/instruction text",
+					},
 				},
 				"required": []string{"id"},
 			},
 		},
 		{
 			Name:        toolScheduleDelete,
-			Description: "Delete a schedule by id",
+			Description: "Delete a scheduled task permanently by its ID.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id": map[string]any{"type": "string", "description": "Schedule ID"},
+					"id": map[string]any{"type": "string", "description": "The UUID of the schedule to delete"},
 				},
 				"required": []string{"id"},
 			},
@@ -124,8 +160,10 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 	case toolScheduleList:
 		items, err := p.service.List(ctx, botID)
 		if err != nil {
+			p.logger.Warn("schedule list failed", slog.String("bot_id", botID), slog.Any("error", err))
 			return mcpgw.BuildToolErrorResult(err.Error()), nil
 		}
+		p.logger.Info("schedule list", slog.String("bot_id", botID), slog.Int("count", len(items)))
 		return mcpgw.BuildToolSuccessResult(map[string]any{
 			"items": items,
 		}), nil
@@ -147,7 +185,22 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		description := mcpgw.StringArg(arguments, "description")
 		pattern := mcpgw.StringArg(arguments, "pattern")
 		command := mcpgw.StringArg(arguments, "command")
+		p.logger.Info("schedule create attempt",
+			slog.String("bot_id", botID),
+			slog.String("name", name),
+			slog.String("pattern", pattern),
+			slog.String("command", command),
+			slog.String("platform", session.CurrentPlatform),
+			slog.String("reply_target", session.ReplyTarget),
+		)
 		if name == "" || description == "" || pattern == "" || command == "" {
+			p.logger.Warn("schedule create missing required fields",
+				slog.String("bot_id", botID),
+				slog.Bool("has_name", name != ""),
+				slog.Bool("has_description", description != ""),
+				slog.Bool("has_pattern", pattern != ""),
+				slog.Bool("has_command", command != ""),
+			)
 			return mcpgw.BuildToolErrorResult("name, description, pattern, command are required"), nil
 		}
 
@@ -161,6 +214,7 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		}
 		maxCalls, err := parseNullableIntArg(arguments, "max_calls")
 		if err != nil {
+			p.logger.Warn("schedule create bad max_calls", slog.String("bot_id", botID), slog.Any("error", err))
 			return mcpgw.BuildToolErrorResult(err.Error()), nil
 		}
 		req.MaxCalls = maxCalls
@@ -171,8 +225,20 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		}
 		item, err := p.service.Create(ctx, botID, req)
 		if err != nil {
+			p.logger.Error("schedule create failed",
+				slog.String("bot_id", botID),
+				slog.String("name", name),
+				slog.String("pattern", pattern),
+				slog.Any("error", err),
+			)
 			return mcpgw.BuildToolErrorResult(err.Error()), nil
 		}
+		p.logger.Info("schedule created successfully",
+			slog.String("bot_id", botID),
+			slog.String("schedule_id", item.ID),
+			slog.String("name", item.Name),
+			slog.String("pattern", item.Pattern),
+		)
 		return mcpgw.BuildToolSuccessResult(item), nil
 	case toolScheduleUpdate:
 		id := mcpgw.StringArg(arguments, "id")

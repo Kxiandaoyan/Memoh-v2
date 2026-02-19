@@ -295,7 +295,11 @@ func provideEmbeddingSetup(log *slog.Logger, modelsService *models.Service) (emb
 }
 
 func provideTextEmbedderForMemory(resolver *embeddings.Resolver, setup embeddingSetup, log *slog.Logger) embeddings.Embedder {
-	return buildTextEmbedder(resolver, setup.TextModel, setup.HasEmbeddingModels, log)
+	base := buildTextEmbedder(resolver, setup.TextModel, setup.HasEmbeddingModels, log)
+	if base == nil {
+		return nil
+	}
+	return embeddings.NewCachedEmbedder(base, setup.TextModel.ModelID, 24*time.Hour, 10000)
 }
 
 func provideQdrantStore(log *slog.Logger, cfg config.Config, setup embeddingSetup) (*memory.QdrantStore, error) {

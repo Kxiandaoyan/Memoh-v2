@@ -212,10 +212,17 @@ async function loadData() {
       }),
     )
 
+    let failedCount = 0
     for (const result of results) {
       if (result.status === 'fulfilled') {
         groups.push(result.value)
+      } else {
+        failedCount++
+        console.error('[schedules] failed to load schedules for bot:', result.reason)
       }
+    }
+    if (failedCount > 0) {
+      toast.error(t('bots.schedules.loadPartialFailed', { count: failedCount }))
     }
 
     allGroups.value = groups

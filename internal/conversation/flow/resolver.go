@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -34,8 +35,87 @@ const (
 	memoryContextLimitPerScope = 4
 	memoryContextMaxItems      = 8
 	memoryContextItemMaxChars  = 220
+	memoryMinScoreThreshold    = 0.1
+	memoryDecayHalfLifeDays    = 30.0
 	sharedMemoryNamespace      = "bot"
 )
+
+func applyTemporalDecay(items []memoryContextItem) {
+	now := time.Now()
+	ln2 := math.Ln2
+	for i := range items {
+		updatedStr := items[i].Item.UpdatedAt
+		if updatedStr == "" {
+			updatedStr = items[i].Item.CreatedAt
+		}
+		if updatedStr == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, updatedStr)
+		if err != nil {
+			t, err = time.Parse("2006-01-02T15:04:05", updatedStr)
+			if err != nil {
+				continue
+			}
+		}
+		ageDays := now.Sub(t).Hours() / 24.0
+		if ageDays < 0 {
+			ageDays = 0
+		}
+		decay := math.Exp(-ln2 / memoryDecayHalfLifeDays * ageDays)
+		items[i].Item.Score *= decay
+	}
+}
+
+func textJaccardSimilarity(a, b string) float64 {
+	setA := map[string]struct{}{}
+	setB := map[string]struct{}{}
+	for _, w := range strings.Fields(strings.ToLower(a)) {
+		setA[w] = struct{}{}
+	}
+	for _, w := range strings.Fields(strings.ToLower(b)) {
+		setB[w] = struct{}{}
+	}
+	return jaccardSimilarity(setA, setB)
+}
+
+func applyMMR(items []memoryContextItem, lambda float64) []memoryContextItem {
+	if len(items) <= 1 {
+		return items
+	}
+
+	selected := []memoryContextItem{items[0]}
+	remaining := make([]memoryContextItem, len(items)-1)
+	copy(remaining, items[1:])
+
+	for len(remaining) > 0 && len(selected) < len(items) {
+		bestIdx := -1
+		bestMMR := -math.MaxFloat64
+
+		for i, cand := range remaining {
+			maxSim := 0.0
+			for _, sel := range selected {
+				sim := textJaccardSimilarity(cand.Item.Memory, sel.Item.Memory)
+				if sim > maxSim {
+					maxSim = sim
+				}
+			}
+			mmr := lambda*cand.Item.Score - (1-lambda)*maxSim
+			if mmr > bestMMR {
+				bestMMR = mmr
+				bestIdx = i
+			}
+		}
+
+		if bestIdx < 0 {
+			break
+		}
+		selected = append(selected, remaining[bestIdx])
+		remaining = append(remaining[:bestIdx], remaining[bestIdx+1:]...)
+	}
+
+	return selected
+}
 
 // generateTraceID creates a new UUID trace ID for request tracking
 func generateTraceID() string {
@@ -342,10 +422,8 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		if err != nil {
 			return resolvedContext{}, err
 		}
-		// Apply turn-based limit (more accurate than message count)
 		messages = limitHistoryTurns(msgs, historyLimit)
 
-		// Log history loaded
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepHistoryLoaded, processlog.LevelInfo, "History loaded",
 			map[string]any{
@@ -353,6 +431,24 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 				"after_limit":   len(messages),
 				"history_limit": historyLimit,
 			}, 0)
+
+		proactiveThreshold := int(float64(historyLimit) * 0.8)
+		if proactiveThreshold < 4 {
+			proactiveThreshold = 4
+		}
+		if len(messages) >= proactiveThreshold && len(messages) > 6 {
+			halfIdx := len(messages) / 2
+			olderHalf := messages[:halfIdx]
+			r.asyncSummarize(req.BotID, req.ChatID, olderHalf, chatModel, provider, req.Token)
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepSummaryRequested, processlog.LevelInfo, "Proactive summarization triggered",
+				map[string]any{
+					"message_count":   len(messages),
+					"history_limit":   historyLimit,
+					"threshold":       proactiveThreshold,
+					"messages_to_sum": halfIdx,
+				}, 0)
+		}
 	}
 
 	// Inject existing conversation summary as the first message.
@@ -370,7 +466,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 
 	memSearchStart := time.Now()
-	if memoryMsg := r.loadMemoryContextMessage(ctx, req); memoryMsg != nil {
+	if memoryMsg := r.loadMemoryContextMessage(ctx, req, chatModel.ContextWindow); memoryMsg != nil {
 		memDur := int(time.Since(memSearchStart).Milliseconds())
 		contentStr := string(memoryMsg.Content)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
@@ -438,12 +534,56 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 				"dropped":        droppedCount,
 				"context_window": chatModel.ContextWindow,
 			}, 0)
-		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
-			processlog.StepSummaryRequested, processlog.LevelInfo, "Async summarization requested",
-			map[string]any{
-				"dropped_messages": droppedCount,
-			}, 0)
-		r.asyncSummarize(req.BotID, req.ChatID, dropped, chatModel, provider, req.Token)
+
+		var syncSummary string
+		var syncErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			syncSummary, _, syncErr = r.postSummarize(ctx, gatewayModelConfig{
+				ModelID:    chatModel.ModelID,
+				ClientType: mustNormalizeClientType(provider.ClientType),
+				Input:      chatModel.Input,
+				APIKey:     provider.ApiKey,
+				BaseURL:    provider.BaseUrl,
+				Reasoning:  chatModel.Reasoning,
+				MaxTokens:  chatModel.MaxTokens,
+			}, dropped, req.Token)
+			if syncErr == nil && strings.TrimSpace(syncSummary) != "" {
+				break
+			}
+			if attempt < 3 {
+				r.logger.Warn("sync summarize retry",
+					slog.Int("attempt", attempt),
+					slog.Any("error", syncErr),
+				)
+			}
+		}
+
+		if syncErr == nil && strings.TrimSpace(syncSummary) != "" {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepSummaryRequested, processlog.LevelInfo, "Sync summarization completed",
+				map[string]any{
+					"dropped_messages": droppedCount,
+					"summary_length":  len(syncSummary),
+				}, 0)
+			if pgBotID, parseErr := db.ParseUUID(req.BotID); parseErr == nil {
+				if _, upsertErr := r.queries.UpsertConversationSummary(ctx, sqlc.UpsertConversationSummaryParams{
+					BotID:        pgBotID,
+					ChatID:       req.ChatID,
+					Summary:      syncSummary,
+					MessageCount: int32(droppedCount),
+				}); upsertErr != nil {
+					r.logger.Warn("sync upsert summary failed", slog.Any("error", upsertErr))
+				}
+			}
+		} else {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepSummaryRequested, processlog.LevelInfo, "Sync summarize failed, falling back to async",
+				map[string]any{
+					"dropped_messages": droppedCount,
+					"error":           fmt.Sprintf("%v", syncErr),
+				}, 0)
+			r.asyncSummarize(req.BotID, req.ChatID, dropped, chatModel, provider, req.Token)
+		}
 	}
 
 	skills := dedup(req.Skills)
@@ -1333,7 +1473,95 @@ type memoryContextItem struct {
 	Item      memory.MemoryItem
 }
 
-func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversation.ChatRequest) *conversation.ModelMessage {
+var commonStopWords = map[string]struct{}{
+	"the": {}, "a": {}, "an": {}, "is": {}, "are": {}, "was": {}, "were": {},
+	"be": {}, "been": {}, "being": {}, "have": {}, "has": {}, "had": {},
+	"do": {}, "does": {}, "did": {}, "will": {}, "would": {}, "could": {},
+	"should": {}, "may": {}, "might": {}, "shall": {}, "can": {},
+	"to": {}, "of": {}, "in": {}, "for": {}, "on": {}, "with": {}, "at": {},
+	"by": {}, "from": {}, "as": {}, "into": {}, "about": {}, "like": {},
+	"and": {}, "or": {}, "but": {}, "if": {}, "then": {}, "else": {},
+	"it": {}, "its": {}, "this": {}, "that": {}, "these": {}, "those": {},
+	"i": {}, "me": {}, "my": {}, "we": {}, "our": {}, "you": {}, "your": {},
+	"he": {}, "she": {}, "they": {}, "them": {}, "his": {}, "her": {},
+	"what": {}, "which": {}, "who": {}, "when": {}, "where": {}, "how": {},
+	"not": {}, "no": {}, "so": {}, "up": {}, "out": {}, "just": {},
+	"的": {}, "了": {}, "是": {}, "在": {}, "我": {}, "有": {}, "和": {},
+	"就": {}, "不": {}, "人": {}, "都": {}, "一": {}, "一个": {}, "上": {},
+	"也": {}, "很": {}, "到": {}, "说": {}, "要": {}, "去": {}, "你": {},
+	"会": {}, "着": {}, "没有": {}, "看": {}, "好": {}, "自己": {}, "这": {},
+	"他": {}, "她": {}, "吗": {}, "吧": {}, "呢": {}, "啊": {}, "哦": {},
+	"嗯": {}, "把": {}, "被": {}, "让": {}, "跟": {}, "给": {}, "从": {},
+}
+
+func extractKeywords(query string) string {
+	words := strings.Fields(strings.ToLower(query))
+	var keywords []string
+	for _, w := range words {
+		w = strings.Trim(w, ".,!?;:\"'()[]{}"+"\u3002\uff0c\uff01\uff1f\uff1b\uff1a\u201c\u201d\u2018\u2019\uff08\uff09\u3010\u3011")
+		if len(w) < 2 {
+			continue
+		}
+		if _, stop := commonStopWords[w]; stop {
+			continue
+		}
+		keywords = append(keywords, w)
+	}
+	if len(keywords) == 0 {
+		return ""
+	}
+	return strings.Join(keywords, " ")
+}
+
+func rrfMerge(primary, secondary []memory.MemoryItem, k int) []memory.MemoryItem {
+	const rrfK = 60.0
+	scores := map[string]float64{}
+	itemMap := map[string]memory.MemoryItem{}
+
+	for rank, item := range primary {
+		id := item.ID
+		if id == "" {
+			id = item.Memory
+		}
+		scores[id] += 1.0 / (rrfK + float64(rank+1))
+		itemMap[id] = item
+	}
+	for rank, item := range secondary {
+		id := item.ID
+		if id == "" {
+			id = item.Memory
+		}
+		scores[id] += 1.0 / (rrfK + float64(rank+1))
+		if _, exists := itemMap[id]; !exists {
+			itemMap[id] = item
+		}
+	}
+
+	type scored struct {
+		id    string
+		score float64
+	}
+	var ranked []scored
+	for id, s := range scores {
+		ranked = append(ranked, scored{id, s})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		return ranked[i].score > ranked[j].score
+	})
+	if len(ranked) > k {
+		ranked = ranked[:k]
+	}
+
+	result := make([]memory.MemoryItem, 0, len(ranked))
+	for _, r := range ranked {
+		item := itemMap[r.id]
+		item.Score = r.score * 100
+		result = append(result, item)
+	}
+	return result
+}
+
+func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversation.ChatRequest, contextWindow int) *conversation.ModelMessage {
 	if r.memoryService == nil {
 		return nil
 	}
@@ -1341,17 +1569,17 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		return nil
 	}
 
-	results := make([]memoryContextItem, 0, memoryContextLimitPerScope)
-	seen := map[string]struct{}{}
+	filters := map[string]any{
+		"namespace": sharedMemoryNamespace,
+		"scopeId":   req.BotID,
+		"bot_id":    req.BotID,
+	}
+
 	resp, err := r.memoryService.Search(ctx, memory.SearchRequest{
-		Query: req.Query,
-		BotID: req.BotID,
-		Limit: memoryContextLimitPerScope,
-		Filters: map[string]any{
-			"namespace": sharedMemoryNamespace,
-			"scopeId":   req.BotID,
-			"bot_id":    req.BotID,
-		},
+		Query:   req.Query,
+		BotID:   req.BotID,
+		Limit:   memoryContextLimitPerScope,
+		Filters: filters,
 		NoStats: true,
 	})
 	if err != nil {
@@ -1363,16 +1591,35 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		return nil
 	}
 
-	// Log search results for debugging
+	allItems := resp.Results
+
+	if kw := extractKeywords(req.Query); kw != "" && kw != strings.ToLower(req.Query) {
+		kwResp, kwErr := r.memoryService.Search(ctx, memory.SearchRequest{
+			Query:   kw,
+			BotID:   req.BotID,
+			Limit:   memoryContextLimitPerScope,
+			Filters: filters,
+			NoStats: true,
+		})
+		if kwErr == nil && len(kwResp.Results) > 0 {
+			allItems = rrfMerge(resp.Results, kwResp.Results, memoryContextLimitPerScope*2)
+		}
+	}
+
 	if r.logger != nil {
 		r.logger.Info("memory search completed",
 			slog.String("query", truncate(req.Query, 100)),
-			slog.Int("results_found", len(resp.Results)),
+			slog.Int("results_found", len(allItems)),
 			slog.String("namespace", sharedMemoryNamespace),
 		)
 	}
 
-	for _, item := range resp.Results {
+	results := make([]memoryContextItem, 0, memoryContextLimitPerScope)
+	seen := map[string]struct{}{}
+	for _, item := range allItems {
+		if item.Score < memoryMinScoreThreshold {
+			continue
+		}
 		key := strings.TrimSpace(item.ID)
 		if key == "" {
 			key = sharedMemoryNamespace + ":" + strings.TrimSpace(item.Memory)
@@ -1386,7 +1633,6 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		seen[key] = struct{}{}
 		results = append(results, memoryContextItem{Namespace: sharedMemoryNamespace, Item: item})
 
-		// Log each memory item for debugging
 		if r.logger != nil {
 			r.logger.Debug("memory item found",
 				slog.String("memory_id", item.ID),
@@ -1405,25 +1651,50 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		return nil
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Item.Score > results[j].Item.Score
-	})
-	if len(results) > memoryContextMaxItems {
-		results = results[:memoryContextMaxItems]
+	applyTemporalDecay(results)
+	results = applyMMR(results, 0.7)
+
+	if contextWindow <= 0 {
+		contextWindow = 128000
+	}
+	memoryBudgetTokens := int(float64(contextWindow) * 0.05)
+	if memoryBudgetTokens < 500 {
+		memoryBudgetTokens = 500
+	}
+	memoryBudgetChars := int(float64(memoryBudgetTokens) * 2.5)
+
+	maxItems := memoryContextMaxItems
+	if len(results) > maxItems {
+		results = results[:maxItems]
+	}
+
+	perItemChars := memoryBudgetChars / max(len(results), 1)
+	if perItemChars < 80 {
+		perItemChars = 80
+	}
+	if perItemChars > 500 {
+		perItemChars = 500
 	}
 
 	var sb strings.Builder
 	sb.WriteString("Relevant memory context (use when helpful):\n")
+	totalChars := 0
 	for _, entry := range results {
 		text := strings.TrimSpace(entry.Item.Memory)
 		if text == "" {
 			continue
 		}
+		snippet := truncateMemorySnippet(text, perItemChars)
+		lineLen := len(snippet) + len(entry.Namespace) + 6
+		if totalChars+lineLen > memoryBudgetChars {
+			break
+		}
 		sb.WriteString("- [")
 		sb.WriteString(entry.Namespace)
 		sb.WriteString("] ")
-		sb.WriteString(truncateMemorySnippet(text, memoryContextItemMaxChars))
+		sb.WriteString(snippet)
 		sb.WriteString("\n")
+		totalChars += lineLen
 	}
 	payload := strings.TrimSpace(sb.String())
 	if payload == "" {
@@ -2063,6 +2334,14 @@ func (r *Resolver) loadBotSettings(ctx context.Context, botID string) (settings.
 
 // --- utility ---
 
+func mustNormalizeClientType(clientType string) string {
+	ct, err := normalizeClientType(clientType)
+	if err != nil {
+		return "openai-compat"
+	}
+	return ct
+}
+
 func normalizeClientType(clientType string) (string, error) {
 	ct := strings.ToLower(strings.TrimSpace(clientType))
 	switch ct {
@@ -2218,31 +2497,139 @@ func limitHistoryTurns(messages []conversation.ModelMessage, limit int) []conver
 // system prompt, current turn, and generation).
 // After pruning, orphaned tool_result messages (whose tool_use was dropped) are
 // also removed to avoid API errors (Anthropic requires paired tool_use/tool_result).
+const (
+	toolResultContextShare = 0.3
+	toolResultHardMaxChars = 400000
+	toolResultMinKeepChars = 2000
+	toolResultHeadChars    = 1500
+	toolResultTailChars    = 1500
+)
+
+func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int) []conversation.ModelMessage {
+	if contextWindow <= 0 {
+		contextWindow = 128000
+	}
+	maxChars := int(float64(contextWindow) * toolResultContextShare * 3.5)
+	if maxChars > toolResultHardMaxChars {
+		maxChars = toolResultHardMaxChars
+	}
+	if maxChars < toolResultMinKeepChars {
+		maxChars = toolResultMinKeepChars
+	}
+	out := make([]conversation.ModelMessage, len(messages))
+	copy(out, messages)
+	for i, msg := range out {
+		if msg.Role != "tool" {
+			continue
+		}
+		text := msg.TextContent()
+		if len(text) <= maxChars {
+			continue
+		}
+		headN := toolResultHeadChars
+		tailN := toolResultTailChars
+		if headN+tailN >= len(text) {
+			continue
+		}
+		head := text[:headN]
+		tail := text[len(text)-tailN:]
+		trimmed := head + fmt.Sprintf("\n\n[... content trimmed, original %d chars ...]\n\n", len(text)) + tail
+		out[i] = conversation.ModelMessage{
+			Role:       msg.Role,
+			Content:    conversation.NewTextContent(trimmed),
+			ToolCallID: msg.ToolCallID,
+		}
+	}
+	return out
+}
+
 func pruneMessagesByTokenBudget(messages []conversation.ModelMessage, contextWindow int) []conversation.ModelMessage {
 	if contextWindow <= 0 {
 		contextWindow = 128000
 	}
-	budget := contextWindow / 2
+
+	messages = softTrimToolResults(messages, contextWindow)
+
+	systemTokens := 0
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			raw, err := json.Marshal(msg)
+			if err == nil {
+				systemTokens += estimateStringTokens(string(raw))
+			}
+		}
+	}
+	systemTokens = int(float64(systemTokens) * tokenSafetyMargin)
+
+	agentGatewaySystemPromptEstimate := 2000
+	totalSystemTokens := systemTokens + agentGatewaySystemPromptEstimate
+	budget := int(float64(contextWindow-totalSystemTokens) * 0.6)
+	if budget < 4096 {
+		budget = 4096
+	}
 
 	total := estimateTokens(messages)
 	if total <= budget {
 		return messages
 	}
 
-	// Drop oldest messages until within budget, but always keep the last message
-	// (the current user query).
-	pruned := make([]conversation.ModelMessage, len(messages))
-	copy(pruned, messages)
-
-	for len(pruned) > 1 && estimateTokens(pruned) > budget {
-		pruned = pruned[1:]
+	protectedTail := 6
+	if protectedTail > len(messages) {
+		protectedTail = len(messages)
 	}
 
-	return repairToolPairing(pruned)
+	splitIdx := len(messages) - protectedTail
+	droppable := messages[:splitIdx]
+	protected := messages[splitIdx:]
+
+	protectedTokens := estimateTokens(protected)
+	if protectedTokens >= budget {
+		for len(protected) > 1 && estimateTokens(protected) > budget {
+			protected = protected[1:]
+		}
+		return repairToolPairing(protected)
+	}
+
+	remainBudget := budget - protectedTokens
+	if len(droppable) > 0 {
+		mid := len(droppable) / 2
+		oldHalf := droppable[:mid]
+		newHalf := droppable[mid:]
+
+		oldTokens := estimateTokens(oldHalf)
+		newTokens := estimateTokens(newHalf)
+
+		if oldTokens+newTokens <= remainBudget {
+			result := make([]conversation.ModelMessage, 0, len(messages))
+			result = append(result, oldHalf...)
+			result = append(result, newHalf...)
+			result = append(result, protected...)
+			return repairToolPairing(result)
+		}
+
+		for len(oldHalf) > 0 && estimateTokens(oldHalf)+newTokens > remainBudget {
+			oldHalf = oldHalf[1:]
+		}
+
+		result := make([]conversation.ModelMessage, 0, len(oldHalf)+len(newHalf)+len(protected))
+		result = append(result, oldHalf...)
+		result = append(result, newHalf...)
+		result = append(result, protected...)
+
+		if estimateTokens(result) > budget {
+			for len(result) > protectedTail+1 && estimateTokens(result) > budget {
+				result = result[1:]
+			}
+		}
+		return repairToolPairing(result)
+	}
+
+	return repairToolPairing(protected)
 }
 
 // estimateTokens gives a rough token count for a message list.
-// Uses ~3 characters per token for Latin text, ~1.5 for CJK. We average to ~2.5.
+// Detects CJK content and uses ~1.5 chars/token for CJK, ~3.5 chars/token for Latin.
+// Applies a 1.2x safety margin to avoid under-estimation.
 func estimateTokens(messages []conversation.ModelMessage) int {
 	total := 0
 	for _, msg := range messages {
@@ -2251,9 +2638,35 @@ func estimateTokens(messages []conversation.ModelMessage) int {
 			total += 100
 			continue
 		}
-		total += len(raw) * 10 / 25 // ≈ len/2.5
+		total += estimateStringTokens(string(raw))
 	}
-	return total
+	return int(float64(total) * tokenSafetyMargin)
+}
+
+const tokenSafetyMargin = 1.2
+
+func estimateStringTokens(s string) int {
+	cjk, other := 0, 0
+	for _, r := range s {
+		if isCJK(r) {
+			cjk++
+		} else {
+			other++
+		}
+	}
+	cjkTokens := float64(cjk) / 1.5
+	otherTokens := float64(other) / 3.5
+	return int(cjkTokens + otherTokens)
+}
+
+func isCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) ||
+		(r >= 0x3400 && r <= 0x4DBF) ||
+		(r >= 0x3000 && r <= 0x303F) ||
+		(r >= 0xFF00 && r <= 0xFFEF) ||
+		(r >= 0xAC00 && r <= 0xD7AF) ||
+		(r >= 0x3040 && r <= 0x309F) ||
+		(r >= 0x30A0 && r <= 0x30FF)
 }
 
 // repairToolPairing removes tool_result messages whose matching tool_use was
@@ -2354,10 +2767,11 @@ func (r *Resolver) asyncSummarize(
 	if len(dropped) == 0 {
 		return
 	}
-	// Capture values for the goroutine.
 	droppedCopy := make([]conversation.ModelMessage, len(dropped))
 	copy(droppedCopy, dropped)
 	droppedCount := int32(len(droppedCopy))
+
+	existingSummary := r.loadSummary(context.Background(), botID, chatID)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -2368,6 +2782,16 @@ func (r *Resolver) asyncSummarize(
 			r.logger.Warn("summarize: invalid client type", slog.Any("error", err))
 			return
 		}
+
+		msgsToSummarize := droppedCopy
+		if strings.TrimSpace(existingSummary) != "" {
+			summaryMsg := conversation.ModelMessage{
+				Role:    "system",
+				Content: conversation.NewTextContent("Previous conversation summary:\n" + existingSummary),
+			}
+			msgsToSummarize = append([]conversation.ModelMessage{summaryMsg}, droppedCopy...)
+		}
+
 		summary, usage, err := r.postSummarize(ctx, gatewayModelConfig{
 			ModelID:    chatModel.ModelID,
 			ClientType: clientType,
@@ -2376,7 +2800,7 @@ func (r *Resolver) asyncSummarize(
 			BaseURL:    provider.BaseUrl,
 			Reasoning:  chatModel.Reasoning,
 			MaxTokens:  chatModel.MaxTokens,
-		}, droppedCopy, token)
+		}, msgsToSummarize, token)
 		if err != nil {
 			r.logger.Warn("summarize request failed", slog.String("bot_id", botID), slog.Any("error", err))
 			return
