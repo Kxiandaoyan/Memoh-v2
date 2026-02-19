@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS bots (
   memory_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
   embedding_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
   vlm_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
+  background_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
   search_provider_id UUID REFERENCES search_providers(id) ON DELETE SET NULL,
   identity TEXT DEFAULT NULL,
   soul TEXT DEFAULT NULL,

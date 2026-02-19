@@ -9,12 +9,14 @@ SELECT
   memory_models.model_id AS memory_model_id,
   embedding_models.model_id AS embedding_model_id,
   vlm_models.model_id AS vlm_model_id,
+  background_models.model_id AS background_model_id,
   search_providers.id AS search_provider_id
 FROM bots
 LEFT JOIN models AS chat_models ON chat_models.id = bots.chat_model_id
 LEFT JOIN models AS memory_models ON memory_models.id = bots.memory_model_id
 LEFT JOIN models AS embedding_models ON embedding_models.id = bots.embedding_model_id
 LEFT JOIN models AS vlm_models ON vlm_models.id = bots.vlm_model_id
+LEFT JOIN models AS background_models ON background_models.id = bots.background_model_id
 LEFT JOIN search_providers ON search_providers.id = bots.search_provider_id
 WHERE bots.id = $1;
 
@@ -29,10 +31,11 @@ WITH updated AS (
       memory_model_id = COALESCE(sqlc.narg(memory_model_id)::uuid, bots.memory_model_id),
       embedding_model_id = COALESCE(sqlc.narg(embedding_model_id)::uuid, bots.embedding_model_id),
       vlm_model_id = COALESCE(sqlc.narg(vlm_model_id)::uuid, bots.vlm_model_id),
+      background_model_id = COALESCE(sqlc.narg(background_model_id)::uuid, bots.background_model_id),
       search_provider_id = COALESCE(sqlc.narg(search_provider_id)::uuid, bots.search_provider_id),
       updated_at = now()
   WHERE bots.id = sqlc.arg(id)
-  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.group_require_mention, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.search_provider_id
+  RETURNING bots.id, bots.max_context_load_time, bots.language, bots.allow_guest, bots.group_require_mention, bots.chat_model_id, bots.memory_model_id, bots.embedding_model_id, bots.vlm_model_id, bots.background_model_id, bots.search_provider_id
 )
 SELECT
   updated.id AS bot_id,
@@ -44,12 +47,14 @@ SELECT
   memory_models.model_id AS memory_model_id,
   embedding_models.model_id AS embedding_model_id,
   vlm_models.model_id AS vlm_model_id,
+  background_models.model_id AS background_model_id,
   search_providers.id AS search_provider_id
 FROM updated
 LEFT JOIN models AS chat_models ON chat_models.id = updated.chat_model_id
 LEFT JOIN models AS memory_models ON memory_models.id = updated.memory_model_id
 LEFT JOIN models AS embedding_models ON embedding_models.id = updated.embedding_model_id
 LEFT JOIN models AS vlm_models ON vlm_models.id = updated.vlm_model_id
+LEFT JOIN models AS background_models ON background_models.id = updated.background_model_id
 LEFT JOIN search_providers ON search_providers.id = updated.search_provider_id;
 
 -- name: DeleteSettingsByBotID :exec
@@ -62,6 +67,7 @@ SET max_context_load_time = 1440,
     memory_model_id = NULL,
     embedding_model_id = NULL,
     vlm_model_id = NULL,
+    background_model_id = NULL,
     search_provider_id = NULL,
     updated_at = now()
 WHERE id = $1;

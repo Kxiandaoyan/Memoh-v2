@@ -105,6 +105,14 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 		}
 		vlmModelUUID = modelID
 	}
+	backgroundModelUUID := pgtype.UUID{}
+	if value := strings.TrimSpace(req.BackgroundModelID); value != "" {
+		modelID, err := s.resolveModelUUID(ctx, value)
+		if err != nil {
+			return Settings{}, err
+		}
+		backgroundModelUUID = modelID
+	}
 	searchProviderUUID := pgtype.UUID{}
 	if value := strings.TrimSpace(req.SearchProviderID); value != "" {
 		providerID, err := db.ParseUUID(value)
@@ -124,6 +132,7 @@ func (s *Service) UpsertBot(ctx context.Context, botID string, req UpsertRequest
 		MemoryModelID:       memoryModelUUID,
 		EmbeddingModelID:    embeddingModelUUID,
 		VlmModelID:          vlmModelUUID,
+		BackgroundModelID:   backgroundModelUUID,
 		SearchProviderID:    searchProviderUUID,
 	})
 	if err != nil {
@@ -169,6 +178,7 @@ func normalizeBotSettingsReadRow(row sqlc.GetSettingsByBotIDRow) Settings {
 		row.MemoryModelID,
 		row.EmbeddingModelID,
 		row.VlmModelID,
+		row.BackgroundModelID,
 		row.SearchProviderID,
 	)
 }
@@ -183,6 +193,7 @@ func normalizeBotSettingsWriteRow(row sqlc.UpsertBotSettingsRow) Settings {
 		row.MemoryModelID,
 		row.EmbeddingModelID,
 		row.VlmModelID,
+		row.BackgroundModelID,
 		row.SearchProviderID,
 	)
 }
@@ -196,6 +207,7 @@ func normalizeBotSettingsFields(
 	memoryModelID pgtype.Text,
 	embeddingModelID pgtype.Text,
 	vlmModelID pgtype.Text,
+	backgroundModelID pgtype.Text,
 	searchProviderID pgtype.UUID,
 ) Settings {
 	settings := normalizeBotSetting(maxContextLoadTime, language, allowGuest, groupRequireMention)
@@ -203,6 +215,7 @@ func normalizeBotSettingsFields(
 	settings.MemoryModelID = strings.TrimSpace(memoryModelID.String)
 	settings.EmbeddingModelID = strings.TrimSpace(embeddingModelID.String)
 	settings.VlmModelID = strings.TrimSpace(vlmModelID.String)
+	settings.BackgroundModelID = strings.TrimSpace(backgroundModelID.String)
 	if searchProviderID.Valid {
 		settings.SearchProviderID = uuid.UUID(searchProviderID.Bytes).String()
 	}

@@ -14,7 +14,7 @@ import (
 const createHeartbeatConfig = `-- name: CreateHeartbeatConfig :one
 INSERT INTO heartbeat_configs (bot_id, enabled, interval_seconds, prompt, event_triggers)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, bot_id, enabled, interval_seconds, prompt, event_triggers, created_at, updated_at
+RETURNING id, bot_id, enabled, interval_seconds, prompt, event_triggers, active_hours_start, active_hours_end, active_days, created_at, updated_at
 `
 
 type CreateHeartbeatConfigParams struct {
@@ -41,6 +41,9 @@ func (q *Queries) CreateHeartbeatConfig(ctx context.Context, arg CreateHeartbeat
 		&i.IntervalSeconds,
 		&i.Prompt,
 		&i.EventTriggers,
+		&i.ActiveHoursStart,
+		&i.ActiveHoursEnd,
+		&i.ActiveDays,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -57,7 +60,7 @@ func (q *Queries) DeleteHeartbeatConfig(ctx context.Context, id pgtype.UUID) err
 }
 
 const getHeartbeatConfig = `-- name: GetHeartbeatConfig :one
-SELECT id, bot_id, enabled, interval_seconds, prompt, event_triggers, created_at, updated_at FROM heartbeat_configs WHERE id = $1
+SELECT id, bot_id, enabled, interval_seconds, prompt, event_triggers, active_hours_start, active_hours_end, active_days, created_at, updated_at FROM heartbeat_configs WHERE id = $1
 `
 
 func (q *Queries) GetHeartbeatConfig(ctx context.Context, id pgtype.UUID) (HeartbeatConfig, error) {
@@ -70,6 +73,9 @@ func (q *Queries) GetHeartbeatConfig(ctx context.Context, id pgtype.UUID) (Heart
 		&i.IntervalSeconds,
 		&i.Prompt,
 		&i.EventTriggers,
+		&i.ActiveHoursStart,
+		&i.ActiveHoursEnd,
+		&i.ActiveDays,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -77,7 +83,7 @@ func (q *Queries) GetHeartbeatConfig(ctx context.Context, id pgtype.UUID) (Heart
 }
 
 const listEnabledHeartbeatConfigs = `-- name: ListEnabledHeartbeatConfigs :many
-SELECT id, bot_id, enabled, interval_seconds, prompt, event_triggers, created_at, updated_at FROM heartbeat_configs WHERE enabled = true ORDER BY created_at
+SELECT id, bot_id, enabled, interval_seconds, prompt, event_triggers, active_hours_start, active_hours_end, active_days, created_at, updated_at FROM heartbeat_configs WHERE enabled = true ORDER BY created_at
 `
 
 func (q *Queries) ListEnabledHeartbeatConfigs(ctx context.Context) ([]HeartbeatConfig, error) {
@@ -96,6 +102,9 @@ func (q *Queries) ListEnabledHeartbeatConfigs(ctx context.Context) ([]HeartbeatC
 			&i.IntervalSeconds,
 			&i.Prompt,
 			&i.EventTriggers,
+			&i.ActiveHoursStart,
+			&i.ActiveHoursEnd,
+			&i.ActiveDays,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -110,7 +119,7 @@ func (q *Queries) ListEnabledHeartbeatConfigs(ctx context.Context) ([]HeartbeatC
 }
 
 const listHeartbeatConfigsByBot = `-- name: ListHeartbeatConfigsByBot :many
-SELECT id, bot_id, enabled, interval_seconds, prompt, event_triggers, created_at, updated_at FROM heartbeat_configs WHERE bot_id = $1 ORDER BY created_at
+SELECT id, bot_id, enabled, interval_seconds, prompt, event_triggers, active_hours_start, active_hours_end, active_days, created_at, updated_at FROM heartbeat_configs WHERE bot_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListHeartbeatConfigsByBot(ctx context.Context, botID pgtype.UUID) ([]HeartbeatConfig, error) {
@@ -129,6 +138,9 @@ func (q *Queries) ListHeartbeatConfigsByBot(ctx context.Context, botID pgtype.UU
 			&i.IntervalSeconds,
 			&i.Prompt,
 			&i.EventTriggers,
+			&i.ActiveHoursStart,
+			&i.ActiveHoursEnd,
+			&i.ActiveDays,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -150,7 +162,7 @@ SET enabled = $2,
     event_triggers = $5,
     updated_at = now()
 WHERE id = $1
-RETURNING id, bot_id, enabled, interval_seconds, prompt, event_triggers, created_at, updated_at
+RETURNING id, bot_id, enabled, interval_seconds, prompt, event_triggers, active_hours_start, active_hours_end, active_days, created_at, updated_at
 `
 
 type UpdateHeartbeatConfigParams struct {
@@ -177,6 +189,9 @@ func (q *Queries) UpdateHeartbeatConfig(ctx context.Context, arg UpdateHeartbeat
 		&i.IntervalSeconds,
 		&i.Prompt,
 		&i.EventTriggers,
+		&i.ActiveHoursStart,
+		&i.ActiveHoursEnd,
+		&i.ActiveDays,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

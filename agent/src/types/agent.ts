@@ -40,6 +40,7 @@ export const allActions = Object.values(AgentAction)
 
 export interface AgentParams {
   model: ModelConfig
+  backgroundModel?: ModelConfig
   language?: string
   timezone?: string
   activeContextTime?: number

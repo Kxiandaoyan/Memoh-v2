@@ -19,7 +19,7 @@ SET status = $2,
     agent_response = $5,
     completed_at = now()
 WHERE id = $1
-RETURNING id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, agent_response, started_at, completed_at, created_at
+RETURNING id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, files_snapshot, agent_response, started_at, completed_at, created_at
 `
 
 type CompleteEvolutionLogParams struct {
@@ -47,6 +47,7 @@ func (q *Queries) CompleteEvolutionLog(ctx context.Context, arg CompleteEvolutio
 		&i.Status,
 		&i.ChangesSummary,
 		&i.FilesModified,
+		&i.FilesSnapshot,
 		&i.AgentResponse,
 		&i.StartedAt,
 		&i.CompletedAt,
@@ -70,7 +71,7 @@ func (q *Queries) CountEvolutionLogsByBot(ctx context.Context, botID pgtype.UUID
 const createEvolutionLog = `-- name: CreateEvolutionLog :one
 INSERT INTO evolution_logs (bot_id, heartbeat_config_id, trigger_reason, status)
 VALUES ($1, $2, $3, 'running')
-RETURNING id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, agent_response, started_at, completed_at, created_at
+RETURNING id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, files_snapshot, agent_response, started_at, completed_at, created_at
 `
 
 type CreateEvolutionLogParams struct {
@@ -90,6 +91,7 @@ func (q *Queries) CreateEvolutionLog(ctx context.Context, arg CreateEvolutionLog
 		&i.Status,
 		&i.ChangesSummary,
 		&i.FilesModified,
+		&i.FilesSnapshot,
 		&i.AgentResponse,
 		&i.StartedAt,
 		&i.CompletedAt,
@@ -99,7 +101,7 @@ func (q *Queries) CreateEvolutionLog(ctx context.Context, arg CreateEvolutionLog
 }
 
 const getEvolutionLog = `-- name: GetEvolutionLog :one
-SELECT id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, agent_response, started_at, completed_at, created_at FROM evolution_logs
+SELECT id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, files_snapshot, agent_response, started_at, completed_at, created_at FROM evolution_logs
 WHERE id = $1
 `
 
@@ -114,6 +116,7 @@ func (q *Queries) GetEvolutionLog(ctx context.Context, id pgtype.UUID) (Evolutio
 		&i.Status,
 		&i.ChangesSummary,
 		&i.FilesModified,
+		&i.FilesSnapshot,
 		&i.AgentResponse,
 		&i.StartedAt,
 		&i.CompletedAt,
@@ -123,7 +126,7 @@ func (q *Queries) GetEvolutionLog(ctx context.Context, id pgtype.UUID) (Evolutio
 }
 
 const listEvolutionLogsByBot = `-- name: ListEvolutionLogsByBot :many
-SELECT id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, agent_response, started_at, completed_at, created_at FROM evolution_logs
+SELECT id, bot_id, heartbeat_config_id, trigger_reason, status, changes_summary, files_modified, files_snapshot, agent_response, started_at, completed_at, created_at FROM evolution_logs
 WHERE bot_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -152,6 +155,7 @@ func (q *Queries) ListEvolutionLogsByBot(ctx context.Context, arg ListEvolutionL
 			&i.Status,
 			&i.ChangesSummary,
 			&i.FilesModified,
+			&i.FilesSnapshot,
 			&i.AgentResponse,
 			&i.StartedAt,
 			&i.CompletedAt,

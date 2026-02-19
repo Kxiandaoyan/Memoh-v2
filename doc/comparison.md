@@ -50,5 +50,6 @@
 | 40 | Companion Apps | 无 | macOS + iOS + Android 原生应用 | **O** |
 | 41 | Webhook / 邮件集成 | 无 | Webhook + Gmail Pub/Sub | **O** |
 | 42 | 模型故障切换 | 备用模型自动 Failover（sync + stream） | Model Failover 自动切换 | **=** |
+| 43 | 模型路由 | 后台模型分流（心跳/定时/子代理用低成本模型）+ 三级提示词 + 智能记忆门控 | 无（所有任务用同一模型） | **M** |
 
-**汇总：Memoh-v2 胜 27 项 · OpenClaw 胜 8 项 · 持平 7 项**
+**汇总：Memoh-v2 胜 28 项 · OpenClaw 胜 8 项 · 持平 7 项**

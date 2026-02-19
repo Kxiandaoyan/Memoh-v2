@@ -2,14 +2,16 @@
 
 # Memoh-v2
 
-**容器化 · 结构化长记忆 · 自我进化 AI Agent 系统**
+**真隔离 · 真记忆 · 真进化 —— 不妥协的 AI Agent 平台**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)](https://vuejs.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docs.docker.com/compose/)
 
-每个 Bot 拥有独立容器、独立记忆、独立技能、自我进化能力 —— 你的私人 AI 智能体平台。
+别的系统共享运行时，我们给每个 Bot 一个 containerd 容器；<br>
+别的系统用 SQLite 向量搜索，我们用 Qdrant + BM25 + LLM 三层提取；<br>
+别的系统手动编辑记忆文件，我们的 Bot 自己反思、实验、审查，持续进化。
 
 ---
 

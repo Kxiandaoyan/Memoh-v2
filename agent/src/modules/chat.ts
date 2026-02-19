@@ -11,6 +11,7 @@ import { allActions } from '../types'
 
 const AgentModel = z.object({
   model: ModelConfigModel,
+  backgroundModel: ModelConfigModel.optional(),
   activeContextTime: z.number(),
   language: z.string().optional().default(''),
   timezone: z.string().optional().default('UTC'),
@@ -34,6 +35,7 @@ type AgentBody = z.infer<typeof AgentModel>
 function buildAgentParams(body: AgentBody, bearer: string): AgentParams {
   return {
     model: body.model as ModelConfig,
+    backgroundModel: body.backgroundModel as ModelConfig | undefined,
     activeContextTime: body.activeContextTime,
     language: body.language || undefined,
     timezone: body.timezone || 'UTC',

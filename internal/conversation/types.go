@@ -245,6 +245,10 @@ type ChatRequest struct {
 
 	// HistoryLimitOverride, when > 0, overrides the default turn-based history limit.
 	HistoryLimitOverride int `json:"-"`
+
+	// TaskType indicates whether this is a chat or background task (heartbeat/schedule/subagent).
+	// Background tasks may use a cheaper model when configured.
+	TaskType string `json:"-"`
 }
 
 // TokenUsage summarises token consumption for a single request.

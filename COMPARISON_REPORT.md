@@ -590,18 +590,407 @@ reloader.OnReload(func(old, new Config) {
 
 ---
 
+## 十七、上下文溢出自动恢复
+
+### 问题描述
+
+**Memoh-v2**: 无上下文溢出恢复
+- 上下文超限直接返回错误
+- 用户需手动清理对话
+
+**OpenClaw**: 完善的溢出恢复机制
+- `src/agents/pi-embedded-runner/run.ts` - 自动检测上下文溢出
+- 多级恢复策略：自动压缩 → 工具结果截断 → 重试
+- 最多 3 次压缩尝试，记录诊断 ID
+
+### 改进建议
+
+```go
+// 上下文溢出恢复
+const maxOverflowCompactionAttempts = 3
+
+func handleContextOverflow(ctx context.Context, req *ChatRequest, attempt int) (*ChatResponse, error) {
+    if attempt >= maxOverflowCompactionAttempts {
+        return nil, fmt.Errorf("context overflow: prompt too large after %d compaction attempts", attempt)
+    }
+    
+    // 策略 1: 自动压缩对话历史
+    compacted, err := compactMessages(ctx, req.Messages, 0.5)
+    if err == nil && len(compacted) < len(req.Messages) {
+        req.Messages = compacted
+        return chatWithRetry(ctx, req, attempt+1)
+    }
+    
+    // 策略 2: 截断工具结果
+    truncated := truncateToolResults(req.Messages, maxToolResultChars)
+    req.Messages = truncated
+    return chatWithRetry(ctx, req, attempt+1)
+}
+
+// 在 Agent Gateway 中捕获上下文溢出错误
+if isContextOverflowError(err) {
+    return handleContextOverflow(ctx, req, 0)
+}
+```
+
+---
+
+## 十八、Embedding 批处理优化
+
+### 问题描述
+
+**Memoh-v2**: 无 Embedding 批处理
+- 每条记忆单独调用 Embedding API
+- 大量记忆时效率低下
+- API 调用成本高
+
+**OpenClaw**: 完善的批处理系统
+- `src/memory/batch-openai.ts` - OpenAI Batch API
+- `src/memory/batch-voyage.ts` - Voyage Batch API
+- `src/memory/batch-gemini.ts` - Gemini Batch API
+- 支持 50000 请求/批次，24h 完成窗口
+
+### 改进建议
+
+```go
+// Embedding 批处理管理器
+type EmbeddingBatchManager struct {
+    client      EmbeddingClient
+    maxRequests int           // 每批次最大请求数
+    pending     []BatchItem
+    mu          sync.Mutex
+}
+
+type BatchItem struct {
+    ID      string
+    Text    string
+    Result  chan []float32
+    Error   chan error
+}
+
+func (m *EmbeddingBatchManager) Add(id, text string) ([]float32, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    
+    item := BatchItem{
+        ID:     id,
+        Text:   text,
+        Result: make(chan []float32, 1),
+        Error:  make(chan error, 1),
+    }
+    m.pending = append(m.pending, item)
+    
+    // 达到批次大小时触发提交
+    if len(m.pending) >= m.maxRequests {
+        go m.submitBatch()
+    }
+    
+    select {
+    case result := <-item.Result:
+        return result, nil
+    case err := <-item.Error:
+        return nil, err
+    }
+}
+
+func (m *EmbeddingBatchManager) submitBatch() {
+    // 提交到 OpenAI/Voyage/Gemini Batch API
+    // 轮询状态直到完成
+    // 分发结果到各 item
+}
+```
+
+---
+
+## 十九、工具结果智能截断
+
+### 问题描述
+
+**Memoh-v2**: 简单的工具结果处理
+- 工具结果直接传递
+- 无长度限制
+- 可能导致上下文溢出
+
+**OpenClaw**: 智能截断策略
+- `src/agents/pi-embedded-runner/tool-result-truncation.ts`
+- 保留头部和尾部，中间用省略号替换
+- 图片估算为 8000 字符
+
+### 改进建议
+
+```go
+// 工具结果截断
+const (
+    maxToolResultChars     = 20000
+    toolResultHeadChars    = 5000
+    toolResultTailChars    = 5000
+    truncationEllipsis     = "\n...[truncated]...\n"
+)
+
+func truncateToolResult(result string, maxChars int) string {
+    if len(result) <= maxChars {
+        return result
+    }
+    
+    head := result[:toolResultHeadChars]
+    tail := result[len(result)-toolResultTailChars:]
+    
+    return head + truncationEllipsis + tail
+}
+
+// 智能截断工具结果
+func truncateToolResultsInMessages(messages []Message, maxTotalChars int) []Message {
+    result := make([]Message, len(messages))
+    totalChars := 0
+    
+    // 第一遍：计算总字符数
+    for _, msg := range messages {
+        if msg.Role == "tool" {
+            totalChars += len(msg.Content)
+        }
+    }
+    
+    if totalChars <= maxTotalChars {
+        return messages
+    }
+    
+    // 第二遍：截断
+    for i, msg := range messages {
+        if msg.Role == "tool" && len(msg.Content) > maxToolResultChars {
+            result[i] = Message{
+                Role:    msg.Role,
+                Content: truncateToolResult(msg.Content, maxToolResultChars),
+            }
+        } else {
+            result[i] = msg
+        }
+    }
+    
+    return result
+}
+```
+
+---
+
+## 二十、记忆搜索结果去重
+
+### 问题描述
+
+**Memoh-v2**: 基础的混合搜索
+- 向量搜索 + BM25 关键词搜索
+- 简单的分数融合
+- 无去重机制
+
+**OpenClaw**: 完善的搜索结果处理
+- `src/memory/hybrid.ts` - 混合搜索合并
+- `src/memory/mmr.ts` - MMR 多样性重排
+- `src/memory/temporal-decay.ts` - 时间衰减
+- 按 ID 去重，合并向量/关键词分数
+
+### 改进建议
+
+```go
+// 混合搜索结果合并与去重
+func mergeHybridResults(vectorResults, keywordResults []MemoryItem, vectorWeight, textWeight float64) []MemoryItem {
+    byID := make(map[string]*mergedItem)
+    
+    // 合并向量结果
+    for _, r := range vectorResults {
+        byID[r.ID] = &mergedItem{
+            ID:          r.ID,
+            Content:     r.Content,
+            VectorScore: r.Score,
+            TextScore:   0,
+        }
+    }
+    
+    // 合并关键词结果
+    for _, r := range keywordResults {
+        if existing, ok := byID[r.ID]; ok {
+            existing.TextScore = r.Score
+        } else {
+            byID[r.ID] = &mergedItem{
+                ID:          r.ID,
+                Content:     r.Content,
+                VectorScore: 0,
+                TextScore:   r.Score,
+            }
+        }
+    }
+    
+    // 计算最终分数
+    results := make([]MemoryItem, 0, len(byID))
+    for _, item := range byID {
+        score := vectorWeight*item.VectorScore + textWeight*item.TextScore
+        results = append(results, MemoryItem{
+            ID:      item.ID,
+            Content: item.Content,
+            Score:   score,
+        })
+    }
+    
+    // 按分数排序
+    sort.Slice(results, func(i, j int) bool {
+        return results[i].Score > results[j].Score
+    })
+    
+    return results
+}
+```
+
+---
+
+## 二十一、Token 预算精细管理
+
+### 问题描述
+
+**Memoh-v2**: 粗粒度 Token 管理
+- 简单的上下文窗口检查
+- 固定保留尾部消息
+- 无系统提示词预算
+
+**OpenClaw**: 精细的 Token 预算
+- `src/agents/pi-embedded-runner/run.ts`
+- 系统提示词独立预算
+- Agent Gateway 系统提示词估算
+- 安全边际系数
+
+### 改进建议
+
+```go
+// Token 预算管理
+type TokenBudget struct {
+    ContextWindow       int
+    SystemPromptTokens  int
+    GatewayEstimate     int     // Agent Gateway 系统提示词估算
+    SafetyMargin        float64 // 安全边际系数
+    UserBudgetRatio     float64 // 用户消息预算比例
+}
+
+func calculateTokenBudget(cfg TokenBudget) int {
+    totalSystem := int(float64(cfg.SystemPromptTokens) * cfg.SafetyMargin)
+    totalSystem += cfg.GatewayEstimate
+    
+    available := cfg.ContextWindow - totalSystem
+    budget := int(float64(available) * cfg.UserBudgetRatio)
+    
+    if budget < 4096 {
+        budget = 4096
+    }
+    
+    return budget
+}
+
+// 使用示例
+budget := calculateTokenBudget(TokenBudget{
+    ContextWindow:       128000,
+    SystemPromptTokens:  systemTokens,
+    GatewayEstimate:     2000,  // Agent Gateway 估算
+    SafetyMargin:        1.1,   // 10% 安全边际
+    UserBudgetRatio:     0.6,   // 60% 给用户消息
+})
+```
+
+---
+
+## 二十二、记忆索引文件监听
+
+### 问题描述
+
+**Memoh-v2**: 无文件监听
+- 记忆变更需手动触发索引
+- 无实时同步
+
+**OpenClaw**: 完善的文件监听
+- `src/memory/manager.ts` - 使用 chokidar 监听
+- 文件变更自动触发索引更新
+- 防抖处理避免频繁重建
+
+### 改进建议
+
+```go
+// 记忆文件监听器
+type MemoryWatcher struct {
+    watcher    *fsnotify.Watcher
+    debounce   time.Duration
+    pending    map[string]time.Time
+    mu         sync.Mutex
+    onUpdate   func(path string)
+}
+
+func NewMemoryWatcher(debounce time.Duration) (*MemoryWatcher, error) {
+    watcher, err := fsnotify.NewWatcher()
+    if err != nil {
+        return nil, err
+    }
+    
+    w := &MemoryWatcher{
+        watcher:  watcher,
+        debounce: debounce,
+        pending:  make(map[string]time.Time),
+    }
+    
+    go w.processEvents()
+    return w, nil
+}
+
+func (w *MemoryWatcher) Watch(dir string) error {
+    return w.watcher.Add(dir)
+}
+
+func (w *MemoryWatcher) processEvents() {
+    ticker := time.NewTicker(100 * time.Millisecond)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case event := <-w.watcher.Events:
+            w.mu.Lock()
+            w.pending[event.Name] = time.Now()
+            w.mu.Unlock()
+            
+        case <-ticker.C:
+            w.processPending()
+        }
+    }
+}
+
+func (w *MemoryWatcher) processPending() {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+    
+    now := time.Now()
+    for path, t := range w.pending {
+        if now.Sub(t) >= w.debounce {
+            delete(w.pending, path)
+            if w.onUpdate != nil {
+                w.onUpdate(path)
+            }
+        }
+    }
+}
+```
+
+---
+
 ## 总结
 
 | 优先级 | 问题 | 改进难度 | 影响程度 |
 |--------|------|----------|----------|
 | **高** | 缺少重试机制 | 中 | 高 |
 | **高** | 无模型故障转移 | 中 | 高 |
+| **高** | 无上下文溢出恢复 | 中 | 高 |
 | **高** | 测试覆盖不足 | 高 | 中 |
+| **中** | 无 Embedding 批处理 | 中 | 中 |
 | **中** | 无消息队列 | 中 | 中 |
 | **中** | 健康检查简单 | 低 | 中 |
 | **中** | 错误处理不统一 | 中 | 中 |
 | **中** | 限流机制不足 | 低 | 中 |
 | **中** | 会话管理简单 | 中 | 中 |
+| **中** | 工具结果无截断 | 低 | 中 |
+| **中** | Token 预算粗粒度 | 低 | 中 |
+| **低** | 搜索结果无去重 | 低 | 低 |
+| **低** | 无记忆文件监听 | 中 | 低 |
 | **低** | 无配置热更新 | 中 | 低 |
 | **低** | CLI 工具缺失 | 高 | 低 |
 | **低** | 频道支持较少 | 中 | 低 |
@@ -611,11 +1000,14 @@ reloader.OnReload(func(old, new Config) {
 
 1. **添加重试机制** - 提升系统稳定性
 2. **实现模型故障转移** - 保证服务可用性
-3. **添加限流保护** - 防止服务过载
-4. **统一错误处理** - 改善开发体验
-5. **扩展健康检查** - 便于问题排查
-6. **补充核心测试** - 保证代码质量
-7. **实现消息队列** - 提升并发处理能力
+3. **实现上下文溢出恢复** - 改善用户体验
+4. **添加限流保护** - 防止服务过载
+5. **实现工具结果截断** - 防止上下文溢出
+6. **统一错误处理** - 改善开发体验
+7. **扩展健康检查** - 便于问题排查
+8. **补充核心测试** - 保证代码质量
+9. **实现消息队列** - 提升并发处理能力
+10. **实现 Embedding 批处理** - 降低 API 成本
 
 ---
 

@@ -306,6 +306,7 @@ type gatewaySkill struct {
 
 type gatewayRequest struct {
 	Model              gatewayModelConfig          `json:"model"`
+	BackgroundModel    *gatewayModelConfig         `json:"backgroundModel,omitempty"`
 	ActiveContextTime  int                         `json:"activeContextTime"`
 	Language           string                      `json:"language,omitempty"`
 	Timezone           string                      `json:"timezone"`
@@ -758,6 +759,24 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			"language":             botSettings.Language,
 		}, 0)
 
+	// Resolve the background model for subagent dispatch (if configured and different from primary).
+	if bgID := strings.TrimSpace(botSettings.BackgroundModelID); bgID != "" && bgID != chatModel.ModelID {
+		if bgModel, bgProv, bgErr := r.fetchChatModel(ctx, bgID); bgErr == nil {
+			bgClientType, ctErr := normalizeClientType(bgProv.ClientType)
+			if ctErr == nil {
+				payload.BackgroundModel = &gatewayModelConfig{
+					ModelID:    bgModel.ModelID,
+					ClientType: bgClientType,
+					Input:      bgModel.Input,
+					APIKey:     bgProv.ApiKey,
+					BaseURL:    bgProv.BaseUrl,
+					Reasoning:  bgModel.Reasoning,
+					MaxTokens:  bgModel.MaxTokens,
+				}
+			}
+		}
+	}
+
 	return resolvedContext{payload: payload, model: chatModel, provider: provider, traceID: traceID}, nil
 }
 
@@ -877,6 +896,10 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		slog.String("reply_target", p.replyTarget),
 		slog.String("query", truncate(p.query, 200)),
 	)
+	taskType := "schedule"
+	if p.schedule.TriggerType == "heartbeat" {
+		taskType = "heartbeat"
+	}
 	req := conversation.ChatRequest{
 		BotID:                p.botID,
 		ChatID:               p.botID,
@@ -886,6 +909,7 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		HistoryLimitOverride: p.historyLimitOverride,
 		CurrentChannel:       p.platform,
 		ReplyTarget:          p.replyTarget,
+		TaskType:             taskType,
 	}
 	if p.platform != "" {
 		req.Channels = []string{p.platform}
@@ -2566,6 +2590,14 @@ func (r *Resolver) selectChatModel(ctx context.Context, req conversation.ChatReq
 	}
 	modelID := strings.TrimSpace(req.Model)
 	providerFilter := strings.TrimSpace(req.Provider)
+
+	// For background tasks (heartbeat/schedule/subagent), prefer the cheaper background model.
+	isBackground := req.TaskType == "heartbeat" || req.TaskType == "schedule" || req.TaskType == "subagent"
+	if isBackground && modelID == "" && providerFilter == "" {
+		if bgID := strings.TrimSpace(botSettings.BackgroundModelID); bgID != "" {
+			modelID = bgID
+		}
+	}
 
 	// Priority: request model > chat settings > bot settings.
 	if modelID == "" && providerFilter == "" {

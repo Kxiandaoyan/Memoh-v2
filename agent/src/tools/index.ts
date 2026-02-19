@@ -9,6 +9,7 @@ import { SubagentRegistry, getGlobalRegistry } from '../registry'
 export interface ToolsParams {
   fetch: AuthFetcher
   model: ModelConfig
+  backgroundModel?: ModelConfig
   identity: IdentityContext
   auth: AgentAuthContext
   enableSkill: (skill: string) => void
@@ -20,7 +21,7 @@ export interface ToolsParams {
 
 export const getTools = (
   actions: AgentAction[],
-  { fetch, model, identity, auth, enableSkill, mcpConnections = [], registry, parentRunId, spawnDepth = 0 }: ToolsParams
+  { fetch, model, backgroundModel, identity, auth, enableSkill, mcpConnections = [], registry, parentRunId, spawnDepth = 0 }: ToolsParams
 ) => {
   const tools: ToolSet = {}
   if (actions.includes(AgentAction.Web)) {
@@ -30,7 +31,7 @@ export const getTools = (
   if (actions.includes(AgentAction.Subagent)) {
     const subagentTools = getSubagentTools({
       fetch,
-      model,
+      model: backgroundModel ?? model,
       identity,
       auth,
       mcpConnections,

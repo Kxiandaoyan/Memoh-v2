@@ -56,6 +56,18 @@
       </div>
 
       <div class="space-y-2">
+        <Label>{{ $t('bots.settings.backgroundModel') }}</Label>
+        <p class="text-xs text-muted-foreground">{{ $t('bots.settings.backgroundModelHint') }}</p>
+        <ModelSelect
+          v-model="form.background_model_id"
+          :models="models"
+          :providers="providers"
+          model-type="chat"
+          :placeholder="$t('bots.settings.backgroundModel')"
+        />
+      </div>
+
+      <div class="space-y-2">
         <Label>{{ $t('bots.settings.searchProvider') }}</Label>
         <p class="text-xs text-muted-foreground">{{ $t('bots.settings.searchProviderHint') }}</p>
         <SearchProviderSelect
@@ -407,6 +419,7 @@ const form = reactive({
   memory_model_id: '',
   embedding_model_id: '',
   vlm_model_id: '',
+  background_model_id: '',
   search_provider_id: '',
   max_context_load_time: 0,
   language: '',
@@ -425,6 +438,7 @@ watch(settings, (val) => {
   form.memory_model_id = val.memory_model_id ?? ''
   form.embedding_model_id = val.embedding_model_id ?? ''
   form.vlm_model_id = val.vlm_model_id ?? ''
+  form.background_model_id = (val as any).background_model_id ?? ''
   form.search_provider_id = val.search_provider_id ?? ''
   form.max_context_load_time = val.max_context_load_time ?? 0
   form.language = val.language ?? ''
@@ -462,6 +476,7 @@ const hasSettingsChanges = computed(() => {
     || form.memory_model_id !== (s.memory_model_id ?? '')
     || form.embedding_model_id !== (s.embedding_model_id ?? '')
     || form.vlm_model_id !== (s.vlm_model_id ?? '')
+    || form.background_model_id !== (s.background_model_id ?? '')
     || form.search_provider_id !== (s.search_provider_id ?? '')
     || form.max_context_load_time !== (s.max_context_load_time ?? 0)
     || form.language !== (s.language ?? '')

@@ -8,6 +8,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Bm25Stat struct {
+	Lang      string             `json:"lang"`
+	DocCount  int32              `json:"doc_count"`
+	AvgDocLen float64            `json:"avg_doc_len"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Bot struct {
 	ID                  pgtype.UUID        `json:"id"`
 	OwnerUserID         pgtype.UUID        `json:"owner_user_id"`
@@ -23,6 +30,7 @@ type Bot struct {
 	MemoryModelID       pgtype.UUID        `json:"memory_model_id"`
 	EmbeddingModelID    pgtype.UUID        `json:"embedding_model_id"`
 	VlmModelID          pgtype.UUID        `json:"vlm_model_id"`
+	BackgroundModelID   pgtype.UUID        `json:"background_model_id"`
 	SearchProviderID    pgtype.UUID        `json:"search_provider_id"`
 	Identity            pgtype.Text        `json:"identity"`
 	Soul                pgtype.Text        `json:"soul"`
@@ -155,6 +163,16 @@ type ConversationSummary struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EmbeddingCache struct {
+	ID        pgtype.UUID `json:"id"`
+	Provider  string      `json:"provider"`
+	Model     string      `json:"model"`
+	Hash      string      `json:"hash"`
+	Embedding []byte      `json:"embedding"`
+	Dims      int32       `json:"dims"`
+	UpdatedAt int64       `json:"updated_at"`
+}
+
 type EvolutionLog struct {
 	ID                pgtype.UUID        `json:"id"`
 	BotID             pgtype.UUID        `json:"bot_id"`
@@ -163,6 +181,7 @@ type EvolutionLog struct {
 	Status            string             `json:"status"`
 	ChangesSummary    pgtype.Text        `json:"changes_summary"`
 	FilesModified     []string           `json:"files_modified"`
+	FilesSnapshot     []byte             `json:"files_snapshot"`
 	AgentResponse     pgtype.Text        `json:"agent_response"`
 	StartedAt         pgtype.Timestamptz `json:"started_at"`
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
@@ -176,14 +195,20 @@ type GlobalSetting struct {
 }
 
 type HeartbeatConfig struct {
-	ID              pgtype.UUID        `json:"id"`
-	BotID           pgtype.UUID        `json:"bot_id"`
-	Enabled         bool               `json:"enabled"`
-	IntervalSeconds int32              `json:"interval_seconds"`
-	Prompt          string             `json:"prompt"`
-	EventTriggers   []byte             `json:"event_triggers"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID `json:"id"`
+	BotID           pgtype.UUID `json:"bot_id"`
+	Enabled         bool        `json:"enabled"`
+	IntervalSeconds int32       `json:"interval_seconds"`
+	Prompt          string      `json:"prompt"`
+	EventTriggers   []byte      `json:"event_triggers"`
+	// 0-23: hour of day (inclusive) at which heartbeat becomes active
+	ActiveHoursStart int16 `json:"active_hours_start"`
+	// 0-23: hour of day (inclusive) at which heartbeat stops firing
+	ActiveHoursEnd int16 `json:"active_hours_end"`
+	// ISO weekday numbers (0=Sunday … 6=Saturday) on which the heartbeat is active
+	ActiveDays []int16            `json:"active_days"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type LifecycleEvent struct {
@@ -303,6 +328,22 @@ type Subagent struct {
 	Messages    []byte             `json:"messages"`
 	Metadata    []byte             `json:"metadata"`
 	Skills      []byte             `json:"skills"`
+}
+
+type SubagentRun struct {
+	ID            pgtype.UUID        `json:"id"`
+	RunID         string             `json:"run_id"`
+	BotID         string             `json:"bot_id"`
+	Name          string             `json:"name"`
+	Task          string             `json:"task"`
+	Status        string             `json:"status"`
+	SpawnDepth    int32              `json:"spawn_depth"`
+	ParentRunID   pgtype.Text        `json:"parent_run_id"`
+	ResultSummary pgtype.Text        `json:"result_summary"`
+	ErrorMessage  pgtype.Text        `json:"error_message"`
+	StartedAt     pgtype.Timestamptz `json:"started_at"`
+	EndedAt       pgtype.Timestamptz `json:"ended_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type TokenUsage struct {

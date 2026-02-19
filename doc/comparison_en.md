@@ -50,5 +50,6 @@
 | 40 | Companion Apps | None | macOS + iOS + Android native apps | **O** |
 | 41 | Webhook / Email | None | Webhook + Gmail Pub/Sub | **O** |
 | 42 | Model Failover | Fallback model auto-failover (sync + stream) | Automatic model failover | **=** |
+| 43 | Model Routing | Background model routing (heartbeat/schedule/subagent use cheaper model) + 3-tier prompts + smart memory gate | None (single model for all tasks) | **M** |
 
-**Summary: Memoh-v2 wins 27 · OpenClaw wins 8 · Tied 7**
+**Summary: Memoh-v2 wins 28 · OpenClaw wins 8 · Tied 7**

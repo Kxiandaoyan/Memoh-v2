@@ -2,14 +2,16 @@
 
 # Memoh-v2
 
-**Containerized · Structured Long-Memory · Self-Evolving AI Agent System**
+**Real Isolation · Real Memory · Real Evolution — The Uncompromising AI Agent Platform**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)](https://vuejs.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docs.docker.com/compose/)
 
-Each bot gets its own container, memory, skills, and self-evolution — your personal AI agent platform.
+Others share a runtime — we give each bot its own containerd container.<br>
+Others use SQLite vector search — we use Qdrant + BM25 + LLM triple extraction.<br>
+Others edit memory files by hand — our bots reflect, experiment, and review on their own.
 
 [中文](./README.md) · [Feature Guide](./doc/features_en.md) · [Installation](./doc/installation_en.md) · [Tutorials](./doc/README.md) · [Screenshots](./doc/screenshots.md)
 

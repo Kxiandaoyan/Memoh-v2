@@ -66,6 +66,7 @@ function truncateHeadTail(content: string, maxChars: number): string {
 export const createAgent = (
   {
     model: modelConfig,
+    backgroundModel: backgroundModelConfig,
     activeContextTime = 24 * 60,
     language = 'Same as the user input',
     timezone = 'UTC',
@@ -258,7 +259,7 @@ export const createAgent = (
       fetch,
       botId,
     })
-    const tools = getTools(allowedActions, { fetch, model: modelConfig, identity, auth, enableSkill, mcpConnections, registry })
+    const tools = getTools(allowedActions, { fetch, model: modelConfig, backgroundModel: backgroundModelConfig, identity, auth, enableSkill, mcpConnections, registry })
     const merged = { ...mcpTools, ...tools } as ToolSet
     const wrappedTools = sessionId ? wrapToolsWithLoopDetection(merged, sessionId) : merged
     return {
