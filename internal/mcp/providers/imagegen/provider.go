@@ -1,11 +1,16 @@
 package imagegen
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,7 +163,7 @@ type generateRequest struct {
 }
 
 func (e *Executor) generateAndSend(ctx context.Context, req generateRequest) {
-	imageBytes, err := e.callGeminiImageAPI(ctx, req)
+	imageBytes, err := e.callImageAPI(ctx, req)
 	if err != nil {
 		e.logger.Error("image generation failed",
 			slog.String("bot_id", req.botID),
@@ -201,15 +206,154 @@ func (e *Executor) generateAndSend(ctx context.Context, req generateRequest) {
 	}
 }
 
-func (e *Executor) callGeminiImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
+// callImageAPI routes to either the OpenAI-compatible API (when baseURL is set,
+// e.g. OpenRouter) or the native Gemini SDK (when using the Gemini API directly).
+func (e *Executor) callImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
+	if strings.TrimSpace(req.baseURL) != "" {
+		return callOpenAICompatibleImageAPI(ctx, req)
+	}
+	return callNativeGeminiAPI(ctx, req)
+}
+
+// ---------------------------------------------------------------------------
+// Path A: OpenAI-compatible API (OpenRouter, custom proxies)
+// ---------------------------------------------------------------------------
+
+type openAIChatRequest struct {
+	Model    string           `json:"model"`
+	Messages []openAIMessage  `json:"messages"`
+}
+
+type openAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openAIChatResponse struct {
+	Choices []struct {
+		Message struct {
+			// Content can be a plain string or an array of content parts.
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+		Code    any    `json:"code"`
+	} `json:"error,omitempty"`
+}
+
+type contentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
+}
+
+func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
+	baseURL := strings.TrimRight(req.baseURL, "/")
+	endpoint := baseURL + "/chat/completions"
+
+	payload := openAIChatRequest{
+		Model: req.modelName,
+		Messages: []openAIMessage{
+			{Role: "user", Content: req.prompt},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+req.apiKey)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		preview := truncate(string(respBody), 300)
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, preview)
+	}
+
+	var chatResp openAIChatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if chatResp.Error != nil {
+		return nil, fmt.Errorf("API error: %s", chatResp.Error.Message)
+	}
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("API returned no choices")
+	}
+
+	raw := chatResp.Choices[0].Message.Content
+
+	// Try array of content parts first (multimodal response).
+	var parts []contentPart
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		for _, part := range parts {
+			if part.Type == "image_url" && part.ImageURL != nil {
+				return decodeDataURI(part.ImageURL.URL)
+			}
+		}
+	}
+
+	// Fallback: plain string — check if it's a data URI itself.
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		if strings.HasPrefix(text, "data:image/") {
+			return decodeDataURI(text)
+		}
+	}
+
+	return nil, fmt.Errorf("API response contained no image data (model: %s)", req.modelName)
+}
+
+// decodeDataURI extracts raw bytes from a data URI like "data:image/png;base64,..."
+// or returns the URL directly if it's a plain https URL (caller should fetch it).
+func decodeDataURI(uri string) ([]byte, error) {
+	if !strings.HasPrefix(uri, "data:") {
+		return nil, fmt.Errorf("unsupported image URL format (expected data URI, got: %s)", truncate(uri, 80))
+	}
+	// Format: data:<mime>;base64,<data>
+	comma := strings.Index(uri, ",")
+	if comma < 0 {
+		return nil, fmt.Errorf("malformed data URI")
+	}
+	encoded := uri[comma+1:]
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		// Some providers omit padding — try RawStdEncoding.
+		decoded, err = base64.RawStdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 image: %w", err)
+		}
+	}
+	return decoded, nil
+}
+
+// ---------------------------------------------------------------------------
+// Path B: Native Gemini SDK (direct Gemini API, no proxy)
+// ---------------------------------------------------------------------------
+
+func callNativeGeminiAPI(ctx context.Context, req generateRequest) ([]byte, error) {
 	cc := &genai.ClientConfig{
 		APIKey:  req.apiKey,
 		Backend: genai.BackendGeminiAPI,
-	}
-	if strings.TrimSpace(req.baseURL) != "" {
-		cc.HTTPOptions = genai.HTTPOptions{
-			BaseURL: strings.TrimSpace(req.baseURL),
-		}
 	}
 	client, err := genai.NewClient(ctx, cc)
 	if err != nil {
@@ -236,18 +380,9 @@ func (e *Executor) callGeminiImageAPI(ctx context.Context, req generateRequest) 
 	return nil, fmt.Errorf("Gemini response contained no image data")
 }
 
-func (e *Executor) sendErrorNotification(ctx context.Context, req generateRequest, genErr error) {
-	msg := fmt.Sprintf("Image generation failed: %v", genErr)
-	sendErr := e.channelManager.Send(ctx, req.botID, channel.ChannelType(req.platform), channel.SendRequest{
-		Target: req.target,
-		Message: channel.Message{
-			Text: msg,
-		},
-	})
-	if sendErr != nil {
-		e.logger.Error("failed to send error notification", slog.Any("error", sendErr))
-	}
-}
+// ---------------------------------------------------------------------------
+// resolveImageModel
+// ---------------------------------------------------------------------------
 
 // resolveImageModel returns (modelName, apiKey, baseURL) for image generation.
 // Priority: bot's image_model_id setting -> chat model (Google provider only) with fallback model name.
@@ -294,7 +429,20 @@ func (e *Executor) resolveImageModel(ctx context.Context, botID string) (string,
 	if apiKey == "" {
 		return "", "", "", fmt.Errorf("Gemini provider has no API key configured")
 	}
-	return fallbackModel, apiKey, strings.TrimSpace(provider.BaseUrl), nil
+	return fallbackModel, apiKey, "", nil
+}
+
+func (e *Executor) sendErrorNotification(ctx context.Context, req generateRequest, genErr error) {
+	msg := fmt.Sprintf("Image generation failed: %v", genErr)
+	sendErr := e.channelManager.Send(ctx, req.botID, channel.ChannelType(req.platform), channel.SendRequest{
+		Target: req.target,
+		Message: channel.Message{
+			Text: msg,
+		},
+	})
+	if sendErr != nil {
+		e.logger.Error("failed to send error notification", slog.Any("error", sendErr))
+	}
 }
 
 func randomHex(n int) string {
