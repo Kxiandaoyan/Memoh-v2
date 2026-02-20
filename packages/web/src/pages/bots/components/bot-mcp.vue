@@ -988,7 +988,7 @@ import {
   postBotsByBotIdMcpOpsBatchDelete,
 } from '@memoh/sdk'
 import ConfirmPopover from '@/components/confirm-popover/index.vue'
-import { client } from '@memoh/sdk'
+import { client } from '@memoh/sdk/client'
 
 interface SmitheryServer {
   qualifiedName: string
