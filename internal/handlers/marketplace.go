@@ -35,6 +35,8 @@ func (h *MarketplaceHandler) Register(e *echo.Echo) {
 	g := e.Group("/mcp-marketplace")
 	g.GET("/search", h.Search)
 	g.GET("/detail", h.Detail)
+	g.GET("/skills", h.SearchSkills)
+	g.GET("/skills/detail", h.SkillDetail)
 }
 
 // Search proxies a search request to the Smithery registry.
@@ -115,6 +117,65 @@ func (h *MarketplaceHandler) Detail(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, result)
+}
+
+// SearchSkills proxies a skills search request to Smithery.
+// @Summary Search Smithery skills marketplace
+// @Tags marketplace
+// @Param q query string false "Search query"
+// @Param page query int false "Page number (1-indexed)"
+// @Param pageSize query int false "Results per page"
+// @Success 200 {object} map[string]any
+// @Router /mcp-marketplace/skills [get]
+func (h *MarketplaceHandler) SearchSkills(c echo.Context) error {
+	q := c.QueryParam("q")
+	page := c.QueryParam("page")
+	pageSize := c.QueryParam("pageSize")
+
+	params := url.Values{}
+	if q != "" {
+		params.Set("q", q)
+	}
+	if page != "" {
+		params.Set("page", page)
+	}
+	if pageSize == "" {
+		pageSize = "20"
+	}
+	params.Set("pageSize", pageSize)
+
+	apiURL := smitheryAPIBase + "/skills?" + params.Encode()
+	body, status, err := h.doSmitheryRequest(apiURL)
+	if err != nil {
+		h.logger.Error("smithery skills search failed", "error", err)
+		return echo.NewHTTPError(http.StatusBadGateway, "skills search failed")
+	}
+
+	return c.JSONBlob(status, body)
+}
+
+// SkillDetail fetches a single skill from Smithery including its prompt content.
+// @Summary Get skill detail from Smithery
+// @Tags marketplace
+// @Param namespace query string true "Skill namespace"
+// @Param slug query string true "Skill slug"
+// @Success 200 {object} map[string]any
+// @Router /mcp-marketplace/skills/detail [get]
+func (h *MarketplaceHandler) SkillDetail(c echo.Context) error {
+	ns := strings.TrimSpace(c.QueryParam("namespace"))
+	slug := strings.TrimSpace(c.QueryParam("slug"))
+	if ns == "" || slug == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "namespace and slug are required")
+	}
+
+	apiURL := fmt.Sprintf("%s/skills/%s/%s", smitheryAPIBase, url.PathEscape(ns), url.PathEscape(slug))
+	body, status, err := h.doSmitheryRequest(apiURL)
+	if err != nil {
+		h.logger.Error("smithery skill detail failed", "namespace", ns, "slug", slug, "error", err)
+		return echo.NewHTTPError(http.StatusBadGateway, "skill detail failed")
+	}
+
+	return c.JSONBlob(status, body)
 }
 
 func (h *MarketplaceHandler) doSmitheryRequest(apiURL string) ([]byte, int, error) {
