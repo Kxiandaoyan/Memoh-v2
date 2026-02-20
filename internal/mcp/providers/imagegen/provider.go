@@ -226,11 +226,8 @@ func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]b
 	payload := map[string]any{
 		"model": req.modelName,
 		"messages": []map[string]any{
-			{"role": "user", "content": "Generate an image: " + req.prompt},
+			{"role": "user", "content": req.prompt},
 		},
-		// Required for Gemini image generation models via OpenRouter / OpenAI-compat APIs.
-		// Maps to Gemini's responseModalities: ["TEXT", "IMAGE"].
-		"modalities": []string{"text", "image"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -259,9 +256,63 @@ func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]b
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, preview)
 	}
 
-	slog.Info("imagegen: raw API response", slog.String("body_preview", truncate(string(respBody), 500)))
+	// Log response size + structure for debugging (avoid logging huge base64 payloads).
+	slog.Info("imagegen: API response received",
+		slog.Int("body_size", len(respBody)),
+		slog.String("structure", describeResponseStructure(respBody)))
 
 	return extractImageFromResponse(respBody, req.modelName)
+}
+
+// describeResponseStructure logs the shape of the API response without huge data.
+func describeResponseStructure(respBody []byte) string {
+	var raw map[string]any
+	if err := json.Unmarshal(respBody, &raw); err != nil {
+		return "unparseable"
+	}
+	choices, ok := raw["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return "no choices"
+	}
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		return "bad choice"
+	}
+	msg, ok := choice["message"].(map[string]any)
+	if !ok {
+		return "no message"
+	}
+
+	// Collect all keys in the message.
+	var keys []string
+	for k := range msg {
+		keys = append(keys, k)
+	}
+
+	content := msg["content"]
+	var contentDesc string
+	switch c := content.(type) {
+	case string:
+		contentDesc = fmt.Sprintf("string(len=%d)", len(c))
+	case []any:
+		var partTypes []string
+		for _, p := range c {
+			if pm, ok := p.(map[string]any); ok {
+				t, _ := pm["type"].(string)
+				if t == "" {
+					t = "unknown"
+				}
+				partTypes = append(partTypes, t)
+			}
+		}
+		contentDesc = fmt.Sprintf("array(%d parts: %s)", len(c), strings.Join(partTypes, ", "))
+	case nil:
+		contentDesc = "null"
+	default:
+		contentDesc = fmt.Sprintf("other(%T)", c)
+	}
+
+	return fmt.Sprintf("msg_keys=[%s] content=%s", strings.Join(keys, ","), contentDesc)
 }
 
 // extractImageFromResponse walks through the OpenAI-compatible response
