@@ -303,6 +303,7 @@
       "noConnectionInfo": "该服务器暂无可用的连接配置，请在 Smithery 页面查看详情",
       "apiKeyHint": "搜索失败，可能未配置 Smithery API Key。请在 config.toml 的 [smithery] 中设置 api_key，可在 smithery.ai/settings/api-keys 获取。",
       "manualSetup": "手动配置",
+      "visitSmithery": "访问 Smithery 官网",
       "modelscope": {
         "title": "ModelScope MCP",
         "description": "ModelScope 提供丰富的 MCP 服务器资源。你可以在 ModelScope 官网浏览并手动添加 MCP 服务器。",

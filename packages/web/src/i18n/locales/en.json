@@ -307,6 +307,7 @@
       "noConnectionInfo": "No connection config available for this server. See the Smithery page for details.",
       "apiKeyHint": "Search failed. Smithery API key may not be configured. Set api_key in the [smithery] section of config.toml. Get one at smithery.ai/settings/api-keys.",
       "manualSetup": "Manual Setup",
+      "visitSmithery": "Visit Smithery Website",
       "modelscope": {
         "title": "ModelScope MCP",
         "description": "ModelScope offers rich MCP server resources. You can browse and manually add MCP servers from the ModelScope website.",
