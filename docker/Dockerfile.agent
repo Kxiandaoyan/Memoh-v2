@@ -15,7 +15,7 @@ RUN cd agent && bun install
 COPY packages/config/ ./packages/config/
 COPY agent/ ./agent/
 
-RUN cd agent && bun run build --external jsdom --external @openrouter/sdk
+RUN cd agent && bun run build --external jsdom
 
 FROM oven/bun:1-alpine
 
