@@ -219,47 +219,14 @@ func (e *Executor) callImageAPI(ctx context.Context, req generateRequest) ([]byt
 // Path A: OpenAI-compatible API (OpenRouter, custom proxies)
 // ---------------------------------------------------------------------------
 
-type openAIChatRequest struct {
-	Model    string           `json:"model"`
-	Messages []openAIMessage  `json:"messages"`
-}
-
-type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type openAIChatResponse struct {
-	Choices []struct {
-		Message struct {
-			// Content can be a plain string or an array of content parts.
-			Content json.RawMessage `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-		Code    any    `json:"code"`
-	} `json:"error,omitempty"`
-}
-
-type contentPart struct {
-	Type     string    `json:"type"`
-	Text     string    `json:"text,omitempty"`
-	ImageURL *imageURL `json:"image_url,omitempty"`
-}
-
-type imageURL struct {
-	URL string `json:"url"`
-}
-
 func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
 	baseURL := strings.TrimRight(req.baseURL, "/")
 	endpoint := baseURL + "/chat/completions"
 
-	payload := openAIChatRequest{
-		Model: req.modelName,
-		Messages: []openAIMessage{
-			{Role: "user", Content: req.prompt},
+	payload := map[string]any{
+		"model": req.modelName,
+		"messages": []map[string]any{
+			{"role": "user", "content": req.prompt},
 		},
 	}
 	body, err := json.Marshal(payload)
@@ -285,51 +252,152 @@ func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]b
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		preview := truncate(string(respBody), 300)
+		preview := truncate(string(respBody), 500)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, preview)
 	}
 
-	var chatResp openAIChatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if chatResp.Error != nil {
-		return nil, fmt.Errorf("API error: %s", chatResp.Error.Message)
-	}
-	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("API returned no choices")
+	slog.Info("imagegen: raw API response", slog.String("body_preview", truncate(string(respBody), 500)))
+
+	return extractImageFromResponse(respBody, req.modelName)
+}
+
+// extractImageFromResponse walks through the OpenAI-compatible response
+// trying multiple known multimodal content layouts used by providers.
+func extractImageFromResponse(respBody []byte, modelName string) ([]byte, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(respBody, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse response JSON: %w", err)
 	}
 
-	raw := chatResp.Choices[0].Message.Content
+	// Check top-level error.
+	if errObj, ok := raw["error"]; ok && errObj != nil {
+		if errMap, ok := errObj.(map[string]any); ok {
+			return nil, fmt.Errorf("API error: %v", errMap["message"])
+		}
+	}
 
-	// Try array of content parts first (multimodal response).
-	var parts []contentPart
-	if err := json.Unmarshal(raw, &parts); err == nil {
-		for _, part := range parts {
-			if part.Type == "image_url" && part.ImageURL != nil {
-				return decodeDataURI(part.ImageURL.URL)
+	choices, ok := raw["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return nil, fmt.Errorf("API returned no choices (response: %s)", truncate(string(respBody), 300))
+	}
+
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected choice format")
+	}
+	msg, ok := choice["message"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected message format")
+	}
+
+	content := msg["content"]
+
+	// --- Case 1: content is an array of parts (multimodal response) ---
+	if parts, ok := content.([]any); ok {
+		for _, partRaw := range parts {
+			part, ok := partRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if imgData := extractImageFromPart(part); imgData != nil {
+				return imgData, nil
+			}
+		}
+		return nil, fmt.Errorf("multimodal response had %d parts but none contained image data", len(parts))
+	}
+
+	// --- Case 2: content is a plain string ---
+	if text, ok := content.(string); ok {
+		// Maybe it's a data URI directly.
+		if strings.HasPrefix(text, "data:image/") {
+			return decodeBase64Data(text)
+		}
+		// Maybe it's a URL to an image.
+		if (strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://")) && looksLikeImageURL(text) {
+			return fetchImageURL(text)
+		}
+		return nil, fmt.Errorf("response was text only, no image (model: %s, preview: %s)", modelName, truncate(text, 200))
+	}
+
+	return nil, fmt.Errorf("unexpected content type in response (model: %s)", modelName)
+}
+
+// extractImageFromPart tries to find image data in a single content part.
+// Supports multiple provider formats:
+//   - {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}   (OpenAI format)
+//   - {"type":"image","source":{"type":"base64","data":"..."}}                (Anthropic format)
+//   - {"type":"inline_data","inline_data":{"mime_type":"image/png","data":"..."}} (Gemini-like)
+//   - Part with "b64_json" or "data" fields directly
+func extractImageFromPart(part map[string]any) []byte {
+	partType, _ := part["type"].(string)
+
+	// OpenAI format: image_url with data URI
+	if partType == "image_url" {
+		if imgURL, ok := part["image_url"].(map[string]any); ok {
+			if url, ok := imgURL["url"].(string); ok {
+				if data, err := resolveImageString(url); err == nil {
+					return data
+				}
 			}
 		}
 	}
 
-	// Fallback: plain string — check if it's a data URI itself.
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		if strings.HasPrefix(text, "data:image/") {
-			return decodeDataURI(text)
+	// Anthropic format: source.data
+	if partType == "image" {
+		if source, ok := part["source"].(map[string]any); ok {
+			if b64, ok := source["data"].(string); ok {
+				if data, err := base64.StdEncoding.DecodeString(b64); err == nil {
+					return data
+				}
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("API response contained no image data (model: %s)", req.modelName)
+	// Gemini-like: inline_data
+	if partType == "inline_data" {
+		if inline, ok := part["inline_data"].(map[string]any); ok {
+			if b64, ok := inline["data"].(string); ok {
+				if data, err := base64.StdEncoding.DecodeString(b64); err == nil {
+					return data
+				}
+			}
+		}
+	}
+
+	// Direct fields: b64_json, data, image_data
+	for _, key := range []string{"b64_json", "data", "image_data"} {
+		if b64, ok := part[key].(string); ok && len(b64) > 100 {
+			if data, err := base64.StdEncoding.DecodeString(b64); err == nil {
+				return data
+			}
+			if data, err := base64.RawStdEncoding.DecodeString(b64); err == nil {
+				return data
+			}
+		}
+	}
+
+	return nil
 }
 
-// decodeDataURI extracts raw bytes from a data URI like "data:image/png;base64,..."
-// or returns the URL directly if it's a plain https URL (caller should fetch it).
-func decodeDataURI(uri string) ([]byte, error) {
-	if !strings.HasPrefix(uri, "data:") {
-		return nil, fmt.Errorf("unsupported image URL format (expected data URI, got: %s)", truncate(uri, 80))
+// resolveImageString handles data URIs, https URLs, and raw base64.
+func resolveImageString(s string) ([]byte, error) {
+	if strings.HasPrefix(s, "data:") {
+		return decodeBase64Data(s)
 	}
-	// Format: data:<mime>;base64,<data>
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+		return fetchImageURL(s)
+	}
+	// Possibly raw base64 without prefix.
+	if len(s) > 200 {
+		if data, err := base64.StdEncoding.DecodeString(s); err == nil {
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("cannot resolve image string: %s", truncate(s, 60))
+}
+
+// decodeBase64Data extracts raw bytes from "data:image/png;base64,..." strings.
+func decodeBase64Data(uri string) ([]byte, error) {
 	comma := strings.Index(uri, ",")
 	if comma < 0 {
 		return nil, fmt.Errorf("malformed data URI")
@@ -337,13 +405,48 @@ func decodeDataURI(uri string) ([]byte, error) {
 	encoded := uri[comma+1:]
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		// Some providers omit padding — try RawStdEncoding.
 		decoded, err = base64.RawStdEncoding.DecodeString(encoded)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode base64 image: %w", err)
+			return nil, fmt.Errorf("failed to decode base64: %w", err)
 		}
 	}
 	return decoded, nil
+}
+
+// fetchImageURL downloads an image from an HTTPS URL.
+func fetchImageURL(url string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("image download failed: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024)) // 20 MB cap
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 100 {
+		return nil, fmt.Errorf("downloaded data too small (%d bytes), likely not an image", len(data))
+	}
+	return data, nil
+}
+
+func looksLikeImageURL(url string) bool {
+	lower := strings.ToLower(url)
+	for _, ext := range []string{".png", ".jpg", ".jpeg", ".webp", ".gif"} {
+		if strings.Contains(lower, ext) {
+			return true
+		}
+	}
+	return strings.Contains(lower, "image") || strings.Contains(lower, "img")
 }
 
 // ---------------------------------------------------------------------------
