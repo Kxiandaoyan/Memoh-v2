@@ -40,7 +40,6 @@ type Executor struct {
 	queries        *sqlc.Queries
 	channelManager *channel.Manager
 	dataRoot       string
-	gatewayBaseURL string
 
 	wg     sync.WaitGroup
 	ctx    context.Context
@@ -54,15 +53,10 @@ func NewExecutor(
 	queries *sqlc.Queries,
 	channelMgr *channel.Manager,
 	dataRoot string,
-	gatewayBaseURL string,
 ) *Executor {
 	if log == nil {
 		log = slog.Default()
 	}
-	if strings.TrimSpace(gatewayBaseURL) == "" {
-		gatewayBaseURL = "http://127.0.0.1:8081"
-	}
-	gatewayBaseURL = strings.TrimRight(gatewayBaseURL, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Executor{
 		logger:         log.With(slog.String("provider", "imagegen")),
@@ -71,7 +65,6 @@ func NewExecutor(
 		queries:        queries,
 		channelManager: channelMgr,
 		dataRoot:       dataRoot,
-		gatewayBaseURL: gatewayBaseURL,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -213,82 +206,255 @@ func (e *Executor) generateAndSend(ctx context.Context, req generateRequest) {
 	}
 }
 
-// callImageAPI routes to the Agent Gateway's /image/generate endpoint
-// (which uses the OpenRouter SDK) when baseURL is set, or falls back
-// to the native Gemini SDK for direct Google API calls.
 func (e *Executor) callImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
 	if strings.TrimSpace(req.baseURL) != "" {
-		return e.callViaGateway(ctx, req)
+		return callOpenRouterAPI(ctx, e.logger, req)
 	}
 	return callNativeGeminiAPI(ctx, req)
 }
 
 // ---------------------------------------------------------------------------
-// Path A: Delegate to Agent Gateway (OpenRouter SDK)
+// Path A: Direct OpenRouter / OpenAI-compatible API call (Go → OpenRouter)
 // ---------------------------------------------------------------------------
 
-type gatewayImageResponse struct {
-	Success  bool   `json:"success"`
-	Image    string `json:"image"`
-	MimeType string `json:"mimeType"`
-	Error    string `json:"error"`
-}
+func callOpenRouterAPI(ctx context.Context, logger *slog.Logger, req generateRequest) ([]byte, error) {
+	baseURL := strings.TrimRight(req.baseURL, "/")
+	endpoint := baseURL + "/chat/completions"
 
-func (e *Executor) callViaGateway(ctx context.Context, req generateRequest) ([]byte, error) {
-	endpoint := e.gatewayBaseURL + "/image/generate"
-
-	payload := map[string]string{
-		"apiKey": req.apiKey,
-		"model":  req.modelName,
-		"prompt": req.prompt,
+	payload := map[string]any{
+		"model": req.modelName,
+		"messages": []map[string]any{
+			{"role": "user", "content": req.prompt},
+		},
+		"modalities": []string{"image", "text"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal gateway request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build gateway request: %w", err)
+		return nil, fmt.Errorf("failed to build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+req.apiKey)
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("gateway request failed: %w", err)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read gateway response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		preview := truncate(string(respBody), 500)
-		return nil, fmt.Errorf("gateway error (status %d): %s", resp.StatusCode, preview)
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, preview)
 	}
 
-	var result gatewayImageResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse gateway response: %w", err)
+	logger.Info("imagegen: raw API response",
+		slog.Int("status", resp.StatusCode),
+		slog.Int("body_bytes", len(respBody)),
+		slog.String("body_preview", truncate(string(respBody), 2000)))
+
+	return extractImageFromJSON(respBody, req.modelName)
+}
+
+func extractImageFromJSON(respBody []byte, modelName string) ([]byte, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(respBody, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	if !result.Success {
-		return nil, fmt.Errorf("image generation failed via gateway: %s", result.Error)
+	if errObj, ok := raw["error"]; ok && errObj != nil {
+		if errMap, ok := errObj.(map[string]any); ok {
+			return nil, fmt.Errorf("API error: %v", errMap["message"])
+		}
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(result.Image)
+	choices, ok := raw["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
+	}
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("bad choice format")
+	}
+	msg, ok := choice["message"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("no message in choice")
+	}
+
+	// Log all keys in message for debugging.
+	var msgKeys []string
+	for k := range msg {
+		msgKeys = append(msgKeys, k)
+	}
+	slog.Info("imagegen: message keys", slog.String("keys", strings.Join(msgKeys, ", ")))
+
+	// --- Try message.images[] (OpenRouter native format) ---
+	if images, ok := msg["images"].([]any); ok && len(images) > 0 {
+		slog.Info("imagegen: found images field", slog.Int("count", len(images)))
+		for i, imgRaw := range images {
+			imgData, err := resolveImageObject(imgRaw)
+			if err == nil && imgData != nil {
+				return imgData, nil
+			}
+			slog.Info("imagegen: image entry skipped",
+				slog.Int("index", i),
+				slog.String("reason", fmt.Sprint(err)))
+		}
+		return nil, fmt.Errorf("images[] had %d entries but none decodable", len(images))
+	}
+
+	// --- Try message.content (array of parts or string) ---
+	content := msg["content"]
+	if parts, ok := content.([]any); ok {
+		slog.Info("imagegen: content is array", slog.Int("parts", len(parts)))
+		for i, partRaw := range parts {
+			imgData, err := resolveImageObject(partRaw)
+			if err == nil && imgData != nil {
+				return imgData, nil
+			}
+			slog.Info("imagegen: content part skipped",
+				slog.Int("index", i),
+				slog.String("reason", fmt.Sprint(err)))
+		}
+		return nil, fmt.Errorf("content had %d parts but none contained image", len(parts))
+	}
+
+	if text, ok := content.(string); ok && len(text) > 0 {
+		if imgData := tryResolveString(text); imgData != nil {
+			return imgData, nil
+		}
+		return nil, fmt.Errorf("text-only response, no image (model: %s, preview: %s)", modelName, truncate(text, 200))
+	}
+
+	return nil, fmt.Errorf("no image found in response (model: %s, msg_keys: %s)", modelName, strings.Join(msgKeys, ","))
+}
+
+// resolveImageObject tries to extract image bytes from a JSON object.
+// Handles: {"image_url":{"url":"..."}}, {"type":"image_url",...}, {"b64_json":"..."}, etc.
+func resolveImageObject(v any) ([]byte, error) {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("not an object")
+	}
+
+	// {"image_url": {"url": "data:..." or "https://..."}}
+	if iu, ok := obj["image_url"].(map[string]any); ok {
+		if url, ok := iu["url"].(string); ok && len(url) > 0 {
+			return resolveURL(url)
+		}
+	}
+
+	// {"url": "..."}  (direct URL)
+	if url, ok := obj["url"].(string); ok && len(url) > 0 {
+		return resolveURL(url)
+	}
+
+	// {"b64_json": "..."}
+	if b64, ok := obj["b64_json"].(string); ok && len(b64) > 100 {
+		return base64Decode(b64)
+	}
+
+	// {"data": "..."} or {"image_data": "..."}
+	for _, key := range []string{"data", "image_data"} {
+		if b64, ok := obj[key].(string); ok && len(b64) > 100 {
+			if d, err := base64Decode(b64); err == nil {
+				return d, nil
+			}
+		}
+	}
+
+	// {"source": {"data": "..."}} (Anthropic format)
+	if src, ok := obj["source"].(map[string]any); ok {
+		if b64, ok := src["data"].(string); ok && len(b64) > 100 {
+			return base64Decode(b64)
+		}
+	}
+
+	// {"inline_data": {"data": "..."}} (Gemini format)
+	if inl, ok := obj["inline_data"].(map[string]any); ok {
+		if b64, ok := inl["data"].(string); ok && len(b64) > 100 {
+			return base64Decode(b64)
+		}
+	}
+
+	return nil, fmt.Errorf("no image data in object (keys: %s)", objectKeys(obj))
+}
+
+func resolveURL(s string) ([]byte, error) {
+	if strings.HasPrefix(s, "data:image/") {
+		comma := strings.Index(s, ",")
+		if comma < 0 {
+			return nil, fmt.Errorf("malformed data URI")
+		}
+		return base64Decode(s[comma+1:])
+	}
+
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+		return downloadImage(s)
+	}
+
+	// Could be raw base64.
+	if len(s) > 200 {
+		return base64Decode(s)
+	}
+
+	return nil, fmt.Errorf("unrecognized URL format (len=%d, prefix=%s)", len(s), truncate(s, 40))
+}
+
+func tryResolveString(s string) []byte {
+	data, err := resolveURL(s)
+	if err == nil {
+		return data
+	}
+	return nil
+}
+
+func downloadImage(url string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 image from gateway: %w", err)
+		return nil, err
 	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 100 {
+		return nil, fmt.Errorf("too small (%d bytes)", len(data))
+	}
+	return data, nil
+}
 
-	e.logger.Info("image generated via gateway",
-		slog.String("model", req.modelName),
-		slog.Int("image_bytes", len(decoded)),
-		slog.String("mime", result.MimeType))
+func base64Decode(s string) ([]byte, error) {
+	// Try standard encoding first, then raw.
+	if data, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return data, nil
+	}
+	return base64.RawStdEncoding.DecodeString(s)
+}
 
-	return decoded, nil
+func objectKeys(m map[string]any) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return strings.Join(keys, ",")
 }
 
 // ---------------------------------------------------------------------------
@@ -329,15 +495,12 @@ func callNativeGeminiAPI(ctx context.Context, req generateRequest) ([]byte, erro
 // resolveImageModel
 // ---------------------------------------------------------------------------
 
-// resolveImageModel returns (modelName, apiKey, baseURL) for image generation.
-// Priority: bot's image_model_id setting -> chat model (Google provider only) with fallback model name.
 func (e *Executor) resolveImageModel(ctx context.Context, botID string) (string, string, string, error) {
 	botSettings, err := e.settings.GetBot(ctx, botID)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get bot settings: %w", err)
 	}
 
-	// If a dedicated image model is configured, use it directly.
 	if imageModelID := strings.TrimSpace(botSettings.ImageModelID); imageModelID != "" {
 		model, err := e.models.GetByModelID(ctx, imageModelID)
 		if err != nil {
@@ -354,7 +517,6 @@ func (e *Executor) resolveImageModel(ctx context.Context, botID string) (string,
 		return model.ModelID, apiKey, strings.TrimSpace(provider.BaseUrl), nil
 	}
 
-	// Fallback: use the chat model's provider credentials with the default Gemini model name.
 	chatModelID := strings.TrimSpace(botSettings.ChatModelID)
 	if chatModelID == "" {
 		return "", "", "", fmt.Errorf("bot has no image model or chat model configured")
