@@ -469,7 +469,7 @@ func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Con
 
 	ovExec := mcpopenviking.NewExecutor(log, manager, queries)
 
-	imagegenExec := mcpimagegen.NewExecutor(log, settingsService, modelService, queries, channelManager, cfg.MCP.DataRoot)
+	imagegenExec := mcpimagegen.NewExecutor(log, settingsService, modelService, queries, channelManager, cfg.MCP.DataRoot, cfg.AgentGateway.BaseURL())
 	lc.Append(fx.Hook{
 		OnStop: func(_ context.Context) error {
 			imagegenExec.Stop()

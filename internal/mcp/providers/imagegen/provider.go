@@ -40,6 +40,7 @@ type Executor struct {
 	queries        *sqlc.Queries
 	channelManager *channel.Manager
 	dataRoot       string
+	gatewayBaseURL string
 
 	wg     sync.WaitGroup
 	ctx    context.Context
@@ -53,10 +54,15 @@ func NewExecutor(
 	queries *sqlc.Queries,
 	channelMgr *channel.Manager,
 	dataRoot string,
+	gatewayBaseURL string,
 ) *Executor {
 	if log == nil {
 		log = slog.Default()
 	}
+	if strings.TrimSpace(gatewayBaseURL) == "" {
+		gatewayBaseURL = "http://127.0.0.1:8081"
+	}
+	gatewayBaseURL = strings.TrimRight(gatewayBaseURL, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Executor{
 		logger:         log.With(slog.String("provider", "imagegen")),
@@ -65,6 +71,7 @@ func NewExecutor(
 		queries:        queries,
 		channelManager: channelMgr,
 		dataRoot:       dataRoot,
+		gatewayBaseURL: gatewayBaseURL,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -206,316 +213,82 @@ func (e *Executor) generateAndSend(ctx context.Context, req generateRequest) {
 	}
 }
 
-// callImageAPI routes to either the OpenAI-compatible API (when baseURL is set,
-// e.g. OpenRouter) or the native Gemini SDK (when using the Gemini API directly).
+// callImageAPI routes to the Agent Gateway's /image/generate endpoint
+// (which uses the OpenRouter SDK) when baseURL is set, or falls back
+// to the native Gemini SDK for direct Google API calls.
 func (e *Executor) callImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
 	if strings.TrimSpace(req.baseURL) != "" {
-		return callOpenAICompatibleImageAPI(ctx, req)
+		return e.callViaGateway(ctx, req)
 	}
 	return callNativeGeminiAPI(ctx, req)
 }
 
 // ---------------------------------------------------------------------------
-// Path A: OpenAI-compatible API (OpenRouter, custom proxies)
+// Path A: Delegate to Agent Gateway (OpenRouter SDK)
 // ---------------------------------------------------------------------------
 
-func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]byte, error) {
-	baseURL := strings.TrimRight(req.baseURL, "/")
-	endpoint := baseURL + "/chat/completions"
+type gatewayImageResponse struct {
+	Success  bool   `json:"success"`
+	Image    string `json:"image"`
+	MimeType string `json:"mimeType"`
+	Error    string `json:"error"`
+}
 
-	payload := map[string]any{
-		"model": req.modelName,
-		"messages": []map[string]any{
-			{"role": "user", "content": req.prompt},
-		},
-		"modalities": []string{"image", "text"},
+func (e *Executor) callViaGateway(ctx context.Context, req generateRequest) ([]byte, error) {
+	endpoint := e.gatewayBaseURL + "/image/generate"
+
+	payload := map[string]string{
+		"apiKey": req.apiKey,
+		"model":  req.modelName,
+		"prompt": req.prompt,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal gateway request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build request: %w", err)
+		return nil, fmt.Errorf("failed to build gateway request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+req.apiKey)
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, fmt.Errorf("gateway request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read gateway response: %w", err)
 	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		preview := truncate(string(respBody), 500)
-		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, preview)
+		return nil, fmt.Errorf("gateway error (status %d): %s", resp.StatusCode, preview)
 	}
 
-	// Log response size + structure for debugging (avoid logging huge base64 payloads).
-	slog.Info("imagegen: API response received",
-		slog.Int("body_size", len(respBody)),
-		slog.String("structure", describeResponseStructure(respBody)))
-
-	return extractImageFromResponse(respBody, req.modelName)
-}
-
-// describeResponseStructure logs the shape of the API response without huge data.
-func describeResponseStructure(respBody []byte) string {
-	var raw map[string]any
-	if err := json.Unmarshal(respBody, &raw); err != nil {
-		return "unparseable"
-	}
-	choices, ok := raw["choices"].([]any)
-	if !ok || len(choices) == 0 {
-		return "no choices"
-	}
-	choice, ok := choices[0].(map[string]any)
-	if !ok {
-		return "bad choice"
-	}
-	msg, ok := choice["message"].(map[string]any)
-	if !ok {
-		return "no message"
+	var result gatewayImageResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse gateway response: %w", err)
 	}
 
-	// Collect all keys in the message.
-	var keys []string
-	for k := range msg {
-		keys = append(keys, k)
+	if !result.Success {
+		return nil, fmt.Errorf("image generation failed via gateway: %s", result.Error)
 	}
 
-	content := msg["content"]
-	var contentDesc string
-	switch c := content.(type) {
-	case string:
-		contentDesc = fmt.Sprintf("string(len=%d)", len(c))
-	case []any:
-		var partTypes []string
-		for _, p := range c {
-			if pm, ok := p.(map[string]any); ok {
-				t, _ := pm["type"].(string)
-				if t == "" {
-					t = "unknown"
-				}
-				partTypes = append(partTypes, t)
-			}
-		}
-		contentDesc = fmt.Sprintf("array(%d parts: %s)", len(c), strings.Join(partTypes, ", "))
-	case nil:
-		contentDesc = "null"
-	default:
-		contentDesc = fmt.Sprintf("other(%T)", c)
-	}
-
-	return fmt.Sprintf("msg_keys=[%s] content=%s", strings.Join(keys, ","), contentDesc)
-}
-
-// extractImageFromResponse walks through the OpenAI-compatible response
-// trying multiple known multimodal content layouts used by providers.
-func extractImageFromResponse(respBody []byte, modelName string) ([]byte, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(respBody, &raw); err != nil {
-		return nil, fmt.Errorf("failed to parse response JSON: %w", err)
-	}
-
-	// Check top-level error.
-	if errObj, ok := raw["error"]; ok && errObj != nil {
-		if errMap, ok := errObj.(map[string]any); ok {
-			return nil, fmt.Errorf("API error: %v", errMap["message"])
-		}
-	}
-
-	choices, ok := raw["choices"].([]any)
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("API returned no choices (response: %s)", truncate(string(respBody), 300))
-	}
-
-	choice, ok := choices[0].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("unexpected choice format")
-	}
-	msg, ok := choice["message"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("unexpected message format")
-	}
-
-	// --- OpenRouter format: message.images[] array ---
-	// OpenRouter returns generated images in a dedicated "images" field:
-	//   "images": [{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}]
-	if images, ok := msg["images"].([]any); ok && len(images) > 0 {
-		for _, imgRaw := range images {
-			imgObj, ok := imgRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			if imgData := extractImageFromPart(imgObj); imgData != nil {
-				return imgData, nil
-			}
-		}
-		return nil, fmt.Errorf("images field had %d entries but none contained decodable data", len(images))
-	}
-
-	content := msg["content"]
-
-	// --- Case 1: content is an array of parts (multimodal response) ---
-	if parts, ok := content.([]any); ok {
-		for _, partRaw := range parts {
-			part, ok := partRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			if imgData := extractImageFromPart(part); imgData != nil {
-				return imgData, nil
-			}
-		}
-		return nil, fmt.Errorf("multimodal response had %d parts but none contained image data", len(parts))
-	}
-
-	// --- Case 2: content is a plain string ---
-	if text, ok := content.(string); ok {
-		if strings.HasPrefix(text, "data:image/") {
-			return decodeBase64Data(text)
-		}
-		if (strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://")) && looksLikeImageURL(text) {
-			return fetchImageURL(text)
-		}
-		return nil, fmt.Errorf("response was text only, no image (model: %s, preview: %s)", modelName, truncate(text, 200))
-	}
-
-	return nil, fmt.Errorf("unexpected content type in response (model: %s)", modelName)
-}
-
-// extractImageFromPart tries to find image data in a single content part.
-// Supports multiple provider formats:
-//   - {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}   (OpenAI format)
-//   - {"type":"image","source":{"type":"base64","data":"..."}}                (Anthropic format)
-//   - {"type":"inline_data","inline_data":{"mime_type":"image/png","data":"..."}} (Gemini-like)
-//   - Part with "b64_json" or "data" fields directly
-func extractImageFromPart(part map[string]any) []byte {
-	partType, _ := part["type"].(string)
-
-	// OpenAI format: image_url with data URI
-	if partType == "image_url" {
-		if imgURL, ok := part["image_url"].(map[string]any); ok {
-			if url, ok := imgURL["url"].(string); ok {
-				if data, err := resolveImageString(url); err == nil {
-					return data
-				}
-			}
-		}
-	}
-
-	// Anthropic format: source.data
-	if partType == "image" {
-		if source, ok := part["source"].(map[string]any); ok {
-			if b64, ok := source["data"].(string); ok {
-				if data, err := base64.StdEncoding.DecodeString(b64); err == nil {
-					return data
-				}
-			}
-		}
-	}
-
-	// Gemini-like: inline_data
-	if partType == "inline_data" {
-		if inline, ok := part["inline_data"].(map[string]any); ok {
-			if b64, ok := inline["data"].(string); ok {
-				if data, err := base64.StdEncoding.DecodeString(b64); err == nil {
-					return data
-				}
-			}
-		}
-	}
-
-	// Direct fields: b64_json, data, image_data
-	for _, key := range []string{"b64_json", "data", "image_data"} {
-		if b64, ok := part[key].(string); ok && len(b64) > 100 {
-			if data, err := base64.StdEncoding.DecodeString(b64); err == nil {
-				return data
-			}
-			if data, err := base64.RawStdEncoding.DecodeString(b64); err == nil {
-				return data
-			}
-		}
-	}
-
-	return nil
-}
-
-// resolveImageString handles data URIs, https URLs, and raw base64.
-func resolveImageString(s string) ([]byte, error) {
-	if strings.HasPrefix(s, "data:") {
-		return decodeBase64Data(s)
-	}
-	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
-		return fetchImageURL(s)
-	}
-	// Possibly raw base64 without prefix.
-	if len(s) > 200 {
-		if data, err := base64.StdEncoding.DecodeString(s); err == nil {
-			return data, nil
-		}
-	}
-	return nil, fmt.Errorf("cannot resolve image string: %s", truncate(s, 60))
-}
-
-// decodeBase64Data extracts raw bytes from "data:image/png;base64,..." strings.
-func decodeBase64Data(uri string) ([]byte, error) {
-	comma := strings.Index(uri, ",")
-	if comma < 0 {
-		return nil, fmt.Errorf("malformed data URI")
-	}
-	encoded := uri[comma+1:]
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	decoded, err := base64.StdEncoding.DecodeString(result.Image)
 	if err != nil {
-		decoded, err = base64.RawStdEncoding.DecodeString(encoded)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode base64: %w", err)
-		}
+		return nil, fmt.Errorf("failed to decode base64 image from gateway: %w", err)
 	}
+
+	e.logger.Info("image generated via gateway",
+		slog.String("model", req.modelName),
+		slog.Int("image_bytes", len(decoded)),
+		slog.String("mime", result.MimeType))
+
 	return decoded, nil
-}
-
-// fetchImageURL downloads an image from an HTTPS URL.
-func fetchImageURL(url string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("image download failed: HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024)) // 20 MB cap
-	if err != nil {
-		return nil, err
-	}
-	if len(data) < 100 {
-		return nil, fmt.Errorf("downloaded data too small (%d bytes), likely not an image", len(data))
-	}
-	return data, nil
-}
-
-func looksLikeImageURL(url string) bool {
-	lower := strings.ToLower(url)
-	for _, ext := range []string{".png", ".jpg", ".jpeg", ".webp", ".gif"} {
-		if strings.Contains(lower, ext) {
-			return true
-		}
-	}
-	return strings.Contains(lower, "image") || strings.Contains(lower, "img")
 }
 
 // ---------------------------------------------------------------------------

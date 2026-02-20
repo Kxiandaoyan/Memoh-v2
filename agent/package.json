@@ -7,7 +7,6 @@
     "start": "pnpm run build && bun run dist/index.js"
   },
   "dependencies": {
-    "@memoh/config": "workspace:*",
     "@ai-sdk/amazon-bedrock": "^4.0.56",
     "@ai-sdk/anthropic": "^3.0.9",
     "@ai-sdk/azure": "^3.0.28",
@@ -18,8 +17,10 @@
     "@ai-sdk/xai": "^3.0.54",
     "@elysiajs/bearer": "^1.4.2",
     "@elysiajs/cors": "^1.4.1",
+    "@memoh/config": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@mozilla/readability": "^0.6.0",
+    "@openrouter/sdk": "^0.8.0",
     "@types/jsdom": "^27.0.0",
     "@types/turndown": "^5.0.6",
     "ai": "^6.0.25",

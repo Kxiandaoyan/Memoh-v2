@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { chatModule } from './modules/chat'
+import { imageModule } from './modules/image'
 import { corsMiddleware } from './middlewares/cors'
 import { errorMiddleware } from './middlewares/error'
 import { loadConfig, getBaseUrl as getBaseUrlByConfig } from '@memoh/config'
@@ -44,6 +45,7 @@ const app = new Elysia()
     status: 'ok',
   }))
   .use(chatModule)
+  .use(imageModule)
   .listen({
     port: config.agent_gateway.port ?? 8081,
     hostname: config.agent_gateway.host ?? '127.0.0.1',
