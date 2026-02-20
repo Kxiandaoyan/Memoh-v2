@@ -207,6 +207,17 @@ export const system = ({
     )
   }
 
+  if (isFull) {
+    sections.push(
+      `## Skill Discovery\n\n` +
+      `You can discover and create new skills autonomously:\n` +
+      `1. Use ${quote('discover_skills')} to search for skills from ClawHub marketplace, the web, or shared workspace between bots.\n` +
+      `2. Use ${quote('fork_skill')} to import a skill into your /data/.skills/ directory.\n` +
+      `3. After importing, use ${quote('write')} to adapt the skill content to fit your role and context.\n` +
+      `4. Skills you create become available in future conversations automatically.`
+    )
+  }
+
   // ── Embedded persona files ─────────────────────────────────────────
   if (identityContent) {
     sections.push(`## IDENTITY.md\n\n${identityContent}`)

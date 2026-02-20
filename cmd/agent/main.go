@@ -50,6 +50,7 @@ import (
 	mcpadmin "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/admin"
 	mcpopenviking "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/openviking"
 	mcpimagegen "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/imagegen"
+	mcpskillstore "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/skillstore"
 	mcpweb "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/web"
 	mcpfederation "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/sources/federation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
@@ -477,12 +478,14 @@ func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Con
 		},
 	})
 
+	skillstoreExec := mcpskillstore.NewExecutor(log, manager, settingsService, searchProviderService, cfg.MCP.DataRoot)
+
 	fedGateway := handlers.NewMCPFederationGateway(log, containerdHandler)
 	fedSource := mcpfederation.NewSource(log, fedGateway, mcpConnService)
 
 	svc := mcp.NewToolGatewayService(
 		log,
-		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec},
+		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec},
 		[]mcp.ToolSource{fedSource},
 	)
 	containerdHandler.SetToolGatewayService(svc)

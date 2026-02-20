@@ -1304,6 +1304,7 @@ func (h *ContainerdHandler) ensureSharedDir() (string, error) {
 	if err := os.MkdirAll(shared, 0o755); err != nil {
 		return "", err
 	}
+	_ = os.MkdirAll(filepath.Join(shared, ".skills"), 0o755)
 	return shared, nil
 }
 
