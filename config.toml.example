@@ -61,3 +61,8 @@ port = 8081
 [web]
 host = "127.0.0.1"
 port = 8082
+
+## Smithery MCP Marketplace (optional)
+## Get your API key from https://smithery.ai/settings/api-keys
+[smithery]
+api_key = ""

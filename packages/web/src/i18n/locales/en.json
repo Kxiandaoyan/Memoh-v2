@@ -284,7 +284,36 @@
     "importHint": "Paste a standard mcpServers JSON configuration. Existing servers with the same name will be updated.",
     "importSuccess": "MCP servers imported",
     "importFailed": "Failed to import MCP servers",
-    "exportFailed": "Failed to export MCP servers"
+    "exportFailed": "Failed to export MCP servers",
+    "marketplace": {
+      "title": "MCP Marketplace",
+      "searchPlaceholder": "Search MCP servers...",
+      "poweredBy": "Powered by Smithery.ai",
+      "noResults": "No matching MCP servers found",
+      "searchHint": "Enter keywords to search, e.g. weather, github, database",
+      "install": "Install",
+      "installing": "Installing...",
+      "installed": "Installed",
+      "installSuccess": "MCP server \"{name}\" installed",
+      "installFailed": "Failed to install MCP server",
+      "verified": "Verified",
+      "remote": "Remote",
+      "local": "Local",
+      "uses": "uses",
+      "viewOnSmithery": "View on Smithery",
+      "tools": "tools",
+      "loadingDetail": "Fetching connection info...",
+      "detailFailed": "Failed to fetch server connection info",
+      "noConnectionInfo": "No connection config available for this server. See the Smithery page for details.",
+      "apiKeyHint": "Search failed. Smithery API key may not be configured. Set api_key in the [smithery] section of config.toml. Get one at smithery.ai/settings/api-keys.",
+      "manualSetup": "Manual Setup",
+      "modelscope": {
+        "title": "ModelScope MCP",
+        "description": "ModelScope offers rich MCP server resources. You can browse and manually add MCP servers from the ModelScope website.",
+        "visit": "Visit ModelScope MCP Marketplace",
+        "hint": "After finding an MCP on ModelScope, copy its connection config, then use the \"Add\" or \"Import JSON\" feature above to add it manually."
+      }
+    }
   },
   "sharedWorkspace": {
     "title": "Shared Workspace",

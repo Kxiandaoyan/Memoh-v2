@@ -35,6 +35,7 @@ type Config struct {
 	Postgres     PostgresConfig     `toml:"postgres"`
 	Qdrant       QdrantConfig       `toml:"qdrant"`
 	AgentGateway AgentGatewayConfig `toml:"agent_gateway"`
+	Smithery     SmitheryConfig     `toml:"smithery"`
 }
 
 type LogConfig struct {
@@ -93,6 +94,10 @@ type AgentGatewayConfig struct {
 	// In Docker this is the service DNS name (e.g. "memoh-agent").
 	// When empty, falls back to Host (with 0.0.0.0 replaced by 127.0.0.1).
 	PublicHost string `toml:"public_host"`
+}
+
+type SmitheryConfig struct {
+	APIKey string `toml:"api_key"`
 }
 
 // BaseURL returns the HTTP URL that the Server should use to connect to the Agent Gateway.

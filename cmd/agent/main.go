@@ -166,6 +166,7 @@ func main() {
 			provideServerHandler(handlers.NewChannelHandler),
 			provideServerHandler(provideUsersHandler),
 			provideServerHandler(handlers.NewMCPHandler),
+			provideServerHandler(provideMarketplaceHandler),
 			provideServerHandler(provideSharedFilesHandler),
 			provideServerHandler(templates.NewHandler),
 			provideServerHandler(provideCLIHandler),
@@ -535,6 +536,10 @@ func provideUsersHandler(log *slog.Logger, accountService *accounts.Service, ide
 
 func provideSharedFilesHandler(cfg config.Config) *handlers.SharedFilesHandler {
 	return handlers.NewSharedFilesHandler(cfg.MCP)
+}
+
+func provideMarketplaceHandler(log *slog.Logger, cfg config.Config) *handlers.MarketplaceHandler {
+	return handlers.NewMarketplaceHandler(log, cfg.Smithery)
 }
 
 func provideCLIHandler(channelManager *channel.Manager, channelService *channel.Service, chatService *conversation.Service, hub *local.RouteHub, botService *bots.Service, accountService *accounts.Service) *handlers.LocalChannelHandler {

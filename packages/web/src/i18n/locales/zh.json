@@ -280,7 +280,36 @@
     "importHint": "粘贴标准 mcpServers JSON 配置。同名的服务器会被更新配置。",
     "importSuccess": "MCP 服务器已导入",
     "importFailed": "导入 MCP 服务器失败",
-    "exportFailed": "导出 MCP 服务器失败"
+    "exportFailed": "导出 MCP 服务器失败",
+    "marketplace": {
+      "title": "MCP 市场",
+      "searchPlaceholder": "搜索 MCP 服务器...",
+      "poweredBy": "由 Smithery.ai 提供",
+      "noResults": "未找到相关 MCP 服务器",
+      "searchHint": "输入关键词搜索，例如：weather、github、database",
+      "install": "安装",
+      "installing": "安装中...",
+      "installed": "已安装",
+      "installSuccess": "MCP 服务器「{name}」已安装",
+      "installFailed": "安装 MCP 服务器失败",
+      "verified": "已验证",
+      "remote": "远程",
+      "local": "本地",
+      "uses": "次使用",
+      "viewOnSmithery": "在 Smithery 查看",
+      "tools": "个工具",
+      "loadingDetail": "正在获取连接信息...",
+      "detailFailed": "无法获取服务器连接信息",
+      "noConnectionInfo": "该服务器暂无可用的连接配置，请在 Smithery 页面查看详情",
+      "apiKeyHint": "搜索失败，可能未配置 Smithery API Key。请在 config.toml 的 [smithery] 中设置 api_key，可在 smithery.ai/settings/api-keys 获取。",
+      "manualSetup": "手动配置",
+      "modelscope": {
+        "title": "ModelScope MCP",
+        "description": "ModelScope 提供丰富的 MCP 服务器资源。你可以在 ModelScope 官网浏览并手动添加 MCP 服务器。",
+        "visit": "访问 ModelScope MCP 市场",
+        "hint": "在 ModelScope 找到 MCP 后，复制其连接配置，然后通过上方的「添加」或「导入 JSON」功能手动添加。"
+      }
+    }
   },
   "sharedWorkspace": {
     "title": "共享工作区",

@@ -137,6 +137,349 @@
       :data="items"
     />
 
+    <!-- Marketplace -->
+    <div class="rounded-lg border bg-card">
+      <button
+        class="flex w-full items-center justify-between px-4 py-3 text-left"
+        @click="marketplaceExpanded = !marketplaceExpanded"
+      >
+        <div class="space-y-0.5">
+          <h3 class="text-sm font-semibold">
+            {{ $t('mcp.marketplace.title') }}
+          </h3>
+          <p class="text-xs text-muted-foreground">
+            {{ $t('mcp.marketplace.poweredBy') }}
+          </p>
+        </div>
+        <svg
+          class="size-4 shrink-0 text-muted-foreground transition-transform duration-200"
+          :class="{ 'rotate-180': marketplaceExpanded }"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      <div
+        v-if="marketplaceExpanded"
+        class="border-t"
+      >
+        <Tabs
+          v-model="marketplaceTab"
+          class="w-full"
+        >
+          <TabsList class="w-full rounded-none border-b bg-transparent px-4 pt-2">
+            <TabsTrigger value="smithery">
+              Smithery
+            </TabsTrigger>
+            <TabsTrigger value="modelscope">
+              ModelScope
+            </TabsTrigger>
+          </TabsList>
+
+          <!-- Smithery tab -->
+          <TabsContent
+            value="smithery"
+            class="px-4 py-3 space-y-3"
+          >
+            <!-- API key hint -->
+            <div
+              v-if="mpSearchError"
+              class="rounded-md border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400"
+            >
+              {{ $t('mcp.marketplace.apiKeyHint') }}
+            </div>
+
+            <div class="flex gap-2">
+              <Input
+                v-model="mpQuery"
+                :placeholder="$t('mcp.marketplace.searchPlaceholder')"
+                class="flex-1"
+                @input="mpDebouncedSearch"
+                @keydown.enter="mpPage = 1; mpSearch()"
+              />
+              <Button
+                size="sm"
+                :disabled="mpSearching"
+                @click="mpPage = 1; mpSearch()"
+              >
+                <Spinner
+                  v-if="mpSearching"
+                  class="mr-1.5"
+                />
+                {{ $t('common.search') }}
+              </Button>
+            </div>
+
+            <!-- No results or hint -->
+            <div
+              v-if="!mpSearching && mpServers.length === 0"
+              class="py-6 text-center text-sm text-muted-foreground"
+            >
+              {{ mpQuery ? $t('mcp.marketplace.noResults') : $t('mcp.marketplace.searchHint') }}
+            </div>
+
+            <!-- Results grid -->
+            <div
+              v-else
+              class="space-y-2"
+            >
+              <div class="grid gap-2 sm:grid-cols-2">
+                <template
+                  v-for="server in mpServers"
+                  :key="server.qualifiedName"
+                >
+                  <div
+                    class="rounded-md border p-3 cursor-pointer transition-colors hover:bg-muted/50"
+                    :class="{ 'ring-1 ring-primary': mpExpandedName === server.qualifiedName }"
+                    @click="mpToggleDetail(server)"
+                  >
+                    <div class="flex items-start gap-2.5">
+                      <img
+                        v-if="server.iconUrl"
+                        :src="server.iconUrl"
+                        :alt="server.displayName"
+                        class="size-8 rounded object-cover shrink-0 mt-0.5"
+                        @error="($event.target as HTMLImageElement).style.display = 'none'"
+                      >
+                      <div
+                        v-else
+                        class="size-8 rounded bg-muted flex items-center justify-center shrink-0 mt-0.5"
+                      >
+                        <svg
+                          class="size-4 text-muted-foreground"
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                        </svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5">
+                          <span class="text-sm font-medium truncate">{{ server.displayName }}</span>
+                          <Badge
+                            v-if="server.verified"
+                            variant="default"
+                            class="text-[10px] px-1 py-0 shrink-0"
+                          >
+                            {{ $t('mcp.marketplace.verified') }}
+                          </Badge>
+                        </div>
+                        <p class="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                          {{ server.description }}
+                        </p>
+                        <div class="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                          <Badge
+                            variant="outline"
+                            class="text-[10px] px-1 py-0"
+                          >
+                            {{ server.remote ? $t('mcp.marketplace.remote') : $t('mcp.marketplace.local') }}
+                          </Badge>
+                          <span v-if="server.useCount">{{ server.useCount.toLocaleString() }} {{ $t('mcp.marketplace.uses') }}</span>
+                        </div>
+                      </div>
+                      <Badge
+                        v-if="mpIsInstalled(server.qualifiedName)"
+                        variant="secondary"
+                        class="shrink-0 text-[10px]"
+                      >
+                        {{ $t('mcp.marketplace.installed') }}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <!-- Expanded detail panel -->
+                  <div
+                    v-if="mpExpandedName === server.qualifiedName"
+                    class="sm:col-span-2 rounded-md border bg-muted/30 p-4 space-y-3"
+                  >
+                    <div
+                      v-if="mpDetailLoading"
+                      class="flex items-center gap-2 text-sm text-muted-foreground"
+                    >
+                      <Spinner />
+                      <span>{{ $t('mcp.marketplace.loadingDetail') }}</span>
+                    </div>
+                    <template v-else-if="mpDetail">
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 class="text-sm font-semibold">
+                            {{ mpDetail.displayName }}
+                          </h4>
+                          <p class="text-xs text-muted-foreground mt-0.5">
+                            {{ mpDetail.qualifiedName }}
+                          </p>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <a
+                            :href="`https://smithery.ai/server/${mpDetail.qualifiedName}`"
+                            target="_blank"
+                            rel="noopener"
+                            class="text-xs text-primary hover:underline"
+                          >
+                            {{ $t('mcp.marketplace.viewOnSmithery') }}
+                          </a>
+                          <template v-if="mpHasHttpConnection(mpDetail)">
+                            <Button
+                              size="sm"
+                              :disabled="mpInstallingName === mpDetail.qualifiedName || mpIsInstalled(mpDetail.qualifiedName)"
+                              @click.stop="mpInstall(mpDetail!)"
+                            >
+                              <Spinner
+                                v-if="mpInstallingName === mpDetail.qualifiedName"
+                                class="mr-1.5"
+                              />
+                              {{ mpIsInstalled(mpDetail.qualifiedName) ? $t('mcp.marketplace.installed') : $t('mcp.marketplace.install') }}
+                            </Button>
+                          </template>
+                          <template v-else-if="mpDetail.connections?.some((c: any) => c.type === 'stdio')">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              :disabled="mpIsInstalled(mpDetail.qualifiedName)"
+                              @click.stop="mpPrefillStdioForm(mpDetail!)"
+                            >
+                              {{ mpIsInstalled(mpDetail.qualifiedName) ? $t('mcp.marketplace.installed') : $t('mcp.marketplace.manualSetup') }}
+                            </Button>
+                          </template>
+                          <span
+                            v-else
+                            class="text-xs text-muted-foreground italic"
+                          >
+                            {{ $t('mcp.marketplace.noConnectionInfo') }}
+                          </span>
+                        </div>
+                      </div>
+                      <p class="text-xs text-muted-foreground">
+                        {{ mpDetail.description }}
+                      </p>
+                      <!-- Tools list -->
+                      <div v-if="mpDetail.tools && mpDetail.tools.length > 0">
+                        <p class="text-xs font-medium mb-1.5">
+                          {{ mpDetail.tools.length }} {{ $t('mcp.marketplace.tools') }}
+                        </p>
+                        <div class="grid gap-1.5 sm:grid-cols-2">
+                          <div
+                            v-for="tool in mpDetail.tools"
+                            :key="tool.name"
+                            class="flex items-start gap-2 rounded border bg-background px-2.5 py-1.5"
+                          >
+                            <span class="text-[11px] font-mono font-medium text-primary whitespace-nowrap">{{ tool.name }}</span>
+                            <span
+                              v-if="tool.description"
+                              class="text-[11px] text-muted-foreground line-clamp-1"
+                            >{{ tool.description }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Pagination -->
+              <div
+                v-if="mpTotalPages > 1"
+                class="flex items-center justify-between pt-1"
+              >
+                <span class="text-xs text-muted-foreground">
+                  {{ mpTotalCount.toLocaleString() }} servers
+                </span>
+                <div class="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="mpPage <= 1"
+                    @click="mpPrevPage"
+                  >
+                    &larr;
+                  </Button>
+                  <span class="text-xs text-muted-foreground">
+                    {{ mpPage }} / {{ mpTotalPages }}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="mpPage >= mpTotalPages"
+                    @click="mpNextPage"
+                  >
+                    &rarr;
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <!-- ModelScope tab -->
+          <TabsContent
+            value="modelscope"
+            class="px-4 py-3"
+          >
+            <div class="rounded-md border bg-muted/30 p-4 space-y-3">
+              <div class="flex items-center gap-2.5">
+                <div class="size-8 rounded bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
+                  <span class="text-white text-xs font-bold">MS</span>
+                </div>
+                <div>
+                  <h4 class="text-sm font-semibold">
+                    {{ $t('mcp.marketplace.modelscope.title') }}
+                  </h4>
+                </div>
+              </div>
+              <p class="text-sm text-muted-foreground">
+                {{ $t('mcp.marketplace.modelscope.description') }}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {{ $t('mcp.marketplace.modelscope.hint') }}
+              </p>
+              <a
+                href="https://www.modelscope.cn/mcp"
+                target="_blank"
+                rel="noopener"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="mt-1"
+                >
+                  {{ $t('mcp.marketplace.modelscope.visit') }}
+                  <svg
+                    class="ml-1 size-3.5"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line
+                      x1="10"
+                      y1="14"
+                      x2="21"
+                      y2="3"
+                    />
+                  </svg>
+                </Button>
+              </a>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+
     <!-- Add dialog: tabs (single | import). Edit dialog: two columns (form | json) with sync -->
     <Dialog v-model:open="formDialogOpen">
       <DialogContent :class="editingItem ? 'sm:max-w-4xl max-h-[90vh] flex flex-col w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-auto sm:max-w-full' : 'sm:max-w-[28rem] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-auto'">
@@ -645,6 +988,30 @@ import {
   postBotsByBotIdMcpOpsBatchDelete,
 } from '@memoh/sdk'
 import ConfirmPopover from '@/components/confirm-popover/index.vue'
+import { client } from '@memoh/sdk'
+
+interface SmitheryServer {
+  qualifiedName: string
+  displayName: string
+  description: string
+  iconUrl: string | null
+  verified: boolean
+  useCount: number
+  remote: boolean | null
+  isDeployed: boolean
+  homepage: string
+}
+
+interface SmitheryDetail {
+  qualifiedName: string
+  displayName: string
+  description: string
+  iconUrl: string | null
+  remote: boolean
+  deploymentUrl: string | null
+  connections: Array<{ type: string; deploymentUrl?: string; configSchema?: Record<string, unknown> }>
+  tools: Array<{ name: string; description: string | null }> | null
+}
 
 interface McpItem {
   id: string
@@ -1154,6 +1521,180 @@ function handleCopyExport() {
   toast.success(t('common.copied'))
 }
 
+// --- Marketplace ---
+const marketplaceExpanded = ref(false)
+const marketplaceTab = ref<'smithery' | 'modelscope'>('smithery')
+const mpQuery = ref('')
+const mpSearching = ref(false)
+const mpServers = ref<SmitheryServer[]>([])
+const mpPage = ref(1)
+const mpTotalPages = ref(0)
+const mpTotalCount = ref(0)
+const mpExpandedName = ref<string | null>(null)
+const mpDetail = ref<SmitheryDetail | null>(null)
+const mpDetailLoading = ref(false)
+const mpInstallingName = ref<string | null>(null)
+const mpInstalledNames = ref<Set<string>>(new Set())
+const mpSearchError = ref(false)
+
+// Search cache (30s TTL)
+const mpCache = new Map<string, { data: any; ts: number }>()
+const MP_CACHE_TTL = 30_000
+
+function mpCacheKey(q: string, page: number) {
+  return `${q}||${page}`
+}
+
+let mpDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function mpDebouncedSearch() {
+  if (mpDebounceTimer) clearTimeout(mpDebounceTimer)
+  mpDebounceTimer = setTimeout(() => {
+    mpPage.value = 1
+    mpSearch()
+  }, 300)
+}
+
+async function mpSearch() {
+  const cacheKey = mpCacheKey(mpQuery.value, mpPage.value)
+  const cached = mpCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < MP_CACHE_TTL) {
+    const body = cached.data
+    mpServers.value = body?.servers ?? []
+    mpTotalPages.value = body?.pagination?.totalPages ?? 0
+    mpTotalCount.value = body?.pagination?.totalCount ?? 0
+    mpExpandedName.value = null
+    mpDetail.value = null
+    mpSearchError.value = false
+    return
+  }
+
+  mpSearching.value = true
+  mpExpandedName.value = null
+  mpDetail.value = null
+  try {
+    const resp = await client.get({
+      url: '/mcp-marketplace/search',
+      query: { q: mpQuery.value || undefined, page: mpPage.value, pageSize: 12 },
+    })
+    const body = resp.data as { servers?: SmitheryServer[]; pagination?: { totalPages: number; totalCount: number } }
+    mpServers.value = body?.servers ?? []
+    mpTotalPages.value = body?.pagination?.totalPages ?? 0
+    mpTotalCount.value = body?.pagination?.totalCount ?? 0
+    mpSearchError.value = false
+    mpCache.set(cacheKey, { data: body, ts: Date.now() })
+  } catch {
+    mpServers.value = []
+    mpTotalPages.value = 0
+    mpSearchError.value = true
+  } finally {
+    mpSearching.value = false
+  }
+}
+
+async function mpToggleDetail(server: SmitheryServer) {
+  if (mpExpandedName.value === server.qualifiedName) {
+    mpExpandedName.value = null
+    mpDetail.value = null
+    return
+  }
+  mpExpandedName.value = server.qualifiedName
+  mpDetail.value = null
+  mpDetailLoading.value = true
+  try {
+    const resp = await client.get({
+      url: '/mcp-marketplace/detail',
+      query: { name: server.qualifiedName },
+    })
+    mpDetail.value = resp.data as SmitheryDetail
+  } catch {
+    toast.error(t('mcp.marketplace.detailFailed'))
+    mpExpandedName.value = null
+  } finally {
+    mpDetailLoading.value = false
+  }
+}
+
+function mpHasHttpConnection(detail: SmitheryDetail): boolean {
+  return !!(detail.deploymentUrl || detail.connections?.some((c) => c.type === 'http'))
+}
+
+function mpPrefillStdioForm(detail: SmitheryDetail) {
+  const stdioConn = detail.connections?.find((c) => c.type === 'stdio') as any
+  editingItem.value = null
+  addDialogTab.value = 'single'
+  importJson.value = ''
+  connectionMode.value = 'stdio'
+  const slug = detail.qualifiedName.split('/').pop() || detail.displayName
+  formData.value = {
+    name: slug,
+    command: stdioConn?.stdioFunction || stdioConn?.runtime || '',
+    url: '',
+    cwd: '',
+    transport: 'http',
+    active: true,
+  }
+  argsTags.value = []
+  envTags.initFromObject(null)
+  headerTags.initFromObject(null)
+  formDialogOpen.value = true
+}
+
+async function mpInstall(detail: SmitheryDetail) {
+  if (!mpHasHttpConnection(detail)) {
+    mpPrefillStdioForm(detail)
+    return
+  }
+  mpInstallingName.value = detail.qualifiedName
+  try {
+    const httpConn = detail.connections?.find((c) => c.type === 'http')
+    const url = httpConn?.deploymentUrl || detail.deploymentUrl
+    if (!url) {
+      toast.error(t('mcp.marketplace.noConnectionInfo'))
+      return
+    }
+    const slug = detail.qualifiedName.split('/').pop() || detail.displayName
+    await postBotsByBotIdMcp({
+      path: { bot_id: props.botId },
+      body: { name: slug, url } as any,
+      throwOnError: true,
+    })
+    mpInstalledNames.value.add(detail.qualifiedName)
+    await loadList()
+    toast.success(t('mcp.marketplace.installSuccess', { name: detail.displayName }))
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, t('mcp.marketplace.installFailed')))
+  } finally {
+    mpInstallingName.value = null
+  }
+}
+
+function mpNextPage() {
+  if (mpPage.value < mpTotalPages.value) {
+    mpPage.value++
+    mpSearch()
+  }
+}
+
+function mpPrevPage() {
+  if (mpPage.value > 1) {
+    mpPage.value--
+    mpSearch()
+  }
+}
+
+function mpIsInstalled(name: string): boolean {
+  if (mpInstalledNames.value.has(name)) return true
+  const slug = name.split('/').pop()
+  return items.value.some((i) => {
+    if (i.name === slug) return true
+    const cfg = i.config ?? {}
+    const itemUrl = configValue(cfg, 'url')
+    if (itemUrl && itemUrl.includes(name.replace('/', '%2F'))) return true
+    if (itemUrl && slug && itemUrl.toLowerCase().includes(slug.toLowerCase())) return true
+    return false
+  })
+}
 
 watch(() => props.botId, () => {
   if (props.botId) loadList()
