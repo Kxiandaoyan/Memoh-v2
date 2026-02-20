@@ -228,6 +228,7 @@ func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]b
 		"messages": []map[string]any{
 			{"role": "user", "content": req.prompt},
 		},
+		"modalities": []string{"image", "text"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -344,6 +345,22 @@ func extractImageFromResponse(respBody []byte, modelName string) ([]byte, error)
 		return nil, fmt.Errorf("unexpected message format")
 	}
 
+	// --- OpenRouter format: message.images[] array ---
+	// OpenRouter returns generated images in a dedicated "images" field:
+	//   "images": [{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}]
+	if images, ok := msg["images"].([]any); ok && len(images) > 0 {
+		for _, imgRaw := range images {
+			imgObj, ok := imgRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if imgData := extractImageFromPart(imgObj); imgData != nil {
+				return imgData, nil
+			}
+		}
+		return nil, fmt.Errorf("images field had %d entries but none contained decodable data", len(images))
+	}
+
 	content := msg["content"]
 
 	// --- Case 1: content is an array of parts (multimodal response) ---
@@ -362,11 +379,9 @@ func extractImageFromResponse(respBody []byte, modelName string) ([]byte, error)
 
 	// --- Case 2: content is a plain string ---
 	if text, ok := content.(string); ok {
-		// Maybe it's a data URI directly.
 		if strings.HasPrefix(text, "data:image/") {
 			return decodeBase64Data(text)
 		}
-		// Maybe it's a URL to an image.
 		if (strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://")) && looksLikeImageURL(text) {
 			return fetchImageURL(text)
 		}
