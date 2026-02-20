@@ -226,8 +226,11 @@ func callOpenAICompatibleImageAPI(ctx context.Context, req generateRequest) ([]b
 	payload := map[string]any{
 		"model": req.modelName,
 		"messages": []map[string]any{
-			{"role": "user", "content": req.prompt},
+			{"role": "user", "content": "Generate an image: " + req.prompt},
 		},
+		// Required for Gemini image generation models via OpenRouter / OpenAI-compat APIs.
+		// Maps to Gemini's responseModalities: ["TEXT", "IMAGE"].
+		"modalities": []string{"text", "image"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
