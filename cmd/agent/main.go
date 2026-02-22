@@ -107,6 +107,7 @@ func main() {
 			policy.NewService,
 			preauth.NewService,
 			mcp.NewConnectionService,
+			provideBuiltinToolConfigService,
 			subagent.NewService,
 			conversation.NewService,
 			identities.NewService,
@@ -176,6 +177,8 @@ func main() {
 			provideServerHandler(provideWebHandler),
 			provideServerHandler(provideAgentCallHandler),
 			provideServerHandler(provideWeChatWebhookHandler),
+			provideServerHandler(provideTeamsHandler),
+			provideServerHandler(provideUnifiedToolsHandler),
 
 			provideServer,
 		),
@@ -565,6 +568,18 @@ func provideAgentCallHandler(log *slog.Logger, botService *bots.Service, resolve
 
 func provideWeChatWebhookHandler(processor *inbound.ChannelInboundProcessor, channelService *channel.Service, preauthService *preauth.Service, queries *dbsqlc.Queries) *handlers.WeChatWebhookHandler {
 	return handlers.NewWeChatWebhookHandler(processor, channelService, preauthService, queries)
+}
+
+func provideBuiltinToolConfigService(pool *pgxpool.Pool, log *slog.Logger) *mcp.BuiltinToolConfigService {
+	return mcp.NewBuiltinToolConfigService(pool, log)
+}
+
+func provideTeamsHandler(log *slog.Logger, queries *dbsqlc.Queries, botService *bots.Service, accountService *accounts.Service) *handlers.TeamsHandler {
+	return handlers.NewTeamsHandler(log, queries, botService, accountService)
+}
+
+func provideUnifiedToolsHandler(log *slog.Logger, builtinConfigService *mcp.BuiltinToolConfigService, mcpConnService *mcp.ConnectionService) *handlers.UnifiedToolsHandler {
+	return handlers.NewUnifiedToolsHandler(log, builtinConfigService, mcpConnService)
 }
 
 // ---------------------------------------------------------------------------

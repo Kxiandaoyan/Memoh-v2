@@ -370,10 +370,19 @@ export const createAgent = (
         if (typeof role !== 'string' || !supportedRoles.has(role)) return false
         // Drop messages that have a non-standard "type" field at the top level.
         const msgType = (msg as Record<string, unknown>).type
-        if (typeof msgType === 'string' && msgType !== '' && !supportedRoles.has(msgType)) return false
+        if (typeof msgType === 'string' && msgType !== '' && !supportedTypes.has(msgType)) return false
         return true
       })
       .map((msg) => {
+        const role = (msg as Record<string, unknown>).role as string
+        const systemSafeProviders = new Set([
+          'openai', 'anthropic', 'google', 'azure', 'bedrock', 'mistral', 'xai',
+          'deepseek', 'groq', 'openrouter', 'together', 'fireworks', 'perplexity',
+          'zhipu', 'siliconflow', 'nvidia', 'bailing', 'xiaomi', 'longcat', 'modelscope',
+        ])
+        if (role === 'system' && !systemSafeProviders.has(modelConfig.clientType)) {
+          return { ...msg, role: 'user' } as ModelMessage
+        }
         if (!Array.isArray(msg.content)) return msg
         const original = msg.content as Array<Record<string, unknown>>
         const filtered = original.filter((part) => {

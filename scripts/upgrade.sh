@@ -207,6 +207,74 @@ else
   echo "${GREEN}✓ All migrations applied${NC}"
 fi
 
+# ── Sync TOOLS.md and skills to all existing bots ────────────────────
+echo ""
+echo "${CYAN}Syncing TOOLS.md and skills to existing bots...${NC}"
+SYNC_OK=true
+
+# Sync via server container (has memoh_data mounted at /opt/memoh/data)
+BOTS_DIR="/opt/memoh/data/bots"
+TEMPLATE_TOOLS="cmd/mcp/template/TOOLS.md"
+SKILLS_DEFAULTS="internal/skills/defaults"
+
+if [ -f "$TEMPLATE_TOOLS" ] && docker compose exec -T server test -d "$BOTS_DIR" 2>/dev/null; then
+  # Copy TOOLS.md into server container temp location
+  docker compose cp "$TEMPLATE_TOOLS" server:/tmp/_upgrade_TOOLS.md 2>/dev/null || true
+
+  # Copy skills defaults directory
+  if [ -d "$SKILLS_DEFAULTS" ]; then
+    docker compose cp "$SKILLS_DEFAULTS" server:/tmp/_upgrade_skills_defaults 2>/dev/null || true
+  fi
+
+  # Run sync inside server container
+  docker compose exec -T server sh -c '
+    BOTS_DIR="/opt/memoh/data/bots"
+    TOOLS_SRC="/tmp/_upgrade_TOOLS.md"
+    SKILLS_SRC="/tmp/_upgrade_skills_defaults"
+    synced=0
+    for bot_dir in "$BOTS_DIR"/*/; do
+      [ -d "$bot_dir" ] || continue
+      bot_id=$(basename "$bot_dir")
+      # Skip non-UUID directories
+      case "$bot_id" in ????????-????-????-????-????????????) ;; *) continue ;; esac
+
+      # Update TOOLS.md (always overwrite with latest)
+      if [ -f "$TOOLS_SRC" ]; then
+        data_dir="$bot_dir"
+        # Find the data mount point (could be root or /data subdirectory)
+        if [ -d "$bot_dir/data" ]; then data_dir="$bot_dir/data"; fi
+        cp "$TOOLS_SRC" "$data_dir/TOOLS.md" 2>/dev/null || true
+      fi
+
+      # Sync skills (copy new ones, skip existing to preserve customizations)
+      if [ -d "$SKILLS_SRC" ]; then
+        skills_dir="$bot_dir/.skills"
+        mkdir -p "$skills_dir" 2>/dev/null || true
+        for skill in "$SKILLS_SRC"/*/; do
+          [ -d "$skill" ] || continue
+          skill_name=$(basename "$skill")
+          if [ ! -d "$skills_dir/$skill_name" ]; then
+            cp -a "$skill" "$skills_dir/$skill_name" 2>/dev/null || true
+          fi
+        done
+      fi
+
+      synced=$((synced + 1))
+    done
+    # Cleanup
+    rm -f "$TOOLS_SRC" 2>/dev/null || true
+    rm -rf "$SKILLS_SRC" 2>/dev/null || true
+    echo "$synced"
+  ' 2>/dev/null && {
+    echo "${GREEN}✓ TOOLS.md and skills synced to existing bots${NC}"
+  } || {
+    echo "${YELLOW}⚠ Sync failed (non-fatal, bots will use cached versions)${NC}"
+    SYNC_OK=false
+  }
+else
+  echo "${YELLOW}⚠ Skipping sync (template or bots directory not found)${NC}"
+fi
+
 # ── Wait for all services to be healthy ───────────────────────────────
 echo ""
 echo "${CYAN}Waiting for services to stabilize...${NC}"
