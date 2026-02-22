@@ -4,6 +4,7 @@ import { ToolSet } from 'ai'
 import { getWebTools } from './web'
 import { getSubagentTools } from './subagent'
 import { getSkillTools } from './skill'
+import { getCallAgentTools } from './call-agent'
 import { SubagentRegistry, getGlobalRegistry } from '../registry'
 
 export interface ToolsParams {
@@ -17,11 +18,13 @@ export interface ToolsParams {
   registry?: SubagentRegistry
   parentRunId?: string
   spawnDepth?: number
+  teamMembers?: string[]
+  callDepth?: number
 }
 
 export const getTools = (
   actions: AgentAction[],
-  { fetch, model, backgroundModel, identity, auth, enableSkill, mcpConnections = [], registry, parentRunId, spawnDepth = 0 }: ToolsParams
+  { fetch, model, backgroundModel, identity, auth, enableSkill, mcpConnections = [], registry, parentRunId, spawnDepth = 0, teamMembers = [], callDepth = 0 }: ToolsParams
 ) => {
   const tools: ToolSet = {}
   if (actions.includes(AgentAction.Web)) {
@@ -44,6 +47,10 @@ export const getTools = (
   if (actions.includes(AgentAction.Skill)) {
     const skillTools = getSkillTools({ useSkill: enableSkill })
     Object.assign(tools, skillTools)
+  }
+  if (teamMembers.length > 0) {
+    const callAgentTools = getCallAgentTools({ fetch, identity, auth, allowedBotIds: teamMembers, callDepth })
+    Object.assign(tools, callAgentTools)
   }
   return tools
 }

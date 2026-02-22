@@ -26,6 +26,13 @@ export enum ClientType {
   Together = 'together',
   Fireworks = 'fireworks',
   Perplexity = 'perplexity',
+  Zhipu = 'zhipu',
+  Siliconflow = 'siliconflow',
+  Nvidia = 'nvidia',
+  Bailing = 'bailing',
+  Xiaomi = 'xiaomi',
+  Longcat = 'longcat',
+  ModelScope = 'modelscope',
 }
 
 export enum ModelInput {

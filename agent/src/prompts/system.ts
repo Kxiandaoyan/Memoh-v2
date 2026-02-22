@@ -16,9 +16,13 @@ export interface SystemParams {
   identityContent?: string
   soulContent?: string
   toolsContent?: string
+  /** Dynamic summary of current MCP connections, installed skills, and core tools. */
+  toolContext?: string
   taskContent?: string
   allowSelfEvolution?: boolean
   attachments?: string[]
+  /** Injected team context: lists callable member bots for the call_agent tool. */
+  teamContent?: string
   /**
    * 'full'    – complete prompt with all sections (default, best for interactive sessions)
    * 'minimal' – trimmed prompt that excludes sections not needed for automated contexts
@@ -50,8 +54,10 @@ export const system = ({
   identityContent,
   soulContent,
   toolsContent,
+  toolContext,
   taskContent,
   allowSelfEvolution = true,
+  teamContent,
   mode = 'full',
 }: SystemParams) => {
   const isFull = mode === 'full'
@@ -83,17 +89,8 @@ export const system = ({
   sections.push(`---\n${Bun.YAML.stringify(staticHeaders)}---`)
 
   sections.push(
-    `You are an AI agent, and now you wake up.\n\n` +
-    `${quote('/data')} is your private HOME. ${quote('/shared')} is a shared workspace visible to all bots — read and write there for cross-bot collaboration.`
-  )
-
-  sections.push(
-    `## Basic Tools\n` +
-    `- ${quote('read')}: read file content\n` +
-    `- ${quote('write')}: write file content\n` +
-    `- ${quote('list')}: list directory entries\n` +
-    `- ${quote('edit')}: replace exact text in a file\n` +
-    `- ${quote('exec')}: execute command`
+    'You are an AI agent, and now you wake up.\n\n' +
+    `${quote('/data')} is your private HOME. ${quote('/shared')} is a shared workspace visible to all your bots.`
   )
 
   const personaNote = allowSelfEvolution
@@ -106,12 +103,10 @@ export const system = ({
   )
 
   sections.push(
-    `## Language\n\n` +
-    `You MUST respond in the language specified in the ${quote('language')} header above. ` +
-    `If it says ${quote('auto')} or ${quote('Same as the user input')}, match the language the user writes in. ` +
-    `Otherwise, always reply in that exact language (e.g. if it says ${quote('中文')}, reply in Chinese; ` +
-    `if it says ${quote('English')}, reply in English). This rule applies regardless of what language your ` +
-    `persona files (IDENTITY.md, SOUL.md, TOOLS.md) are written in — those files define your personality, not your reply language.`
+    '## Language\n\n' +
+    `Respond in the language specified in the ${quote('language')} header. ` +
+    `If ${quote('auto')}, match the user's language. ` +
+    'Persona file language does not affect reply language.'
   )
 
   sections.push(
@@ -123,67 +118,33 @@ export const system = ({
 
   // ── Full-mode-only sections (interactive chat) ─────────────────────
   if (isFull) {
-    sections.push(
-      `## Scheduled Tasks\n\n` +
-      `You can create, list, update, and delete scheduled tasks using these tools:\n` +
-      `- ${quote('create_schedule')}: Create a recurring task with a cron pattern. ` +
-      `The ${quote('command')} parameter is a natural language instruction (NOT a shell command) ` +
-      `that you will receive as a prompt when the schedule fires. ` +
-      `The ${quote('pattern')} is a standard cron expression (minute hour day month weekday).\n` +
-      `- ${quote('list_schedule')}: List all scheduled tasks for the current bot.\n` +
-      `- ${quote('update_schedule')}: Update an existing schedule by ID.\n` +
-      `- ${quote('delete_schedule')}: Delete a schedule by ID.\n\n` +
-      `**Important**: These are tool calls, not shell commands. Call them directly as tools with JSON arguments — do NOT try to run them via ${quote('exec')}.`
-    )
-
-    sections.push(
-      `## Memory\n\n` +
-      `For memory more previous, please use ${quote('search_memory')} tool.`
-    )
-
-    sections.push(
-      `## Message\n\n` +
-      `There are tools you can use in some channels:\n\n` +
-      `- ${quote('send')}: send message to a channel or session\n` +
-      `- ${quote('react')}: add or remove emoji reaction`
-    )
-
-    sections.push(
-      `## Contacts\n\n` +
-      `You may receive messages from many people or bots (like yourself), They are from different channels.\n\n` +
-      `You have a contacts book to record them that you do not need to worry about who they are.`
-    )
-
     if (channels.length > 1) {
       sections.push(
-        `## Channels\n\n` +
-        `You are able to receive and send messages or files to different channels.\n\n` +
-        `When you need to resolve a user or group on a channel (e.g. turn an open_id, user_id, or chat_id into a display name or handle), ` +
-        `use the ${quote('lookup_channel_user')} tool: pass ${quote('platform')} (e.g. feishu, telegram), ` +
-        `${quote('input')} (the platform-specific id), and optionally ${quote('kind')} (${quote('user')} or ${quote('group')}). ` +
-        `It returns name, handle, and id for that entry.`
+        '## Channels\n\n' +
+        'You can receive and send messages across multiple channels. ' +
+        `Use ${quote('lookup_channel_user')} to resolve user/group identities on a specific platform.`
       )
     }
 
     sections.push(
-      `## Attachments\n\n` +
-      `### Receive\n\n` +
-      `Files user uploaded will added to your workspace, the file path will be included in the message header.\n\n` +
-      `### Send\n\n` +
-      `**For using channel tools**: Add file path to the message header.\n\n` +
-      `**For directly request**: Use the following format:\n\n` +
+      '## Attachments\n\n' +
+      '### Receive\n\n' +
+      'Files user uploaded will added to your workspace, the file path will be included in the message header.\n\n' +
+      '### Send\n\n' +
+      '**For using channel tools**: Add file path to the message header.\n\n' +
+      '**For directly request**: Use the following format:\n\n' +
       block([
         '<attachments>',
         '- /path/to/file.pdf',
         '- /path/to/video.mp4',
         'https://example.com/image.png',
         '</attachments>',
-      ].join('\n')) + `\n\n` +
-      `External URLs are also supported.\n\n` +
-      `Important rules for attachments blocks:\n` +
-      `- Only include file paths (one per line, prefixed by ${quote('- ')})\n` +
+      ].join('\n')) + '\n\n' +
+      'External URLs are also supported.\n\n' +
+      'Important rules for attachments blocks:\n' +
+      `- Only include file paths or URLs (one per line, prefixed by ${quote('- ')})\n` +
       `- Do not include any extra text inside ${quote('<attachments>...</attachments>')}\n` +
-      `- You may output the attachments block anywhere in your response; it will be parsed and removed from visible text.`
+      '- You may output the attachments block anywhere in your response; it will be parsed and removed from visible text.'
     )
   }
 
@@ -207,17 +168,6 @@ export const system = ({
     )
   }
 
-  if (isFull) {
-    sections.push(
-      `## Skill Discovery\n\n` +
-      `You can discover and create new skills autonomously:\n` +
-      `1. Use ${quote('discover_skills')} to search for skills from ClawHub marketplace, the web, or shared workspace between bots.\n` +
-      `2. Use ${quote('fork_skill')} to import a skill into your /data/.skills/ directory.\n` +
-      `3. After importing, use ${quote('write')} to adapt the skill content to fit your role and context.\n` +
-      `4. Skills you create become available in future conversations automatically.`
-    )
-  }
-
   // ── Embedded persona files ─────────────────────────────────────────
   if (identityContent) {
     sections.push(`## IDENTITY.md\n\n${identityContent}`)
@@ -231,17 +181,17 @@ export const system = ({
     sections.push(`## TOOLS.md\n\n${toolsContent}`)
   }
 
-  // CLI tool hints (full mode: brief mentions to compensate for TOOLS.md truncation)
-  if (isFull) {
-    sections.push(
-      `Available CLI tools (use via ${quote('exec')}; read TOOLS.md for full docs): ` +
-      `${quote('agent-browser')} (web automation), ${quote('clawhub')} (skill marketplace), ` +
-      `${quote('actionbook')} (website manuals), OpenViking context database (if enabled).`
-    )
+  if (toolContext) {
+    sections.push(`## Current Environment\n\n${toolContext}`)
   }
 
   if (taskContent) {
     sections.push(`## Task\n\n${taskContent}`)
+  }
+
+  // Team section: only in full mode
+  if (teamContent && isFull) {
+    sections.push(`## Team\n\n${teamContent}`)
   }
 
   if (enabledSkills.length > 0) {

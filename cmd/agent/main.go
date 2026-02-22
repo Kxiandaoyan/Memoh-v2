@@ -27,6 +27,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/feishu"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/local"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/telegram"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/wechat"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/identities"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/inbound"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/route"
@@ -51,6 +52,8 @@ import (
 	mcpopenviking "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/openviking"
 	mcpimagegen "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/imagegen"
 	mcpskillstore "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/skillstore"
+	mcpbrowser "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/browser"
+	mcpwebread "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/webread"
 	mcpweb "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/web"
 	mcpfederation "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/sources/federation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
@@ -171,6 +174,8 @@ func main() {
 			provideServerHandler(templates.NewHandler),
 			provideServerHandler(provideCLIHandler),
 			provideServerHandler(provideWebHandler),
+			provideServerHandler(provideAgentCallHandler),
+			provideServerHandler(provideWeChatWebhookHandler),
 
 			provideServer,
 		),
@@ -406,6 +411,7 @@ func provideChannelRegistry(log *slog.Logger, hub *local.RouteHub) *channel.Regi
 	registry.MustRegister(feishu.NewFeishuAdapter(log))
 	registry.MustRegister(local.NewCLIAdapter(hub))
 	registry.MustRegister(local.NewWebAdapter(hub))
+	registry.MustRegister(wechat.NewWeChatAdapter(log))
 	return registry
 }
 
@@ -481,12 +487,15 @@ func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Con
 
 	skillstoreExec := mcpskillstore.NewExecutor(log, manager, settingsService, searchProviderService, cfg.MCP.DataRoot)
 
+	browserExec := mcpbrowser.NewExecutor(log, manager)
+	webreadExec := mcpwebread.NewExecutor(log, manager, webExec, browserExec)
+
 	fedGateway := handlers.NewMCPFederationGateway(log, containerdHandler)
 	fedSource := mcpfederation.NewSource(log, fedGateway, mcpConnService)
 
 	svc := mcp.NewToolGatewayService(
 		log,
-		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec},
+		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec, browserExec, webreadExec},
 		[]mcp.ToolSource{fedSource},
 	)
 	containerdHandler.SetToolGatewayService(svc)
@@ -548,6 +557,14 @@ func provideCLIHandler(channelManager *channel.Manager, channelService *channel.
 
 func provideWebHandler(channelManager *channel.Manager, channelService *channel.Service, chatService *conversation.Service, hub *local.RouteHub, botService *bots.Service, accountService *accounts.Service) *handlers.LocalChannelHandler {
 	return handlers.NewLocalChannelHandler(local.WebType, channelManager, channelService, chatService, hub, botService, accountService)
+}
+
+func provideAgentCallHandler(log *slog.Logger, botService *bots.Service, resolver *flow.Resolver) *handlers.AgentCallHandler {
+	return handlers.NewAgentCallHandler(log, botService, resolver)
+}
+
+func provideWeChatWebhookHandler(processor *inbound.ChannelInboundProcessor, channelService *channel.Service, preauthService *preauth.Service, queries *dbsqlc.Queries) *handlers.WeChatWebhookHandler {
+	return handlers.NewWeChatWebhookHandler(processor, channelService, preauthService, queries)
 }
 
 // ---------------------------------------------------------------------------

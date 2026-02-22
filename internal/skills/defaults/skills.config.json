@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "description": "Default skill configuration for Memoh-v2-saas",
+  "defaults": {
+    "frontend-design": {
+      "order": 100,
+      "enabled": true
+    },
+    "web-search": {
+      "order": 15,
+      "enabled": true
+    },
+    "mcp-builder": {
+      "order": 20,
+      "enabled": true
+    },
+    "skill-creator": {
+      "order": 30,
+      "enabled": true
+    },
+    "webapp-testing": {
+      "order": 40,
+      "enabled": true
+    },
+    "scheduled-task": {
+      "order": 45,
+      "enabled": true
+    },
+    "remotion": {
+      "order": 50,
+      "enabled": false
+    },
+    "web-artifacts-builder": {
+      "order": 50,
+      "enabled": true
+    },
+    "develop-web-game": {
+      "order": 60,
+      "enabled": true
+    },
+    "playwright": {
+      "order": 70,
+      "enabled": true
+    },
+    "create-plan": {
+      "order": 80,
+      "enabled": true
+    },
+    "canvas-design": {
+      "order": 90,
+      "enabled": true
+    },
+    "local-tools": {
+      "order": 200,
+      "enabled": true
+    },
+    "weather": {
+      "order": 210,
+      "enabled": true
+    },
+    "imap-smtp-email": {
+      "order": 250,
+      "enabled": true
+    },
+    "docx": {
+      "order": 260,
+      "enabled": true
+    },
+    "xlsx": {
+      "order": 270,
+      "enabled": true
+    },
+    "pptx": {
+      "order": 280,
+      "enabled": true
+    },
+    "pdf": {
+      "order": 290,
+      "enabled": true
+    }
+  }
+}

@@ -55,6 +55,9 @@ export interface AgentParams {
   botSoul?: string
   botTask?: string
   allowSelfEvolution?: boolean
+  botTeam?: string
+  teamMembers?: string[]
+  callDepth?: number
 }
 
 export interface AgentInput {

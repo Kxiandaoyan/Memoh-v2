@@ -8,6 +8,15 @@ import { createMistral } from '@ai-sdk/mistral'
 import { createXai } from '@ai-sdk/xai'
 import { ClientType, ModelConfig } from './types'
 
+/**
+ * Build providerOptions for generateText when reasoning=true.
+ * Pass the returned object as `providerOptions` to generateText/streamText.
+ */
+export const getProviderOptions = (config: ModelConfig) => {
+  if (!config.reasoning) return undefined
+  return { openai: { reasoningEffort: 'high' } } as const
+}
+
 export const createModel = (model: ModelConfig) => {
   const apiKey = model.apiKey.trim()
   const baseURL = model.baseUrl.trim()
@@ -58,7 +67,14 @@ export const createModel = (model: ModelConfig) => {
     case ClientType.OpenRouter:
     case ClientType.Together:
     case ClientType.Fireworks:
-    case ClientType.Perplexity: {
+    case ClientType.Perplexity:
+    case ClientType.Zhipu:
+    case ClientType.Siliconflow:
+    case ClientType.Nvidia:
+    case ClientType.Bailing:
+    case ClientType.Xiaomi:
+    case ClientType.Longcat:
+    case ClientType.ModelScope: {
       const provider = createOpenAI({ apiKey, baseURL })
       return provider.chat(modelId)
     }

@@ -33,6 +33,13 @@ const (
 	ClientTypeTogether        ClientType = "together"
 	ClientTypeFireworks       ClientType = "fireworks"
 	ClientTypePerplexity      ClientType = "perplexity"
+	ClientTypeZhipu           ClientType = "zhipu"
+	ClientTypeSiliconflow     ClientType = "siliconflow"
+	ClientTypeNvidia          ClientType = "nvidia"
+	ClientTypeBailing         ClientType = "bailing"
+	ClientTypeXiaomi          ClientType = "xiaomi"
+	ClientTypeLongcat         ClientType = "longcat"
+	ClientTypeModelScope      ClientType = "modelscope"
 )
 
 // CreateRequest represents a request to create a new LLM provider

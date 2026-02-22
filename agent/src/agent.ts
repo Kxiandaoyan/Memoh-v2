@@ -18,7 +18,7 @@ import {
 } from './types'
 import { system, schedule, heartbeat, user, subagentSystem } from './prompts'
 import { AuthFetcher } from './index'
-import { createModel } from './model'
+import { createModel, getProviderOptions } from './model'
 import { AgentAction } from './types/action'
 import { SubagentRegistry } from './registry'
 import {
@@ -87,10 +87,14 @@ export const createAgent = (
     botSoul = '',
     botTask = '',
     allowSelfEvolution = true,
+    botTeam = '',
+    teamMembers = [] as string[],
+    callDepth = 0,
   }: AgentParams,
   fetch: AuthFetcher,
 ) => {
   const model = createModel(modelConfig)
+  const providerOptions = getProviderOptions(modelConfig)
   const registry = new SubagentRegistry()
   const enabledSkills: AgentSkill[] = []
 
@@ -103,6 +107,57 @@ export const createAgent = (
 
   const getEnabledSkills = () => {
     return enabledSkills.map((skill) => skill.name)
+  }
+
+  const TOOL_CATEGORIES: Array<{ label: string; tools: string[]; desc: string }> = [
+    { label: 'File', tools: ['read', 'write', 'list', 'edit'], desc: '/data/ (private), /shared/ (cross-bot)' },
+    { label: 'Shell', tools: ['exec'], desc: 'run commands in container' },
+    { label: 'Web', tools: ['web_search', 'web_fetch'], desc: 'search & fetch web content' },
+    { label: 'Memory', tools: ['search_memory', 'query_history'], desc: 'search memories & conversation history' },
+    { label: 'Message', tools: ['send', 'react', 'lookup_channel_user'], desc: 'send messages, reactions & user lookup' },
+    { label: 'Image', tools: ['generate_image'], desc: 'generate image from text prompt (async, auto-delivered)' },
+    { label: 'Schedule', tools: ['create_schedule', 'list_schedule', 'get_schedule', 'update_schedule', 'delete_schedule'], desc: 'manage cron-based recurring tasks' },
+    { label: 'Skills', tools: ['use_skill', 'discover_skills', 'fork_skill'], desc: 'activate, search & import skills' },
+    { label: 'Subagent', tools: ['list_subagents', 'create_subagent', 'delete_subagent', 'query_subagent', 'spawn_subagent', 'check_subagent_run', 'kill_subagent_run', 'steer_subagent', 'list_subagent_runs'], desc: 'create & manage sub-agents' },
+    { label: 'OpenViking', tools: ['ov_initialize', 'ov_find', 'ov_search', 'ov_read', 'ov_abstract', 'ov_overview', 'ov_ls', 'ov_tree', 'ov_add_resource', 'ov_rm', 'ov_session_commit'], desc: 'context database (see TOOLS.md for details)' },
+  ]
+
+  const generateToolContext = (toolNames: string[] = []): string => {
+    const sections: string[] = []
+    const externalMcps = mcpConnections.filter(c => c.name !== 'builtin')
+    if (externalMcps.length > 0) {
+      sections.push(
+        '### External Tools (MCP)\n' +
+        externalMcps.map(c => `- **${c.name}** (${c.type})`).join('\n'),
+      )
+    }
+
+    const has = (name: string) => toolNames.includes(name)
+    const lines: string[] = []
+    const categorized = new Set<string>()
+
+    for (const cat of TOOL_CATEGORIES) {
+      const present = cat.tools.filter(has)
+      if (present.length === 0) continue
+      present.forEach(t => categorized.add(t))
+      lines.push(`- ${cat.label}: ${present.map(t => `\`${t}\``).join(', ')} — ${cat.desc}`)
+    }
+
+    const uncategorized = toolNames.filter(n => !categorized.has(n))
+    for (const name of uncategorized) {
+      lines.push(`- \`${name}\``)
+    }
+
+    if (lines.length > 0) {
+      sections.push(
+        '### Available Tools\n' +
+        lines.join('\n') +
+        '\n\nCLI tools (use via `exec`): `agent-browser`, `clawhub`, `actionbook`' +
+        '\n\nFor detailed documentation, read /data/TOOLS.md',
+      )
+    }
+
+    return sections.join('\n\n')
   }
 
   const systemFileCache: {
@@ -215,7 +270,7 @@ export const createAgent = (
     return result
   }
 
-  const generateSystemPrompt = async (mode: SystemMode = 'full') => {
+  const generateSystemPrompt = async (mode: SystemMode = 'full', toolNames: string[] = []) => {
     const { identityContent, soulContent, toolsContent } =
       await loadSystemFiles()
     const budget = CHAR_BUDGETS[mode]
@@ -231,8 +286,10 @@ export const createAgent = (
       identityContent,
       soulContent: truncateHeadTail(soulContent, budget.soul),
       toolsContent: truncateHeadTail(toolsContent, budget.tools),
+      toolContext: generateToolContext(toolNames),
       taskContent: botTask,
       allowSelfEvolution,
+      teamContent: botTeam || undefined,
       mode,
     })
   }
@@ -243,6 +300,7 @@ export const createAgent = (
     if (!baseUrl || !botId) {
       return {
         tools: {},
+        toolNames: [] as string[],
         close: async () => {},
       }
     }
@@ -260,11 +318,13 @@ export const createAgent = (
       fetch,
       botId,
     })
-    const tools = getTools(allowedActions, { fetch, model: modelConfig, backgroundModel: backgroundModelConfig, identity, auth, enableSkill, mcpConnections, registry })
+    const tools = getTools(allowedActions, { fetch, model: modelConfig, backgroundModel: backgroundModelConfig, identity, auth, enableSkill, mcpConnections, registry, teamMembers, callDepth })
     const merged = { ...mcpTools, ...tools } as ToolSet
+    const toolNames = Object.keys(merged)
     const wrappedTools = sessionId ? wrapToolsWithLoopDetection(merged, sessionId) : merged
     return {
       tools: wrappedTools,
+      toolNames,
       close: async () => {
         await closeMCP()
         if (sessionId) clearLoopDetectionState(sessionId)
@@ -351,9 +411,9 @@ export const createAgent = (
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
     input.skills.forEach((skill) => enableSkill(skill))
-    const systemPrompt = await generateSystemPrompt('full')
     const sessionId = `ask:${identity.botId}:${Date.now()}`
-    const { tools, close } = await getAgentTools(sessionId)
+    const { tools, toolNames, close } = await getAgentTools(sessionId)
+    const systemPrompt = await generateSystemPrompt('full', toolNames)
     const { response, reasoning, text, usage } = await withRetry(
       () =>
         generateText({
@@ -365,6 +425,7 @@ export const createAgent = (
             await close()
           },
           tools,
+          providerOptions,
         }),
       isRetryableLLMError,
     )
@@ -408,7 +469,7 @@ export const createAgent = (
     }
     const messages = [...params.messages, userPrompt]
     const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
-    const { tools, close } = await getAgentTools(sessionId)
+    const { tools, toolNames: _subToolNames, close } = await getAgentTools(sessionId)
     const { response, reasoning, text, usage } = await withRetry(
       () =>
         generateText({
@@ -421,6 +482,7 @@ export const createAgent = (
           },
           tools,
           abortSignal: params.abortSignal,
+          providerOptions,
         }),
       isRetryableLLMError,
     )
@@ -454,8 +516,8 @@ export const createAgent = (
     const messages = [...params.messages, scheduleMessage]
     params.skills.forEach((skill) => enableSkill(skill))
     const sessionId = `schedule:${identity.botId}:${params.schedule.id}:${Date.now()}`
-    const { tools, close } = await getAgentTools(sessionId)
-    const systemPromptText = await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal')
+    const { tools, toolNames: schedToolNames, close } = await getAgentTools(sessionId)
+    const systemPromptText = await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal', schedToolNames)
     const { response, reasoning, text, usage } = await withRetry(
       () =>
         generateText({
@@ -467,6 +529,7 @@ export const createAgent = (
             await close()
           },
           tools,
+          providerOptions,
         }),
       isRetryableLLMError,
     )
@@ -505,7 +568,9 @@ export const createAgent = (
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
     input.skills.forEach((skill) => enableSkill(skill))
-    const systemPrompt = await generateSystemPrompt('full')
+    const sessionId = `stream:${identity.botId}:${Date.now()}`
+    const { tools, toolNames: streamToolNames, close } = await getAgentTools(sessionId)
+    const systemPrompt = await generateSystemPrompt('full', streamToolNames)
     const attachmentsExtractor = new AttachmentsStreamExtractor()
     const result: {
       messages: ModelMessage[];
@@ -516,8 +581,6 @@ export const createAgent = (
       reasoning: [],
       usage: null,
     }
-    const sessionId = `stream:${identity.botId}:${Date.now()}`
-    const { tools, close } = await getAgentTools(sessionId)
     let closeCalled = false
     const safeClose = async () => {
       if (!closeCalled) {
@@ -531,6 +594,7 @@ export const createAgent = (
       system: systemPrompt,
       stopWhen: stepCountIs(Infinity),
       tools,
+      providerOptions,
       onFinish: async ({ usage, reasoning, response }) => {
         await safeClose()
         result.usage = usage as never

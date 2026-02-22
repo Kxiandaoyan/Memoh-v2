@@ -45,6 +45,18 @@ type Bot struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BotCallLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	CallerBotID pgtype.UUID        `json:"caller_bot_id"`
+	TargetBotID pgtype.UUID        `json:"target_bot_id"`
+	Message     string             `json:"message"`
+	Result      pgtype.Text        `json:"result"`
+	Status      string             `json:"status"`
+	CallDepth   int32              `json:"call_depth"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
 type BotChannelConfig struct {
 	ID               pgtype.UUID        `json:"id"`
 	BotID            pgtype.UUID        `json:"bot_id"`
@@ -104,6 +116,35 @@ type BotPreauthKey struct {
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	UsedAt         pgtype.Timestamptz `json:"used_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type BotTeam struct {
+	ID           pgtype.UUID        `json:"id"`
+	OwnerUserID  pgtype.UUID        `json:"owner_user_id"`
+	Name         string             `json:"name"`
+	ManagerBotID pgtype.UUID        `json:"manager_bot_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type BotTeamMember struct {
+	ID              pgtype.UUID        `json:"id"`
+	TeamID          pgtype.UUID        `json:"team_id"`
+	SourceBotID     pgtype.UUID        `json:"source_bot_id"`
+	TargetBotID     pgtype.UUID        `json:"target_bot_id"`
+	RoleDescription string             `json:"role_description"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type BuiltinToolConfig struct {
+	ID        pgtype.UUID        `json:"id"`
+	BotID     pgtype.UUID        `json:"bot_id"`
+	ToolName  string             `json:"tool_name"`
+	Enabled   bool               `json:"enabled"`
+	Priority  int32              `json:"priority"`
+	Category  string             `json:"category"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ChannelIdentity struct {
@@ -172,6 +213,7 @@ type EmbeddingCache struct {
 	Embedding []byte      `json:"embedding"`
 	Dims      int32       `json:"dims"`
 	UpdatedAt int64       `json:"updated_at"`
+	ExpiresAt int64       `json:"expires_at"`
 }
 
 type EvolutionLog struct {
