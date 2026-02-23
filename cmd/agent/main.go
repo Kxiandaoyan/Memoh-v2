@@ -55,6 +55,7 @@ import (
 	mcpskillstore "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/skillstore"
 	mcpbrowser "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/browser"
 	mcpwebread "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/webread"
+	mcpknowledge "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/knowledge"
 	mcpweb "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/web"
 	mcpfederation "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/sources/federation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
@@ -494,13 +495,14 @@ func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Con
 
 	browserExec := mcpbrowser.NewExecutor(log, manager)
 	webreadExec := mcpwebread.NewExecutor(log, manager, webExec, browserExec)
+	knowledgeExec := mcpknowledge.NewExecutor(log, memoryService)
 
 	fedGateway := handlers.NewMCPFederationGateway(log, containerdHandler)
 	fedSource := mcpfederation.NewSource(log, fedGateway, mcpConnService)
 
 	svc := mcp.NewToolGatewayService(
 		log,
-		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec, browserExec, webreadExec},
+		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec, browserExec, webreadExec, knowledgeExec},
 		[]mcp.ToolSource{fedSource},
 	)
 	containerdHandler.SetToolGatewayService(svc)

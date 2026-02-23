@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	ctr "github.com/Kxiandaoyan/Memoh-v2/internal/containerd"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/mcp"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/skills"
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +25,9 @@ type SkillItem struct {
 	Description string         `json:"description"`
 	Content     string         `json:"content"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
+	Order       int            `json:"order,omitempty"`
+	Enabled     bool           `json:"enabled,omitempty"`
+	Version     string         `json:"version,omitempty"`
 }
 
 type SkillsResponse struct {
@@ -40,6 +46,73 @@ type skillsOpResponse struct {
 	OK bool `json:"ok"`
 }
 
+type SkillToggleRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+type SkillOrderRequest struct {
+	Skills []SkillOrderItem `json:"skills"`
+}
+
+type SkillOrderItem struct {
+	Name  string `json:"name"`
+	Order int    `json:"order"`
+}
+
+// loadBotSkillConfig loads the skill configuration for a specific bot.
+func (h *ContainerdHandler) loadBotSkillConfig(botID string) *skills.SkillConfig {
+	skillsDir, err := h.ensureSkillsDirHost(botID)
+	if err != nil {
+		return skills.LoadDefaultSkillConfig()
+	}
+	return skills.LoadSkillConfig(filepath.Join(skillsDir, "skills.config.json"))
+}
+
+// saveBotSkillConfig saves the skill configuration to the bot's data directory.
+func (h *ContainerdHandler) saveBotSkillConfig(config *skills.SkillConfig, botID string) error {
+	skillsDir, err := h.ensureSkillsDirHost(botID)
+	if err != nil {
+		return err
+	}
+	return skills.SaveSkillConfigTo(config, filepath.Join(skillsDir, "skills.config.json"))
+}
+
+// getDefaultSkillsDir returns the path to the default skills directory.
+func (h *ContainerdHandler) getDefaultSkillsDir() string {
+	return filepath.Join("internal", "skills", "defaults")
+}
+
+// mergedSkillEntry represents a skill entry with source tracking.
+type mergedSkillEntry struct {
+	entry     skillEntry
+	isFromBot bool
+}
+
+// mergeSkillEntries merges bot-specific and default skill entries.
+func mergeSkillEntries(botEntries, defaultEntries []skillEntry) []mergedSkillEntry {
+	botMap := make(map[string]struct{})
+	for _, entry := range botEntries {
+		_, name := skillPathForEntry(entry)
+		if name != "" {
+			botMap[name] = struct{}{}
+		}
+	}
+	merged := make([]mergedSkillEntry, 0, len(botEntries)+len(defaultEntries))
+	for _, entry := range botEntries {
+		merged = append(merged, mergedSkillEntry{entry: entry, isFromBot: true})
+	}
+	for _, entry := range defaultEntries {
+		_, name := skillPathForEntry(entry)
+		if name == "" {
+			continue
+		}
+		if _, exists := botMap[name]; !exists {
+			merged = append(merged, mergedSkillEntry{entry: entry, isFromBot: false})
+		}
+	}
+	return merged
+}
+
 // ListSkills godoc
 // @Summary List skills from data directory
 // @Tags containerd
@@ -54,61 +127,57 @@ func (h *ContainerdHandler) ListSkills(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	skillsDir, err := h.ensureSkillsDirHost(botID)
+
+	botConfig := h.loadBotSkillConfig(botID)
+	botSkillsDir, err := h.ensureSkillsDirHost(botID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	h.logger.Info("ListSkills: resolved skills dir",
-		slog.String("bot_id", botID),
-		slog.String("skills_dir", skillsDir))
 
-	entries, err := listSkillEntries(skillsDir)
+	defaultsDir := h.getDefaultSkillsDir()
+
+	botEntries, err := listSkillEntries(botSkillsDir)
 	if err != nil {
-		h.logger.Warn("ListSkills: failed to list entries",
-			slog.String("bot_id", botID),
-			slog.Any("error", err))
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	entryNames := make([]string, 0, len(entries))
-	for _, e := range entries {
-		entryNames = append(entryNames, e.Path)
-	}
-	h.logger.Info("ListSkills: found entries",
-		slog.String("bot_id", botID),
-		slog.Int("count", len(entries)),
-		slog.Any("entries", entryNames))
 
-	skills := make([]SkillItem, 0, len(entries))
-	for _, entry := range entries {
-		skillPath, name := skillPathForEntry(entry)
+	var defaultEntries []skillEntry
+	if defaultsDir != "" {
+		defaultEntries, _ = listSkillEntries(defaultsDir)
+	}
+
+	mergedEntries := mergeSkillEntries(botEntries, defaultEntries)
+
+	result := make([]SkillItem, 0, len(mergedEntries))
+	for _, entryInfo := range mergedEntries {
+		skillPath, name := skillPathForEntry(entryInfo.entry)
 		if skillPath == "" {
-			h.logger.Warn("ListSkills: skillPathForEntry returned empty",
-				slog.String("bot_id", botID),
-				slog.String("entry_path", entry.Path),
-				slog.Bool("is_dir", entry.IsDir))
 			continue
 		}
-		raw, err := h.readSkillFile(skillsDir, skillPath)
+		var raw string
+		if entryInfo.isFromBot {
+			raw, err = h.readSkillFile(botSkillsDir, skillPath)
+		} else {
+			raw, err = h.readSkillFile(defaultsDir, skillPath)
+		}
 		if err != nil {
-			h.logger.Warn("ListSkills: readSkillFile failed",
-				slog.String("bot_id", botID),
-				slog.String("skill_path", skillPath),
-				slog.Any("error", err))
 			continue
 		}
 		parsed := parseSkillFile(raw, name)
-		skills = append(skills, SkillItem{
+		configEntry := botConfig.GetSkillEntry(parsed.Name, parsed.Metadata)
+		result = append(result, SkillItem{
 			Name:        parsed.Name,
 			Description: parsed.Description,
 			Content:     parsed.Content,
 			Metadata:    parsed.Metadata,
+			Order:       configEntry.Order,
+			Enabled:     configEntry.Enabled,
+			Version:     parsed.Version,
 		})
 	}
 
-	h.logger.Info("ListSkills: returning skills",
-		slog.String("bot_id", botID),
-		slog.Int("total", len(skills)))
-	return c.JSON(http.StatusOK, SkillsResponse{Skills: skills})
+	sort.Slice(result, func(i, j int) bool { return result[i].Order < result[j].Order })
+	return c.JSON(http.StatusOK, SkillsResponse{Skills: result})
 }
 
 // UpsertSkills godoc
@@ -147,7 +216,7 @@ func (h *ContainerdHandler) UpsertSkills(c echo.Context) error {
 		}
 		content := strings.TrimSpace(skill.Content)
 		if content == "" {
-			content = buildSkillContent(name, strings.TrimSpace(skill.Description))
+			content = buildSkillContent(name, strings.TrimSpace(skill.Description), skill.Version)
 		}
 		dirPath := filepath.Join(skillsDir, name)
 		if err := os.MkdirAll(dirPath, 0o755); err != nil {
@@ -214,43 +283,45 @@ func (h *ContainerdHandler) DeleteSkills(c echo.Context) error {
 // LoadSkills loads all skills from the container for the given bot.
 // This implements chat.SkillLoader.
 func (h *ContainerdHandler) LoadSkills(ctx context.Context, botID string) ([]SkillItem, error) {
+	botConfig := h.loadBotSkillConfig(botID)
 	skillsDir, err := h.ensureSkillsDirHost(botID)
 	if err != nil {
-		h.logger.Warn("LoadSkills: ensure skills dir failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return nil, err
 	}
 
 	entries, err := listSkillEntries(skillsDir)
 	if err != nil {
-		h.logger.Warn("LoadSkills: list entries failed", slog.String("bot_id", botID), slog.Any("error", err))
 		return nil, err
 	}
 
-	skills := make([]SkillItem, 0, len(entries))
+	result := make([]SkillItem, 0, len(entries))
 	for _, entry := range entries {
 		skillPath, name := skillPathForEntry(entry)
 		if skillPath == "" {
-			h.logger.Debug("LoadSkills: no skill file found", slog.String("entry", entry.Path))
 			continue
 		}
 		raw, err := h.readSkillFile(skillsDir, skillPath)
 		if err != nil {
-			h.logger.Warn("LoadSkills: readSkillFile failed",
-				slog.String("bot_id", botID),
-				slog.String("skill_path", skillPath),
-				slog.Any("error", err))
 			continue
 		}
 		parsed := parseSkillFile(raw, name)
-		skills = append(skills, SkillItem{
+		configEntry := botConfig.GetSkillEntry(parsed.Name, parsed.Metadata)
+		if !configEntry.Enabled {
+			continue
+		}
+		result = append(result, SkillItem{
 			Name:        parsed.Name,
 			Description: parsed.Description,
 			Content:     parsed.Content,
 			Metadata:    parsed.Metadata,
+			Order:       configEntry.Order,
+			Enabled:     configEntry.Enabled,
+			Version:     parsed.Version,
 		})
 	}
-	h.logger.Info("LoadSkills: completed", slog.String("bot_id", botID), slog.Int("count", len(skills)))
-	return skills, nil
+
+	sort.Slice(result, func(i, j int) bool { return result[i].Order < result[j].Order })
+	return result, nil
 }
 
 func (h *ContainerdHandler) ensureSkillsDirHost(botID string) (string, error) {
@@ -392,6 +463,7 @@ type parsedSkill struct {
 	Description string
 	Content     string         // body after frontmatter
 	Metadata    map[string]any // "metadata" key from frontmatter
+	Version     string
 }
 
 // parseSkillFile parses a SKILL.md file with YAML frontmatter delimited by "---".
@@ -405,7 +477,7 @@ type parsedSkill struct {
 //	---
 //	# Body content ...
 func parseSkillFile(raw string, fallbackName string) parsedSkill {
-	result := parsedSkill{Name: fallbackName}
+	result := parsedSkill{Name: fallbackName, Version: "1.0.0"}
 
 	trimmed := strings.TrimSpace(raw)
 	if !strings.HasPrefix(trimmed, "---") {
@@ -434,6 +506,7 @@ func parseSkillFile(raw string, fallbackName string) parsedSkill {
 	var fm struct {
 		Name        string         `yaml:"name"`
 		Description string         `yaml:"description"`
+		Version     string         `yaml:"version"`
 		Metadata    map[string]any `yaml:"metadata"`
 	}
 	if err := yaml.Unmarshal([]byte(frontmatterRaw), &fm); err != nil {
@@ -444,16 +517,22 @@ func parseSkillFile(raw string, fallbackName string) parsedSkill {
 		result.Name = strings.TrimSpace(fm.Name)
 	}
 	result.Description = strings.TrimSpace(fm.Description)
+	if strings.TrimSpace(fm.Version) != "" {
+		result.Version = strings.TrimSpace(fm.Version)
+	}
 	result.Metadata = fm.Metadata
 
 	return result
 }
 
-func buildSkillContent(name, description string) string {
+func buildSkillContent(name, description, version string) string {
 	if description == "" {
 		description = name
 	}
-	return "---\nname: " + name + "\ndescription: " + description + "\n---\n\n# " + name + "\n\n" + description
+	if version == "" {
+		version = "1.0.0"
+	}
+	return fmt.Sprintf("---\nname: %s\ndescription: %s\nversion: %s\n---\n\n# %s\n\n%s", name, description, version, name, description)
 }
 
 func isValidSkillName(name string) bool {
@@ -467,6 +546,141 @@ func isValidSkillName(name string) bool {
 		return false
 	}
 	return true
+}
+
+// ToggleSkill godoc
+// @Summary Toggle a skill's enabled state
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param name path string true "Skill name"
+// @Param payload body SkillToggleRequest true "Toggle request"
+// @Success 200 {object} skillsOpResponse
+// @Router /bots/{bot_id}/container/skills/{name} [patch]
+func (h *ContainerdHandler) ToggleSkill(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+
+	skillName := strings.TrimSpace(c.Param("name"))
+	if !isValidSkillName(skillName) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid skill name")
+	}
+
+	var req SkillToggleRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	h.logger.Info("ToggleSkill", slog.String("bot_id", botID), slog.String("skill", skillName), slog.Bool("enabled", req.Enabled))
+
+	skillsDir, err := h.ensureSkillsDirHost(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if _, err := os.Stat(filepath.Join(skillsDir, skillName)); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(h.getDefaultSkillsDir(), skillName)); os.IsNotExist(err) {
+			return echo.NewHTTPError(http.StatusNotFound, "skill not found")
+		}
+	}
+
+	botConfig := h.loadBotSkillConfig(botID)
+	if err := botConfig.UpdateSkillEnabled(skillName, req.Enabled); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := h.saveBotSkillConfig(botConfig, botID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, skillsOpResponse{OK: true})
+}
+
+// UpdateSkillOrder godoc
+// @Summary Update the order of skills
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param payload body SkillOrderRequest true "Order update request"
+// @Success 200 {object} skillsOpResponse
+// @Router /bots/{bot_id}/container/skills/order [put]
+func (h *ContainerdHandler) UpdateSkillOrder(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+
+	var req SkillOrderRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if len(req.Skills) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "skills array is required")
+	}
+
+	skillsDir, err := h.ensureSkillsDirHost(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	for _, item := range req.Skills {
+		if !isValidSkillName(item.Name) {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid skill name: "+item.Name)
+		}
+		if item.Order < 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "order must be non-negative")
+		}
+		if _, err := os.Stat(filepath.Join(skillsDir, item.Name)); os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(h.getDefaultSkillsDir(), item.Name)); os.IsNotExist(err) {
+				return echo.NewHTTPError(http.StatusNotFound, "skill not found: "+item.Name)
+			}
+		}
+	}
+
+	botConfig := h.loadBotSkillConfig(botID)
+	for _, item := range req.Skills {
+		if err := botConfig.UpdateSkillOrder(item.Name, item.Order); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+
+	if err := h.saveBotSkillConfig(botConfig, botID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, skillsOpResponse{OK: true})
+}
+
+// SyncDefaultSkills godoc
+// @Summary Sync default skills to bot directory
+// @Tags containerd
+// @Param bot_id path string true "Bot ID"
+// @Param force query bool false "Force overwrite existing skills"
+// @Success 200 {object} map[string]any
+// @Router /bots/{bot_id}/container/skills/sync [post]
+func (h *ContainerdHandler) SyncDefaultSkills(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+
+	force := c.QueryParam("force") == "true"
+
+	botSkillsDir, err := h.ensureSkillsDirHost(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	defaultsDir := h.getDefaultSkillsDir()
+	if defaultsDir == "" {
+		return echo.NewHTTPError(http.StatusInternalServerError, "defaults directory not found")
+	}
+
+	count, err := skills.SyncDefaultSkills(botSkillsDir, defaultsDir, force)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"synced": true, "count": count})
 }
 
 // --- ClawHub marketplace proxy APIs ---

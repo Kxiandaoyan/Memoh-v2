@@ -11,14 +11,15 @@ import (
 
 // BuiltinToolConfig represents per-bot configuration for a builtin tool.
 type BuiltinToolConfig struct {
-	ID        string
-	BotID     string
-	ToolName  string
-	Enabled   bool
-	Priority  int
-	Category  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string    `json:"id,omitempty"`
+	BotID     string    `json:"bot_id,omitempty"`
+	ToolName  string    `json:"tool_name"`
+	Enabled   bool      `json:"enabled"`
+	Priority  int       `json:"priority"`
+	Category  string    `json:"category"`
+	Tier      string    `json:"tier,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // BuiltinToolConfigService manages builtin tool configurations per bot.
@@ -44,7 +45,7 @@ func (s *BuiltinToolConfigService) GetByBot(ctx context.Context, botID string) (
 		return nil, fmt.Errorf("bot_id cannot be empty")
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, bot_id, tool_name, enabled, priority, category, created_at, updated_at
+		SELECT id, bot_id, tool_name, enabled, priority, category, tier, created_at, updated_at
 		FROM builtin_tool_configs WHERE bot_id = $1
 		ORDER BY priority ASC, tool_name ASC`, botID)
 	if err != nil {
@@ -54,7 +55,7 @@ func (s *BuiltinToolConfigService) GetByBot(ctx context.Context, botID string) (
 	var configs []BuiltinToolConfig
 	for rows.Next() {
 		var c BuiltinToolConfig
-		if err := rows.Scan(&c.ID, &c.BotID, &c.ToolName, &c.Enabled, &c.Priority, &c.Category, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.BotID, &c.ToolName, &c.Enabled, &c.Priority, &c.Category, &c.Tier, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan builtin tool config: %w", err)
 		}
 		configs = append(configs, c)
@@ -73,14 +74,21 @@ func (s *BuiltinToolConfigService) UpsertBatch(ctx context.Context, botID string
 	}
 	defer tx.Rollback(ctx)
 	for _, c := range configs {
-		if c.ToolName == "" || c.Category == "" {
-			return fmt.Errorf("tool_name and category required for %s", c.ToolName)
+		if c.ToolName == "" {
+			return fmt.Errorf("tool_name required")
+		}
+		if c.Category == "" {
+			c.Category = "other"
+		}
+		tier := c.Tier
+		if tier == "" {
+			tier = "core"
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO builtin_tool_configs (bot_id, tool_name, enabled, priority, category)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (bot_id, tool_name) DO UPDATE SET enabled = EXCLUDED.enabled, priority = EXCLUDED.priority, updated_at = now()`,
-			botID, c.ToolName, c.Enabled, c.Priority, c.Category); err != nil {
+			INSERT INTO builtin_tool_configs (bot_id, tool_name, enabled, priority, category, tier)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (bot_id, tool_name) DO UPDATE SET enabled = EXCLUDED.enabled, priority = EXCLUDED.priority, tier = EXCLUDED.tier, updated_at = now()`,
+			botID, c.ToolName, c.Enabled, c.Priority, c.Category, tier); err != nil {
 			return fmt.Errorf("upsert %s: %w", c.ToolName, err)
 		}
 	}
@@ -106,6 +114,8 @@ func (s *BuiltinToolConfigService) InitializeDefaults(ctx context.Context, botID
 		{"web_search", "web"},
 		{"list_schedule", "schedule"}, {"get_schedule", "schedule"}, {"create_schedule", "schedule"}, {"update_schedule", "schedule"}, {"delete_schedule", "schedule"},
 		{"lookup_channel_user", "directory"},
+		{"knowledge_read", "knowledge"},
+		{"knowledge_write", "knowledge"},
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -130,4 +140,49 @@ func (s *BuiltinToolConfigService) DeleteByBot(ctx context.Context, botID string
 	}
 	_, err := s.pool.Exec(ctx, `DELETE FROM builtin_tool_configs WHERE bot_id = $1`, botID)
 	return err
+}
+
+// GetToolTiers returns a map of toolName→tier for a bot.
+func (s *BuiltinToolConfigService) GetToolTiers(ctx context.Context, botID string) (map[string]string, error) {
+	if botID == "" {
+		return nil, fmt.Errorf("bot_id cannot be empty")
+	}
+	rows, err := s.pool.Query(ctx, `SELECT tool_name, tier FROM builtin_tool_configs WHERE bot_id = $1`, botID)
+	if err != nil {
+		return nil, fmt.Errorf("query tool tiers: %w", err)
+	}
+	defer rows.Close()
+	tiers := make(map[string]string)
+	for rows.Next() {
+		var name, tier string
+		if err := rows.Scan(&name, &tier); err != nil {
+			return nil, fmt.Errorf("scan tool tier: %w", err)
+		}
+		tiers[name] = tier
+	}
+	return tiers, rows.Err()
+}
+
+// GetExtendedTools returns enabled tools with tier='extended' for a bot.
+func (s *BuiltinToolConfigService) GetExtendedTools(ctx context.Context, botID string) ([]BuiltinToolConfig, error) {
+	if botID == "" {
+		return nil, fmt.Errorf("bot_id cannot be empty")
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, bot_id, tool_name, enabled, priority, category, tier, created_at, updated_at
+		 FROM builtin_tool_configs WHERE bot_id = $1 AND tier = 'extended' AND enabled = true
+		 ORDER BY tool_name`, botID)
+	if err != nil {
+		return nil, fmt.Errorf("query extended tools: %w", err)
+	}
+	defer rows.Close()
+	var configs []BuiltinToolConfig
+	for rows.Next() {
+		var c BuiltinToolConfig
+		if err := rows.Scan(&c.ID, &c.BotID, &c.ToolName, &c.Enabled, &c.Priority, &c.Category, &c.Tier, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan extended tool: %w", err)
+		}
+		configs = append(configs, c)
+	}
+	return configs, rows.Err()
 }

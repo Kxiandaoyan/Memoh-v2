@@ -41,6 +41,7 @@ type ContainerdHandler struct {
 	namespace      string
 	logger         *slog.Logger
 	toolGateway    *mcp.ToolGatewayService
+	builtinToolConfig *mcp.BuiltinToolConfigService
 	mcpMu          sync.Mutex
 	mcpSess        map[string]*mcpSession
 	mcpStdioMu     sync.Mutex
@@ -137,6 +138,9 @@ func (h *ContainerdHandler) Register(e *echo.Echo) {
 	group.GET("/skills", h.ListSkills)
 	group.POST("/skills", h.UpsertSkills)
 	group.DELETE("/skills", h.DeleteSkills)
+	group.PATCH("/skills/:name", h.ToggleSkill)
+	group.PUT("/skills/order", h.UpdateSkillOrder)
+	group.POST("/skills/sync", h.SyncDefaultSkills)
 	group.POST("/clawhub/search", h.ClawHubSearch)
 	group.POST("/clawhub/install", h.ClawHubInstall)
 	root := e.Group("/bots/:bot_id")

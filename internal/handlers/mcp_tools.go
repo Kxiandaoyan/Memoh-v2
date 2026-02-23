@@ -20,10 +20,15 @@ const (
 	headerSessionToken      = "X-Memoh-Session-Token"
 	headerCurrentPlatform   = "X-Memoh-Current-Platform"
 	headerReplyTarget       = "X-Memoh-Reply-Target"
+	headerIncludeTools      = "X-Memoh-Include-Tools"
 )
 
 func (h *ContainerdHandler) SetToolGatewayService(service *mcpgw.ToolGatewayService) {
 	h.toolGateway = service
+}
+
+func (h *ContainerdHandler) SetBuiltinToolConfigService(service *mcpgw.BuiltinToolConfigService) {
+	h.builtinToolConfig = service
 }
 
 // HandleMCPTools godoc
@@ -136,6 +141,7 @@ func (h *ContainerdHandler) toolGatewayMiddleware(session mcpgw.ToolSessionConte
 				if err != nil {
 					return nil, err
 				}
+				tools = h.filterToolsByTier(ctx, session, tools)
 				return &sdkmcp.ListToolsResult{
 					Tools: convertGatewayToolsToSDK(tools),
 				}, nil
@@ -241,6 +247,14 @@ func (h *ContainerdHandler) buildToolSessionContext(c echo.Context, botID string
 			channelIdentityID = strings.TrimSpace(ctxIdentityID)
 		}
 	}
+	var includeTools []string
+	if raw := strings.TrimSpace(c.Request().Header.Get(headerIncludeTools)); raw != "" {
+		for _, t := range strings.Split(raw, ",") {
+			if name := strings.TrimSpace(t); name != "" {
+				includeTools = append(includeTools, name)
+			}
+		}
+	}
 	return mcpgw.ToolSessionContext{
 		BotID:             strings.TrimSpace(botID),
 		ChatID:            strings.TrimSpace(botID),
@@ -248,5 +262,38 @@ func (h *ContainerdHandler) buildToolSessionContext(c echo.Context, botID string
 		SessionToken:      strings.TrimSpace(c.Request().Header.Get(headerSessionToken)),
 		CurrentPlatform:   strings.TrimSpace(c.Request().Header.Get(headerCurrentPlatform)),
 		ReplyTarget:       strings.TrimSpace(c.Request().Header.Get(headerReplyTarget)),
+		IncludeTools:      includeTools,
 	}
+}
+
+// filterToolsByTier filters tools based on tier configuration.
+// Fail-open: if config service is nil or query fails, return all tools.
+func (h *ContainerdHandler) filterToolsByTier(ctx context.Context, session mcpgw.ToolSessionContext, tools []mcpgw.ToolDescriptor) []mcpgw.ToolDescriptor {
+	if h.builtinToolConfig == nil {
+		return tools
+	}
+	tiers, err := h.builtinToolConfig.GetToolTiers(ctx, session.BotID)
+	if err != nil {
+		h.logger.Warn("filterToolsByTier: failed to get tiers, returning all tools", slog.Any("error", err))
+		return tools
+	}
+
+	includeSet := make(map[string]struct{}, len(session.IncludeTools))
+	for _, t := range session.IncludeTools {
+		includeSet[t] = struct{}{}
+	}
+
+	filtered := make([]mcpgw.ToolDescriptor, 0, len(tools))
+	for _, tool := range tools {
+		tier, known := tiers[tool.Name]
+		if !known || tier != "extended" {
+			filtered = append(filtered, tool)
+			continue
+		}
+		// extended — only include if explicitly requested
+		if _, ok := includeSet[tool.Name]; ok {
+			filtered = append(filtered, tool)
+		}
+	}
+	return filtered
 }

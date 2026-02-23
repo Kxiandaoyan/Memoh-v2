@@ -643,9 +643,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		} else {
 			usableSkills = make([]gatewaySkill, 0, len(entries))
 			for _, e := range entries {
+				desc := e.Description
+				if strings.TrimSpace(desc) == "" {
+					desc = e.Name
+				}
 				usableSkills = append(usableSkills, gatewaySkill{
 					Name:        e.Name,
-					Description: e.Description,
+					Description: desc,
 					Content:     e.Content,
 					Metadata:    e.Metadata,
 				})

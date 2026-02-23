@@ -1,0 +1,1 @@
+ALTER TABLE builtin_tool_configs ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'core';

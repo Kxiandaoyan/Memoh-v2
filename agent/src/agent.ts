@@ -33,6 +33,7 @@ import { getMCPTools } from './tools/mcp'
 import { getTools } from './tools'
 import { wrapToolsWithLoopDetection, clearLoopDetectionState } from './tools/loop-detection'
 import { buildIdentityHeaders } from './utils/headers'
+import { createTierTools, getEnabledExtendedTools } from './tools/tier'
 import { normalizeBaseUrl } from './utils/url'
 import {
   truncateToolResult,
@@ -114,6 +115,7 @@ export const createAgent = (
     { label: 'Shell', tools: ['exec'], desc: 'run commands in container' },
     { label: 'Web', tools: ['web_search', 'web_fetch'], desc: 'search & fetch web content' },
     { label: 'Memory', tools: ['search_memory', 'query_history'], desc: 'search memories & conversation history' },
+    { label: 'Knowledge', tools: ['knowledge_read', 'knowledge_write'], desc: 'read & write bot knowledge base' },
     { label: 'Message', tools: ['send', 'react', 'lookup_channel_user'], desc: 'send messages, reactions & user lookup' },
     { label: 'Image', tools: ['generate_image'], desc: 'generate image from text prompt (async, auto-delivered)' },
     { label: 'Schedule', tools: ['create_schedule', 'list_schedule', 'get_schedule', 'update_schedule', 'delete_schedule'], desc: 'manage cron-based recurring tasks' },
@@ -304,13 +306,17 @@ export const createAgent = (
         close: async () => {},
       }
     }
-    const headers = buildIdentityHeaders(identity, auth)
+    const baseHeaders = buildIdentityHeaders(identity, auth)
+    const enabledExt = getEnabledExtendedTools()
+    const builtinHeaders = enabledExt.length > 0
+      ? { ...baseHeaders, 'X-Memoh-Include-Tools': enabledExt.join(',') }
+      : baseHeaders
     const builtins: MCPConnection[] = [
       {
         type: 'http',
         name: 'builtin',
         url: `${baseUrl}/bots/${botId}/tools`,
-        headers,
+        headers: builtinHeaders,
       }
     ]
     const { tools: mcpTools, close: closeMCP } = await getMCPTools([...builtins, ...mcpConnections], {
@@ -319,7 +325,8 @@ export const createAgent = (
       botId,
     })
     const tools = getTools(allowedActions, { fetch, model: modelConfig, backgroundModel: backgroundModelConfig, identity, auth, enableSkill, mcpConnections, registry, teamMembers, callDepth })
-    const merged = { ...mcpTools, ...tools } as ToolSet
+    const tierTools = createTierTools({ auth, identity, fetch })
+    const merged = { ...tierTools, ...mcpTools, ...tools } as ToolSet
     const toolNames = Object.keys(merged)
     const wrappedTools = sessionId ? wrapToolsWithLoopDetection(merged, sessionId) : merged
     return {

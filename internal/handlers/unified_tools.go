@@ -40,6 +40,7 @@ func (h *UnifiedToolsHandler) Register(e *echo.Echo) {
 	// Tools routes under /bots/:bot_id/tools
 	toolsGroup := e.Group("/bots/:bot_id/tools")
 	toolsGroup.GET("", h.ListAllTools)
+	toolsGroup.GET("/extended", h.ListExtendedTools)
 	toolsGroup.PUT("/builtin", h.UpdateBuiltinTools)
 	toolsGroup.POST("/reset", h.ResetBuiltinTools)
 }
@@ -51,6 +52,7 @@ type UnifiedToolItem struct {
 	Type              string `json:"type"` // "builtin" or "mcp"
 	Enabled           bool   `json:"enabled"`
 	Order             int    `json:"order"`
+	Tier              string `json:"tier,omitempty"`
 	MCPConnectionName string `json:"mcpConnectionName,omitempty"`
 }
 
@@ -119,6 +121,7 @@ func (h *UnifiedToolsHandler) ListAllTools(c echo.Context) error {
 			Type:     "builtin",
 			Enabled:  cfg.Enabled,
 			Order:    i,
+			Tier:     cfg.Tier,
 		})
 	}
 	for i, conn := range mcpConnections {
@@ -227,4 +230,30 @@ func (h *UnifiedToolsHandler) ResetBuiltinTools(c echo.Context) error {
 	return c.JSON(http.StatusOK, ResetBuiltinToolsResponse{
 		Reset: true,
 	})
+}
+
+// ListExtendedTools returns extended-tier tools for a bot.
+func (h *UnifiedToolsHandler) ListExtendedTools(c echo.Context) error {
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot_id is required")
+	}
+
+	configs, err := h.builtinConfigService.GetExtendedTools(c.Request().Context(), botID)
+	if err != nil {
+		h.logger.Error("failed to get extended tools", slog.String("bot_id", botID), slog.Any("error", err))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve extended tools")
+	}
+
+	items := make([]UnifiedToolItem, 0, len(configs))
+	for _, cfg := range configs {
+		items = append(items, UnifiedToolItem{
+			Name:     cfg.ToolName,
+			Category: cfg.Category,
+			Type:     "builtin",
+			Enabled:  cfg.Enabled,
+			Tier:     cfg.Tier,
+		})
+	}
+	return c.JSON(http.StatusOK, ListAllToolsResponse{Tools: items})
 }
