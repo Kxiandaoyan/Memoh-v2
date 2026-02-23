@@ -582,6 +582,35 @@ export const createAgent = (
     return 'Model stream failed'
   }
 
+  // -- Write-tool attachment helpers --
+  const PLAIN_TEXT_EXTS = new Set(['.md', '.txt', '.log', '.csv', '.json', '.yaml', '.yml', '.toml', '.xml', '.ini', '.cfg', '.env', '.sh', '.bat'])
+
+  const hasDownloadableExtension = (p: string): boolean => {
+    const dot = p.lastIndexOf('.')
+    if (dot === -1) return false
+    return !PLAIN_TEXT_EXTS.has(p.slice(dot).toLowerCase())
+  }
+
+  const extractWritePath = (input: unknown): string | null => {
+    if (!input || typeof input !== 'object') return null
+    const p = (input as Record<string, unknown>).path
+    return typeof p === 'string' && p.length > 0 ? p : null
+  }
+
+  const isWriteSuccess = (output: unknown): boolean => {
+    if (output === undefined || output === null) return false
+    if (typeof output === 'string') return !output.toLowerCase().includes('error')
+    if (typeof output === 'object') {
+      const o = output as Record<string, unknown>
+      if (o.isError === true) return false
+      const content = o.content
+      if (Array.isArray(content)) {
+        return !content.some((c: any) => c?.type === 'text' && typeof c.text === 'string' && c.text.toLowerCase().includes('error'))
+      }
+    }
+    return true
+  }
+
   async function* stream(input: AgentInput): AsyncGenerator<AgentAction> {
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
@@ -712,6 +741,13 @@ export const createAgent = (
               metadata: sanitizeToolChunkMetadata(
                 chunk as unknown as Record<string, unknown>,
               ),
+            }
+            // Auto-emit attachment for write tool so frontend doesn't depend on LLM <attachments> tag
+            if (chunk.toolName === 'write' && isWriteSuccess(chunk.output)) {
+              const writePath = extractWritePath(chunk.input)
+              if (writePath && hasDownloadableExtension(writePath)) {
+                yield { type: 'attachment_delta', attachments: [{ type: 'file', path: writePath }] }
+              }
             }
             break
           case 'file':

@@ -14,6 +14,7 @@
  */
 
 import type { ToolSet } from 'ai'
+import { truncateToolResult, computeMaxToolResultChars } from '../utils/sse'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -191,6 +192,10 @@ export function wrapToolsWithLoopDetection(tools: ToolSet, sessionId: string): T
         // Execute the real tool.
         const result = await originalExecute(...args)
 
+        // Truncate large tool results before they re-enter LLM context.
+        const maxChars = Math.floor(computeMaxToolResultChars() * 0.5)
+        const truncatedResult = truncateToolResult(result, maxChars)
+
         appendRecord(sessionId, {
           toolName: name,
           paramsHash,
@@ -198,7 +203,7 @@ export function wrapToolsWithLoopDetection(tools: ToolSet, sessionId: string): T
           timestamp: Date.now(),
         })
 
-        return result
+        return truncatedResult
       },
     } as typeof tool
   }
