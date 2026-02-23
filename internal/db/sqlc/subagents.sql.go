@@ -116,6 +116,54 @@ func (q *Queries) ListSubagentsByBot(ctx context.Context, botID pgtype.UUID) ([]
 	return items, nil
 }
 
+const reviveSubagent = `-- name: ReviveSubagent :one
+UPDATE subagents
+SET deleted = false,
+    deleted_at = NULL,
+    description = $3,
+    messages = $4,
+    metadata = $5,
+    skills = $6,
+    updated_at = now()
+WHERE bot_id = $1 AND name = $2 AND deleted = true
+RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills
+`
+
+type ReviveSubagentParams struct {
+	BotID       pgtype.UUID `json:"bot_id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Messages    []byte      `json:"messages"`
+	Metadata    []byte      `json:"metadata"`
+	Skills      []byte      `json:"skills"`
+}
+
+func (q *Queries) ReviveSubagent(ctx context.Context, arg ReviveSubagentParams) (Subagent, error) {
+	row := q.db.QueryRow(ctx, reviveSubagent,
+		arg.BotID,
+		arg.Name,
+		arg.Description,
+		arg.Messages,
+		arg.Metadata,
+		arg.Skills,
+	)
+	var i Subagent
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Deleted,
+		&i.DeletedAt,
+		&i.BotID,
+		&i.Messages,
+		&i.Metadata,
+		&i.Skills,
+	)
+	return i, err
+}
+
 const softDeleteSubagent = `-- name: SoftDeleteSubagent :exec
 UPDATE subagents
 SET deleted = true,

@@ -37,6 +37,18 @@ SET skills = $2,
 WHERE id = $1 AND deleted = false
 RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills;
 
+-- name: ReviveSubagent :one
+UPDATE subagents
+SET deleted = false,
+    deleted_at = NULL,
+    description = $3,
+    messages = $4,
+    metadata = $5,
+    skills = $6,
+    updated_at = now()
+WHERE bot_id = $1 AND name = $2 AND deleted = true
+RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills;
+
 -- name: SoftDeleteSubagent :exec
 UPDATE subagents
 SET deleted = true,

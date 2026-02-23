@@ -145,6 +145,7 @@ type BuiltinToolConfig struct {
 	Category  string             `json:"category"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Tier      string             `json:"tier"`
 }
 
 type ChannelIdentity struct {
