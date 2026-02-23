@@ -227,7 +227,7 @@ export const getSubagentTools = ({
           status: run.status,
           result: run.result ?? null,
           error: run.error ?? null,
-          elapsed_ms: (run.endedAt ?? Date.now()) - run.startedAt,
+          ...(run.endedAt ? { elapsed_ms: run.endedAt - run.startedAt } : {}),
         }
       }
       // Fallback: query DB via Go server
@@ -242,9 +242,7 @@ export const getSubagentTools = ({
           status: db.status,
           result: db.result_summary ?? null,
           error: db.error_message ?? null,
-          elapsed_ms: db.ended_at
-            ? new Date(db.ended_at).getTime() - new Date(db.started_at).getTime()
-            : Date.now() - new Date(db.started_at).getTime(),
+          ...(db.ended_at ? { elapsed_ms: new Date(db.ended_at).getTime() - new Date(db.started_at).getTime() } : {}),
         }
       } catch {
         return { error: `Run not found: ${run_id}` }
