@@ -56,6 +56,7 @@ import (
 	mcpbrowser "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/browser"
 	mcpwebread "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/webread"
 	mcpknowledge "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/knowledge"
+	mcpcontacts "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/contacts"
 	mcpweb "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/providers/web"
 	mcpfederation "github.com/Kxiandaoyan/Memoh-v2/internal/mcp/sources/federation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/memory"
@@ -467,7 +468,7 @@ func provideContainerdHandler(log *slog.Logger, service ctr.Service, cfg config.
 	return handlers.NewContainerdHandler(log, service, cfg.MCP, cfg.Containerd.Namespace, botService, accountService, policyService, queries)
 }
 
-func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Config, channelManager *channel.Manager, registry *channel.Registry, channelService *channel.Service, scheduleService *schedule.Service, memoryService *memory.Service, chatService *conversation.Service, accountService *accounts.Service, settingsService *settings.Service, searchProviderService *searchproviders.Service, manager *mcp.Manager, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, botService *bots.Service, modelService *models.Service, providerService *providers.Service, msgService *message.DBService, queries *dbsqlc.Queries) *mcp.ToolGatewayService {
+func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Config, channelManager *channel.Manager, registry *channel.Registry, channelService *channel.Service, scheduleService *schedule.Service, memoryService *memory.Service, chatService *conversation.Service, accountService *accounts.Service, settingsService *settings.Service, searchProviderService *searchproviders.Service, manager *mcp.Manager, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, botService *bots.Service, modelService *models.Service, providerService *providers.Service, msgService *message.DBService, queries *dbsqlc.Queries, routeService *route.DBService) *mcp.ToolGatewayService {
 	messageExec := mcpmessage.NewExecutor(log, channelManager, channelManager, registry)
 	directoryExec := mcpdirectory.NewExecutor(log, registry, channelService, registry)
 	scheduleExec := mcpschedule.NewExecutor(log, scheduleService)
@@ -498,13 +499,14 @@ func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Con
 	browserExec := mcpbrowser.NewExecutor(log, manager)
 	webreadExec := mcpwebread.NewExecutor(log, manager, webExec, browserExec)
 	knowledgeExec := mcpknowledge.NewExecutor(log, memoryService)
+	contactsExec := mcpcontacts.NewExecutor(log, routeService)
 
 	fedGateway := handlers.NewMCPFederationGateway(log, containerdHandler)
 	fedSource := mcpfederation.NewSource(log, fedGateway, mcpConnService)
 
 	svc := mcp.NewToolGatewayService(
 		log,
-		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec, browserExec, webreadExec, knowledgeExec},
+		[]mcp.ToolExecutor{messageExec, directoryExec, scheduleExec, memoryExec, webExec, fsExec, adminExec, ovExec, historyExec, imagegenExec, skillstoreExec, browserExec, webreadExec, knowledgeExec, contactsExec},
 		[]mcp.ToolSource{fedSource},
 	)
 	containerdHandler.SetToolGatewayService(svc)

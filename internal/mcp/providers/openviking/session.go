@@ -101,23 +101,26 @@ func (s *SessionExtractor) ExtractSession(ctx context.Context, botID, chatID str
 		sessionID = botID
 	}
 
-	script := fmt.Sprintf(`import openviking as ov, json
+	script := fmt.Sprintf(`import openviking as ov, json, os
 from openviking.message import Part
-client = ov.SyncOpenViking(path='%s', config_file='%s')
-client.initialize()
-try:
-    messages = json.loads(%s)
-    session = client.session(%s)
-    session.load()
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        session.add_message(role, [Part.text(content)])
-    result = session.commit()
-    print(json.dumps({"status": "committed", "memories_extracted": result.get("memories_extracted", 0)}, default=str))
-finally:
-    client.close()`,
-		ovDataPath, ovConfPath,
+if not os.path.isdir('%s'):
+    print(json.dumps({"status": "skipped", "memories_extracted": 0}))
+else:
+    client = ov.SyncOpenViking(path='%s', config_file='%s')
+    client.initialize()
+    try:
+        messages = json.loads(%s)
+        session = client.session(%s)
+        session.load()
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            session.add_message(role, [Part.text(content)])
+        result = session.commit()
+        print(json.dumps({"status": "committed", "memories_extracted": result.get("memories_extracted", 0)}, default=str))
+    finally:
+        client.close()`,
+		ovDataPath, ovDataPath, ovConfPath,
 		pyStr(string(msgJSON)), pyStr(sessionID))
 
 	result, err := s.execRunner.ExecWithCapture(ctx, mcpgw.ExecRequest{
@@ -138,7 +141,7 @@ finally:
 		return "", fmt.Errorf("exec failed: %w", err)
 	}
 	if result.ExitCode != 0 {
-		errMsg := truncate(result.Stderr, 500)
+		errMsg := truncate(result.Stderr, 2000)
 		s.logger.Warn("OV session extraction python error",
 			slog.String("bot_id", botID),
 			slog.Int("exit_code", int(result.ExitCode)),
