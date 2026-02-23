@@ -451,7 +451,9 @@ export const createAgent = (
       extractAttachmentsFromText(text)
     const { messages: strippedMessages, attachments: messageAttachments } =
       stripAttachmentsFromMessages(response.messages)
-    const cleanedMessages = stripReasoningFromMessages(strippedMessages)
+    const cleanedMessages = stripReasoningFromMessages(
+      truncateMessagesForTransport(strippedMessages),
+    )
     const allAttachments = dedupeAttachments([
       ...textAttachments,
       ...messageAttachments,
@@ -505,7 +507,9 @@ export const createAgent = (
       isRetryableLLMError,
     )
     return {
-      messages: stripReasoningFromMessages([userPrompt, ...response.messages]),
+      messages: stripReasoningFromMessages(
+        truncateMessagesForTransport([userPrompt, ...response.messages]),
+      ),
       reasoning: reasoning.map((part) => part.text),
       usage: normalizeUsage(usage),
       text,
@@ -552,7 +556,9 @@ export const createAgent = (
       isRetryableLLMError,
     )
     return {
-      messages: stripReasoningFromMessages([scheduleMessage, ...response.messages]),
+      messages: stripReasoningFromMessages(
+        truncateMessagesForTransport([scheduleMessage, ...response.messages]),
+      ),
       reasoning: reasoning.map((part) => part.text),
       usage: normalizeUsage(usage),
       text,

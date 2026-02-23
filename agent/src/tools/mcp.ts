@@ -80,16 +80,21 @@ export const getMCPTools = async (connections: MCPConnection[], options: MCPTool
   }
 
   const toolSets = await Promise.all(connections.map(async (connection) => {
-    switch (connection.type) {
-      case 'http':
-        return getHTTPTools(connection)
-      case 'sse':
-        return getSSETools(connection)
-      case 'stdio':
-        return getStdioTools(connection)
-      default:
-        console.warn('unknown mcp connection type', connection)
-        return {}
+    try {
+      switch (connection.type) {
+        case 'http':
+          return getHTTPTools(connection)
+        case 'sse':
+          return getSSETools(connection)
+        case 'stdio':
+          return getStdioTools(connection)
+        default:
+          console.warn('unknown mcp connection type', connection)
+          return {}
+      }
+    } catch (err) {
+      console.warn(`[MCP] connection "${connection.name}" (${connection.type}) failed:`, (err as Error)?.message ?? err)
+      return {}
     }
   }))
 
