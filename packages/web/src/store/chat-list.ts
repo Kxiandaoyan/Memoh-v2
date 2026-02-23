@@ -341,13 +341,21 @@ export const useChatStore = defineStore('chat', () => {
   function appendRealtimeMessage(raw: Message) {
     updateSince(raw.created_at)
     const platform = (raw.platform ?? '').trim().toLowerCase()
-    if (platform === 'web') return
+    console.debug('[appendRealtimeMessage] id=%s role=%s platform=%s', raw.id, raw.role, platform)
+    // Web-platform messages fall through to the generic dedup logic below so
+    // that messages arriving after a page refresh (backlog) are not lost.
     const mid = String(raw.id ?? '').trim()
-    if (mid && hasMessageWithId(mid)) return
+    if (mid && hasMessageWithId(mid)) {
+      console.debug('[appendRealtimeMessage] skipped duplicate, id=%s', mid)
+      return
+    }
     // Skip intermediate assistant messages that contain tool calls — these are
     // multi-step agent steps (e.g. "reading files...") and would appear as
     // duplicates alongside the final text response.
-    if (raw.role === 'assistant' && extractToolCalls(raw).length > 0) return
+    if (raw.role === 'assistant' && extractToolCalls(raw).length > 0) {
+      console.debug('[appendRealtimeMessage] skipped tool-call message, id=%s', raw.id)
+      return
+    }
     const item = messageToChat(raw)
     if (!item) return
     messages.push(item)
