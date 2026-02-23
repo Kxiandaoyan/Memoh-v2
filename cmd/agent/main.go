@@ -191,6 +191,7 @@ func main() {
 			startHeartbeatEngine,
 			startChannelManager,
 			startContainerReconciliation,
+			startStaleRunReaper,
 			startServer,
 			wireTriggerSender,
 		),
@@ -699,6 +700,20 @@ func startContainerReconciliation(lc fx.Lifecycle, containerdHandler *handlers.C
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go containerdHandler.ReconcileContainers(ctx)
+			return nil
+		},
+	})
+}
+
+func startStaleRunReaper(lc fx.Lifecycle, h *handlers.SubagentRunsHandler) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			go h.StartStaleRunReaper(ctx, 2*time.Minute)
+			return nil
+		},
+		OnStop: func(_ context.Context) error {
+			cancel()
 			return nil
 		},
 	})
