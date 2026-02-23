@@ -24,6 +24,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/boot"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/bots"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/discord"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/feishu"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/local"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/telegram"
@@ -412,6 +413,7 @@ func provideChannelRegistry(log *slog.Logger, hub *local.RouteHub) *channel.Regi
 	registry := channel.NewRegistry()
 	registry.MustRegister(telegram.NewTelegramAdapter(log))
 	registry.MustRegister(feishu.NewFeishuAdapter(log))
+	registry.MustRegister(discord.NewDiscordAdapter(log))
 	registry.MustRegister(local.NewCLIAdapter(hub))
 	registry.MustRegister(local.NewWebAdapter(hub))
 	registry.MustRegister(wechat.NewWeChatAdapter(log))
