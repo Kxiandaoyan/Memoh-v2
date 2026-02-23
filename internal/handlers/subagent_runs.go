@@ -32,6 +32,7 @@ func (h *SubagentRunsHandler) Register(e *echo.Echo) {
 	e.POST("/subagent-runs", h.Create)
 	e.PATCH("/subagent-runs/:runId", h.Update)
 	e.GET("/subagent-runs", h.List)
+	e.GET("/subagent-runs/:runId", h.Get)
 	e.DELETE("/subagent-runs/:runId", h.Delete)
 }
 
@@ -169,6 +170,28 @@ func (h *SubagentRunsHandler) List(c echo.Context) error {
 		results = append(results, r)
 	}
 	return c.JSON(http.StatusOK, results)
+}
+
+// Get returns a single sub-agent run by run_id.
+func (h *SubagentRunsHandler) Get(c echo.Context) error {
+	ctx := c.Request().Context()
+	runID := c.Param("runId")
+	if runID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "runId is required")
+	}
+	var r subagentRunRow
+	err := h.pool.QueryRow(ctx,
+		`SELECT id, run_id, bot_id, name, task, status, spawn_depth,
+		        parent_run_id, result_summary, error_message,
+		        started_at, ended_at, created_at
+		 FROM subagent_runs WHERE run_id=$1`, runID,
+	).Scan(&r.ID, &r.RunID, &r.BotID, &r.Name, &r.Task, &r.Status,
+		&r.SpawnDepth, &r.ParentRunID, &r.ResultSummary, &r.ErrorMessage,
+		&r.StartedAt, &r.EndedAt, &r.CreatedAt)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+	return c.JSON(http.StatusOK, r)
 }
 
 // Delete removes a run record.

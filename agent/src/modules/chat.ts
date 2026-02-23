@@ -4,7 +4,7 @@ import z from 'zod'
 import { createAgent } from '../agent'
 import { createAuthFetcher, getBaseUrl } from '../index'
 import { createModel } from '../model'
-import { ModelConfig, AgentParams } from '../types'
+import { ModelConfig, AgentParams, SYSTEM_SAFE_PROVIDERS } from '../types'
 import { bearerMiddleware } from '../middlewares/bearer'
 import { AgentSkillModel, AllowedActionModel, AttachmentModel, IdentityContextModel, MCPConnectionModel, ModelConfigModel, ScheduleModel } from '../models'
 import { allActions } from '../types'
@@ -116,7 +116,11 @@ export const chatModule = new Elysia({ prefix: '/chat' })
     }),
   })
   .post('/summarize', async ({ body }) => {
-    const model = createModel(body.model as ModelConfig)
+    const mc = body.model as ModelConfig
+    const model = createModel(mc)
+    const messages = SYSTEM_SAFE_PROVIDERS.has(mc.clientType)
+      ? body.messages
+      : body.messages.map((m: any) => m.role === 'system' ? { ...m, role: 'user' } : m)
     const { text, usage } = await generateText({
       model,
       system: [
@@ -126,7 +130,7 @@ export const chatModule = new Elysia({ prefix: '/chat' })
         'Omit: greetings, filler, tool call details, and redundant exchanges.',
         'Output ONLY the summary text, no preamble.',
       ].join('\n'),
-      messages: body.messages,
+      messages,
     })
     return {
       summary: text,

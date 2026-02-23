@@ -1364,7 +1364,7 @@ func (r *Resolver) StreamChat(ctx context.Context, req conversation.ChatRequest)
 			}, 0)
 
 		if !streamReq.UserMessagePersisted {
-			if err := r.persistUserMessage(ctx, streamReq); err != nil {
+			if err := r.persistUserMessage(context.WithoutCancel(ctx), streamReq); err != nil {
 				r.logger.Error("gateway stream persist user message failed",
 					slog.String("bot_id", streamReq.BotID),
 					slog.String("chat_id", streamReq.ChatID),

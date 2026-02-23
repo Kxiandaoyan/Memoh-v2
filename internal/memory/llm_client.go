@@ -216,10 +216,35 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
+// mergeSystemMessages folds system messages into the first user message so that
+// providers that reject role:"system" in the messages array still work.
+func mergeSystemMessages(messages []chatMessage) []chatMessage {
+	var sysParts []string
+	var rest []chatMessage
+	for _, m := range messages {
+		if m.Role == "system" {
+			sysParts = append(sysParts, m.Content)
+		} else {
+			rest = append(rest, m)
+		}
+	}
+	if len(sysParts) == 0 {
+		return messages
+	}
+	prefix := strings.Join(sysParts, "\n")
+	if len(rest) > 0 && rest[0].Role == "user" {
+		rest[0].Content = prefix + "\n\n" + rest[0].Content
+	} else {
+		rest = append([]chatMessage{{Role: "user", Content: prefix}}, rest...)
+	}
+	return rest
+}
+
 func (c *LLMClient) callChat(ctx context.Context, messages []chatMessage) (string, error) {
 	if c.apiKey == "" {
 		return "", fmt.Errorf("llm api key is required")
 	}
+	messages = mergeSystemMessages(messages)
 	body, err := json.Marshal(chatRequest{
 		Model:       c.model,
 		Temperature: 0,

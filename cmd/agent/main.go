@@ -710,7 +710,7 @@ func startStaleRunReaper(lc fx.Lifecycle, h *handlers.SubagentRunsHandler) {
 	ctx, cancel := context.WithCancel(context.Background())
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
-			go h.StartStaleRunReaper(ctx, 2*time.Minute)
+			go h.StartStaleRunReaper(ctx, 10*time.Minute)
 			return nil
 		},
 		OnStop: func(_ context.Context) error {

@@ -219,15 +219,35 @@ export const getSubagentTools = ({
     }),
     execute: async ({ run_id }) => {
       const run = registry.get(run_id)
-      if (!run) return { error: `Run not found: ${run_id}` }
-      return {
-        runId: run.runId,
-        name: run.name,
-        task: run.task,
-        status: run.status,
-        result: run.result ?? null,
-        error: run.error ?? null,
-        elapsed_ms: (run.endedAt ?? Date.now()) - run.startedAt,
+      if (run) {
+        return {
+          runId: run.runId,
+          name: run.name,
+          task: run.task,
+          status: run.status,
+          result: run.result ?? null,
+          error: run.error ?? null,
+          elapsed_ms: (run.endedAt ?? Date.now()) - run.startedAt,
+        }
+      }
+      // Fallback: query DB via Go server
+      try {
+        const res = await fetch(`/subagent-runs/${run_id}`)
+        if (!res.ok) return { error: `Run not found: ${run_id}` }
+        const db = (await res.json()) as any
+        return {
+          runId: db.run_id,
+          name: db.name,
+          task: db.task,
+          status: db.status,
+          result: db.result_summary ?? null,
+          error: db.error_message ?? null,
+          elapsed_ms: db.ended_at
+            ? new Date(db.ended_at).getTime() - new Date(db.started_at).getTime()
+            : Date.now() - new Date(db.started_at).getTime(),
+        }
+      } catch {
+        return { error: `Run not found: ${run_id}` }
       }
     },
   })

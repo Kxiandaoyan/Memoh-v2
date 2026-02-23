@@ -40,6 +40,13 @@ export enum ModelInput {
   Image = 'image',
 }
 
+/** Providers that natively support role:"system" in the messages array. */
+export const SYSTEM_SAFE_PROVIDERS = new Set<string>([
+  'openai', 'anthropic', 'google', 'azure', 'bedrock', 'mistral', 'xai',
+  'deepseek', 'groq', 'openrouter', 'together', 'fireworks', 'perplexity',
+  'zhipu', 'siliconflow', 'nvidia', 'bailing', 'xiaomi', 'longcat', 'modelscope',
+])
+
 export interface ModelConfig {
   apiKey: string
   baseUrl: string

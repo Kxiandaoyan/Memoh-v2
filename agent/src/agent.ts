@@ -15,6 +15,7 @@ import {
   allActions,
   MCPConnection,
   Schedule,
+  SYSTEM_SAFE_PROVIDERS,
 } from './types'
 import { system, schedule, heartbeat, user, subagentSystem } from './prompts'
 import { AuthFetcher } from './index'
@@ -384,12 +385,7 @@ export const createAgent = (
       })
       .map((msg) => {
         const role = (msg as Record<string, unknown>).role as string
-        const systemSafeProviders = new Set([
-          'openai', 'anthropic', 'google', 'azure', 'bedrock', 'mistral', 'xai',
-          'deepseek', 'groq', 'openrouter', 'together', 'fireworks', 'perplexity',
-          'zhipu', 'siliconflow', 'nvidia', 'bailing', 'xiaomi', 'longcat', 'modelscope',
-        ])
-        if (role === 'system' && !systemSafeProviders.has(modelConfig.clientType)) {
+        if (role === 'system' && !SYSTEM_SAFE_PROVIDERS.has(modelConfig.clientType)) {
           return { ...msg, role: 'user' } as ModelMessage
         }
         if (!Array.isArray(msg.content)) return msg
@@ -487,7 +483,7 @@ export const createAgent = (
         timezone,
       })
     }
-    const messages = [...params.messages, userPrompt]
+    const messages = [...sanitizeMessages(params.messages), userPrompt]
     const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
     const { tools, toolNames: _subToolNames, close } = await getAgentTools(sessionId)
     const { response, reasoning, text, usage } = await withRetry(
@@ -535,7 +531,7 @@ export const createAgent = (
         },
       ],
     }
-    const messages = [...params.messages, scheduleMessage]
+    const messages = [...sanitizeMessages(params.messages), scheduleMessage]
     params.skills.forEach((skill) => enableSkill(skill))
     const sessionId = `schedule:${identity.botId}:${params.schedule.id}:${Date.now()}`
     const { tools, toolNames: schedToolNames, close } = await getAgentTools(sessionId)
@@ -589,6 +585,7 @@ export const createAgent = (
   }
 
   // -- Write-tool attachment helpers --
+  const FILE_WRITE_TOOLS = new Set(['write', 'save_file', 'create_file', 'write_file'])
   const isDeliverableWrite = (p: string): boolean => {
     if (!p.startsWith('/shared/')) return false
     const dot = p.lastIndexOf('.')
@@ -747,7 +744,7 @@ export const createAgent = (
               ),
             }
             // Auto-emit attachment for write tool so frontend doesn't depend on LLM <attachments> tag
-            if (chunk.toolName === 'write' && isWriteSuccess(chunk.output)) {
+            if (FILE_WRITE_TOOLS.has(chunk.toolName) && isWriteSuccess(chunk.output)) {
               const writePath = extractWritePath(chunk.input)
               if (writePath && isDeliverableWrite(writePath)) {
                 yield { type: 'attachment_delta', attachments: [{ type: 'file', path: writePath }] }

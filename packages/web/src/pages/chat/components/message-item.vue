@@ -135,11 +135,11 @@
               :key="ai"
               class="inline-flex items-center gap-2 rounded-lg border bg-muted/50 hover:bg-muted px-3 py-2 text-xs text-foreground transition-colors cursor-pointer"
               :title="getAttachmentName(att, ai)"
-              @click="downloadAttachment(att, ai)"
+              @click="handleAttachmentClick(att, ai)"
             >
-              <FontAwesomeIcon :icon="['fas', 'file-lines']" class="size-4 text-muted-foreground" />
+              <FontAwesomeIcon :icon="isPreviewable(getAttachmentName(att, ai)) ? ['fas', 'eye'] : ['fas', 'file-lines']" class="size-4 text-muted-foreground" />
               <span class="truncate max-w-[200px]">{{ getAttachmentName(att, ai) }}</span>
-              <FontAwesomeIcon :icon="['fas', 'download']" class="size-3 text-muted-foreground ml-1" />
+              <FontAwesomeIcon :icon="isPreviewable(getAttachmentName(att, ai)) ? ['fas', 'eye'] : ['fas', 'download']" class="size-3 text-muted-foreground ml-1" />
             </button>
           </div>
         </template>
@@ -188,14 +188,22 @@
       />
     </div>
   </div>
+
+  <FilePreviewDialog
+    v-model="previewOpen"
+    :file-name="previewFileName"
+    :file-url="previewFileUrl"
+    @download="downloadFromUrl(previewFileUrl, previewFileName)"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Avatar, AvatarImage, AvatarFallback } from '@memoh/ui'
 import MarkdownRender, { enableKatex, enableMermaid } from 'markstream-vue'
 import ThinkingBlock from './thinking-block.vue'
 import ToolCallBlock from './tool-call-block.vue'
+import FilePreviewDialog from './file-preview-dialog.vue'
 import ChannelBadge from '@/components/chat-list/channel-badge/index.vue'
 import { useUserStore } from '@/store/user'
 import { useChatStore } from '@/store/chat-list'
@@ -223,6 +231,11 @@ const chatStore = useChatStore()
 const { currentBotId, bots } = storeToRefs(chatStore)
 
 const isSelf = computed(() => props.message.isSelf !== false)
+
+// File preview state
+const previewOpen = ref(false)
+const previewFileName = ref('')
+const previewFileUrl = ref('')
 
 const currentBot = computed(() =>
   bots.value.find((b) => b.id === currentBotId.value) ?? null,
@@ -285,6 +298,32 @@ function getAttachmentPath(att: unknown): string {
   return typeof obj.path === 'string' ? obj.path : ''
 }
 
+const PREVIEWABLE_RE = /\.(md|html?|pdf|png|jpe?g|gif|webp|svg|bmp|ico|js|ts|jsx|tsx|py|go|rs|java|c|cpp|h|rb|php|sh|sql|css|json|yaml|yml|xml|toml|txt|csv|log|env|ini|conf|vue|svelte)$/
+
+function isPreviewable(name: string): boolean {
+  return PREVIEWABLE_RE.test(name.toLowerCase())
+}
+
+function getDownloadUrl(att: unknown): string {
+  const path = getAttachmentPath(att)
+  if (!path || !currentBotId.value) return ''
+  const apiBase = (import.meta.env.VITE_API_URL?.trim() || '/api')
+  return path.startsWith('/shared/')
+    ? `${apiBase}/shared/files/download/${path.slice('/shared/'.length)}`
+    : `${apiBase}/bots/${currentBotId.value}/files/download/${path.replace(/^\/data\//, '')}`
+}
+
+function handleAttachmentClick(att: unknown, index: number) {
+  const name = getAttachmentName(att, index)
+  if (isPreviewable(name)) {
+    previewFileName.value = name
+    previewFileUrl.value = getDownloadUrl(att)
+    previewOpen.value = true
+  } else {
+    downloadAttachment(att, index)
+  }
+}
+
 async function downloadAttachment(att: unknown, index: number) {
   const path = getAttachmentPath(att)
   if (!path || !currentBotId.value) return
@@ -302,6 +341,26 @@ async function downloadAttachment(att: unknown, index: number) {
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = getAttachmentName(att, index)
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { URL.revokeObjectURL(a.href); document.body.removeChild(a) }, 100)
+  } catch (e) {
+    console.error('Download failed:', e)
+    toast.error('Download failed')
+  }
+}
+
+async function downloadFromUrl(url: string, name: string) {
+  const token = localStorage.getItem('token')
+  try {
+    const resp = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
+    const blob = await resp.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = name
     document.body.appendChild(a)
     a.click()
     setTimeout(() => { URL.revokeObjectURL(a.href); document.body.removeChild(a) }, 100)
