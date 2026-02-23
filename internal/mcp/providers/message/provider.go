@@ -2,9 +2,11 @@ package message
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
@@ -31,25 +33,32 @@ type ChannelTypeResolver interface {
 	ParseChannelType(raw string) (channel.ChannelType, error)
 }
 
+// ContainerFileReader reads binary file content from a bot container.
+type ContainerFileReader interface {
+	ReadFileBytes(ctx context.Context, botID, filePath string) ([]byte, error)
+}
+
 // Executor exposes send and react as MCP tools.
 type Executor struct {
-	sender   Sender
-	reactor  Reactor
-	resolver ChannelTypeResolver
-	logger   *slog.Logger
+	sender     Sender
+	reactor    Reactor
+	resolver   ChannelTypeResolver
+	fileReader ContainerFileReader
+	logger     *slog.Logger
 }
 
 // NewExecutor creates a message tool executor.
-// reactor may be nil; the react tool will not be listed when reactor is unavailable.
-func NewExecutor(log *slog.Logger, sender Sender, reactor Reactor, resolver ChannelTypeResolver) *Executor {
+// reactor and fileReader may be nil.
+func NewExecutor(log *slog.Logger, sender Sender, reactor Reactor, resolver ChannelTypeResolver, fileReader ContainerFileReader) *Executor {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Executor{
-		sender:   sender,
-		reactor:  reactor,
-		resolver: resolver,
-		logger:   log.With(slog.String("provider", "message_tool")),
+		sender:     sender,
+		reactor:    reactor,
+		resolver:   resolver,
+		fileReader: fileReader,
+		logger:     log.With(slog.String("provider", "message_tool")),
 	}
 }
 
@@ -93,6 +102,11 @@ func (p *Executor) ListTools(ctx context.Context, session mcpgw.ToolSessionConte
 					"message": map[string]any{
 						"type":        "object",
 						"description": "Structured message payload with text/parts/attachments",
+					},
+					"attachments": map[string]any{
+						"type":        "array",
+						"description": "File attachments: container paths (/data/...), HTTP URLs, or objects {path, url, type, name}",
+						"items":       map[string]any{},
 					},
 				},
 				"required": []string{},
@@ -168,7 +182,22 @@ func (p *Executor) callSend(ctx context.Context, session mcpgw.ToolSessionContex
 	messageText := mcpgw.FirstStringArg(arguments, "text")
 	outboundMessage, parseErr := parseOutboundMessage(arguments, messageText)
 	if parseErr != nil {
-		return mcpgw.BuildToolErrorResult(parseErr.Error()), nil
+		if rawAtt, ok := arguments["attachments"]; !ok || rawAtt == nil {
+			return mcpgw.BuildToolErrorResult(parseErr.Error()), nil
+		}
+		outboundMessage = channel.Message{Text: strings.TrimSpace(messageText)}
+	}
+
+	// Resolve top-level attachments parameter.
+	if rawAtt, ok := arguments["attachments"]; ok && rawAtt != nil {
+		if arr, ok := rawAtt.([]any); ok && len(arr) > 0 {
+			resolved := p.resolveAttachments(ctx, botID, arr)
+			outboundMessage.Attachments = append(outboundMessage.Attachments, resolved...)
+		}
+	}
+
+	if outboundMessage.IsEmpty() && len(outboundMessage.Attachments) == 0 {
+		return mcpgw.BuildToolErrorResult("message or attachments required"), nil
 	}
 
 	// Attach reply reference if reply_to is provided.
@@ -317,4 +346,178 @@ func parseOutboundMessage(arguments map[string]any, fallbackText string) (channe
 		return channel.Message{}, fmt.Errorf("message is required")
 	}
 	return msg, nil
+}
+
+// --- attachment resolution ---
+
+func (p *Executor) resolveAttachments(ctx context.Context, botID string, arr []any) []channel.Attachment {
+	var out []channel.Attachment
+	for _, item := range arr {
+		var att channel.Attachment
+		switch v := item.(type) {
+		case string:
+			att = p.resolveAttachmentRef(ctx, botID, v, "")
+		case map[string]any:
+			ref := stringVal(v, "path", "url")
+			name := stringVal(v, "name")
+			att = p.resolveAttachmentRef(ctx, botID, ref, name)
+			if t := stringVal(v, "type"); t != "" {
+				att.Type = channel.AttachmentType(t)
+			}
+		default:
+			continue
+		}
+		out = append(out, att)
+	}
+	return out
+}
+
+func (p *Executor) resolveAttachmentRef(ctx context.Context, botID, ref, name string) channel.Attachment {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return channel.Attachment{Type: channel.AttachmentFile, Name: name}
+	}
+
+	// HTTP/HTTPS URL — pass through.
+	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+		att := channel.Attachment{URL: ref, Name: name}
+		att.Type = inferAttachmentTypeFromExt(ref)
+		return att
+	}
+
+	// Data URL — decode inline.
+	if strings.HasPrefix(ref, "data:") {
+		mime, data, err := decodeDataURL(ref)
+		if err != nil {
+			return channel.Attachment{Type: channel.AttachmentFile, Name: name}
+		}
+		return channel.Attachment{
+			Type: inferAttachmentTypeFromMime(mime),
+			Data: data, Mime: mime, Name: name,
+			Size: int64(len(data)),
+		}
+	}
+
+	// Container file path.
+	if p.fileReader != nil && strings.HasPrefix(ref, "/") {
+		cleanPath := filepath.Clean(ref)
+		if !strings.HasPrefix(cleanPath, "/data/") {
+			return channel.Attachment{Type: channel.AttachmentFile, Name: name}
+		}
+		data, err := p.fileReader.ReadFileBytes(ctx, botID, cleanPath)
+		if err != nil {
+			p.logger.Warn("read container file failed", slog.String("path", cleanPath), slog.Any("error", err))
+			return channel.Attachment{Type: channel.AttachmentFile, URL: cleanPath, Name: name}
+		}
+		if name == "" {
+			name = filepath.Base(cleanPath)
+		}
+		mime := inferMimeFromExt(cleanPath)
+		return channel.Attachment{
+			Type: inferAttachmentTypeFromExt(cleanPath),
+			Data: data, Mime: mime, Name: name,
+			Size: int64(len(data)),
+		}
+	}
+
+	// Unknown — pass through as URL.
+	return channel.Attachment{Type: channel.AttachmentFile, URL: ref, Name: name}
+}
+
+func stringVal(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+var extToMime = map[string]string{
+	".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+	".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+	".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
+	".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+	".pdf": "application/pdf", ".zip": "application/zip",
+}
+
+func inferMimeFromExt(path string) string {
+	if i := strings.IndexAny(path, "?#"); i >= 0 {
+		path = path[:i]
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if m, ok := extToMime[ext]; ok {
+		return m
+	}
+	return "application/octet-stream"
+}
+
+func inferAttachmentTypeFromExt(path string) channel.AttachmentType {
+	return inferAttachmentTypeFromMime(inferMimeFromExt(path))
+}
+
+func inferAttachmentTypeFromMime(mime string) channel.AttachmentType {
+	switch {
+	case strings.HasPrefix(mime, "image/gif"):
+		return channel.AttachmentGIF
+	case strings.HasPrefix(mime, "image/"):
+		return channel.AttachmentImage
+	case strings.HasPrefix(mime, "audio/"):
+		return channel.AttachmentAudio
+	case strings.HasPrefix(mime, "video/"):
+		return channel.AttachmentVideo
+	default:
+		return channel.AttachmentFile
+	}
+}
+
+func decodeDataURL(dataURL string) (mime string, data []byte, err error) {
+	// data:[<mediatype>][;base64],<data>
+	rest := strings.TrimPrefix(dataURL, "data:")
+	commaIdx := strings.Index(rest, ",")
+	if commaIdx < 0 {
+		return "", nil, fmt.Errorf("invalid data URL")
+	}
+	meta, payload := rest[:commaIdx], rest[commaIdx+1:]
+	if !strings.HasSuffix(meta, ";base64") {
+		return "", nil, fmt.Errorf("only base64 data URLs supported")
+	}
+	mime = strings.TrimSuffix(meta, ";base64")
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	payload = strings.TrimRight(payload, "=")
+	data, err = base64.RawStdEncoding.DecodeString(payload)
+	return
+}
+
+// --- ContainerFileReader adapter ---
+
+type execRunnerFileReader struct {
+	runner interface {
+		ExecWithCapture(ctx context.Context, req mcpgw.ExecRequest) (*mcpgw.ExecWithCaptureResult, error)
+	}
+	workDir string
+}
+
+// NewContainerFileReader wraps an ExecRunner (MCP Manager) as a ContainerFileReader.
+func NewContainerFileReader(runner interface {
+	ExecWithCapture(ctx context.Context, req mcpgw.ExecRequest) (*mcpgw.ExecWithCaptureResult, error)
+}, workDir string) ContainerFileReader {
+	return &execRunnerFileReader{runner: runner, workDir: workDir}
+}
+
+func (r *execRunnerFileReader) ReadFileBytes(ctx context.Context, botID, filePath string) ([]byte, error) {
+	res, err := r.runner.ExecWithCapture(ctx, mcpgw.ExecRequest{
+		BotID:   botID,
+		Command: []string{"base64", filePath},
+		WorkDir: r.workDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("base64 %s: exit %d: %s", filePath, res.ExitCode, res.Stderr)
+	}
+	return base64.StdEncoding.DecodeString(strings.TrimSpace(res.Stdout))
 }

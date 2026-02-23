@@ -470,16 +470,17 @@ func provideContainerdHandler(log *slog.Logger, service ctr.Service, cfg config.
 }
 
 func provideToolGatewayService(lc fx.Lifecycle, log *slog.Logger, cfg config.Config, channelManager *channel.Manager, registry *channel.Registry, channelService *channel.Service, scheduleService *schedule.Service, memoryService *memory.Service, chatService *conversation.Service, accountService *accounts.Service, settingsService *settings.Service, searchProviderService *searchproviders.Service, manager *mcp.Manager, containerdHandler *handlers.ContainerdHandler, mcpConnService *mcp.ConnectionService, botService *bots.Service, modelService *models.Service, providerService *providers.Service, msgService *message.DBService, queries *dbsqlc.Queries, routeService *route.DBService, pool *pgxpool.Pool) *mcp.ToolGatewayService {
-	messageExec := mcpmessage.NewExecutor(log, channelManager, channelManager, registry)
+	execWorkDir := cfg.MCP.DataMount
+	if strings.TrimSpace(execWorkDir) == "" {
+		execWorkDir = config.DefaultDataMount
+	}
+	messageFileReader := mcpmessage.NewContainerFileReader(manager, execWorkDir)
+	messageExec := mcpmessage.NewExecutor(log, channelManager, channelManager, registry, messageFileReader)
 	directoryExec := mcpdirectory.NewExecutor(log, registry, channelService, registry)
 	scheduleExec := mcpschedule.NewExecutor(log, scheduleService)
 	memoryExec := mcpmemory.NewExecutor(log, memoryService, chatService, accountService)
 	webExec := mcpweb.NewExecutor(log, settingsService, searchProviderService)
 	historyExec := mcphistory.NewExecutor(log, msgService)
-	execWorkDir := cfg.MCP.DataMount
-	if strings.TrimSpace(execWorkDir) == "" {
-		execWorkDir = config.DefaultDataMount
-	}
 	fsExec := mcpcontainer.NewExecutor(log, manager, execWorkDir)
 
 	adminInner := mcpadmin.NewExecutor(log, botService, modelService, providerService)
