@@ -2751,7 +2751,7 @@ func sanitizeMessages(messages []conversation.ModelMessage) []conversation.Model
 		if !supportedRoles[role] {
 			continue
 		}
-		if !msg.HasContent() && strings.TrimSpace(msg.ToolCallID) == "" {
+		if !msg.HasContent() && strings.TrimSpace(msg.ToolCallID) == "" && len(collectAssistantToolIDs(msg)) == 0 {
 			continue
 		}
 		cleaned = append(cleaned, msg)
@@ -2999,6 +2999,7 @@ func softTrimToolResults(messages []conversation.ModelMessage, contextWindow int
 			Role:       msg.Role,
 			Content:    conversation.NewTextContent(trimmed),
 			ToolCallID: msg.ToolCallID,
+			Name:       msg.Name,
 		}
 	}
 	return out, diags

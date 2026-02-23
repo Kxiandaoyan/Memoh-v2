@@ -889,6 +889,31 @@ func collectMessageToolContext(registry *channel.Registry, messages []conversati
 				suppressReplies = true
 			}
 		}
+		// Vercel AI SDK format: tool-call parts inside content array
+		if msg.Role == "assistant" && len(msg.Content) > 0 {
+			var parts []struct {
+				Type     string          `json:"type"`
+				ToolName string          `json:"toolName"`
+				Args     json.RawMessage `json:"args"`
+			}
+			if err := json.Unmarshal(msg.Content, &parts); err == nil {
+				for _, p := range parts {
+					if p.Type != "tool-call" || (p.ToolName != "send" && p.ToolName != "send_message") {
+						continue
+					}
+					var args sendMessageToolArgs
+					if json.Unmarshal(p.Args, &args) != nil {
+						continue
+					}
+					if text := strings.TrimSpace(extractSendMessageText(args)); text != "" {
+						sentTexts = append(sentTexts, text)
+					}
+					if shouldSuppressForToolCall(registry, args, channelType, replyTarget) {
+						suppressReplies = true
+					}
+				}
+			}
+		}
 	}
 	return sentTexts, suppressReplies
 }
