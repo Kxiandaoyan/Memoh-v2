@@ -34,7 +34,8 @@ export const getTools = (
   if (actions.includes(AgentAction.Subagent)) {
     const subagentTools = getSubagentTools({
       fetch,
-      model: backgroundModel ?? model,
+      model,
+      backgroundModel,
       identity,
       auth,
       mcpConnections,

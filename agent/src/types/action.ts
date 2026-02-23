@@ -82,7 +82,30 @@ export interface ErrorAction extends BaseAction {
   message: string
 }
 
-export type AgentAction = 
+export interface SubagentProgressAction extends BaseAction {
+  type: 'subagent_progress'
+  runId: string
+  name: string
+  task: string
+  status: string
+  elapsed_ms: number
+}
+
+export interface SubagentDeltaAction extends BaseAction {
+  type: 'subagent_delta'
+  runId: string
+  name: string
+  delta: string
+}
+
+export interface SubagentCompletedAction extends BaseAction {
+  type: 'subagent_completed'
+  runId: string
+  name: string
+  status: string
+}
+
+export type AgentAction =
   | AgentStartAction
   | ReasoningStartAction
   | ReasoningDeltaAction
@@ -96,3 +119,6 @@ export type AgentAction =
   | ToolCallEndAction
   | AgentEndAction
   | ErrorAction
+  | SubagentProgressAction
+  | SubagentDeltaAction
+  | SubagentCompletedAction

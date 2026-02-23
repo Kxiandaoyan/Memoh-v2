@@ -491,75 +491,76 @@ export const createAgent = (
     }
   }
 
-  const askAsSubagent = async (params: {
+  const streamAsSubagent = async (params: {
     input: string;
     name: string;
     description: string;
     messages: ModelMessage[];
     abortSignal?: AbortSignal;
+    onDelta?: (delta: string) => void;
     onAttachment?: (attachment: { type: 'file'; path: string }) => void;
   }) => {
     const userPrompt: UserModelMessage = {
       role: 'user',
       content: [{ type: 'text', text: params.input }],
     }
-    const generateSubagentSystemPrompt = () => {
-      return subagentSystem({
-        date: new Date(),
-        name: params.name,
-        description: params.description,
-        timezone,
-      })
-    }
     const messages = [...sanitizeMessages(params.messages), userPrompt]
     const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
     const { tools, toolNames: _subToolNames, close } = await getAgentTools(sessionId)
-    const { response, reasoning, text, usage } = await withRetry(
-      () =>
-        generateText({
-          model,
-          messages,
-          system: generateSubagentSystemPrompt(),
-          stopWhen: stepCountIs(Infinity),
-          onFinish: async () => {
-            await close()
-          },
-          tools,
-          abortSignal: params.abortSignal,
-          providerOptions,
-        }),
-      isRetryableLLMError,
-    )
-    // Scan response for file-write tool results and emit attachments
-    if (params.onAttachment) {
-      const toolInputs = new Map<string, unknown>()
-      for (const msg of response.messages) {
-        if (msg.role === 'assistant') {
-          for (const part of Array.isArray(msg.content) ? msg.content : []) {
-            if (part.type === 'tool-call' && FILE_WRITE_TOOLS.has(part.toolName)) {
-              toolInputs.set(part.toolCallId, part.input)
-            }
-          }
+    const toolContext = generateToolContext(_subToolNames)
+    const subagentModel = backgroundModel ?? model
+    const sysPrompt = subagentSystem({
+      date: new Date(),
+      name: params.name,
+      description: params.description,
+      timezone,
+      toolContext,
+    })
+
+    const result: { messages: ModelMessage[]; reasoning: string[]; usage: LanguageModelUsage | null } = {
+      messages: [], reasoning: [], usage: null,
+    }
+    let closeCalled = false
+    const safeClose = async () => { if (!closeCalled) { closeCalled = true; await close() } }
+
+    const { fullStream } = streamText({
+      model: subagentModel,
+      messages,
+      system: sysPrompt,
+      stopWhen: stepCountIs(Infinity),
+      tools,
+      abortSignal: params.abortSignal,
+      providerOptions,
+      onFinish: async ({ usage, reasoning, response }) => {
+        await safeClose()
+        result.usage = usage as never
+        result.reasoning = reasoning.map((part) => part.text)
+        result.messages = response.messages
+      },
+    })
+
+    try {
+      for await (const chunk of fullStream) {
+        if (chunk.type === 'text-delta' && params.onDelta) {
+          params.onDelta(chunk.text)
         }
-        if (msg.role === 'tool') {
-          for (const part of Array.isArray(msg.content) ? msg.content : []) {
-            if (part.type === 'tool-result' && toolInputs.has(part.toolCallId) && isWriteSuccess(part.result)) {
-              const writePath = extractWritePath(toolInputs.get(part.toolCallId))
-              if (writePath && isDeliverableWrite(writePath)) {
-                params.onAttachment({ type: 'file', path: writePath })
-              }
-            }
+        if (chunk.type === 'tool-result' && params.onAttachment && FILE_WRITE_TOOLS.has(chunk.toolName) && isWriteSuccess(chunk.output)) {
+          const writePath = extractWritePath(chunk.input)
+          if (writePath && isDeliverableWrite(writePath)) {
+            params.onAttachment({ type: 'file', path: writePath })
           }
         }
       }
+    } finally {
+      await safeClose()
     }
+
     return {
       messages: stripReasoningFromMessages(
-        truncateMessagesForTransport([userPrompt, ...response.messages]),
+        truncateMessagesForTransport([userPrompt, ...result.messages]),
       ),
-      reasoning: reasoning.map((part) => part.text),
-      usage: normalizeUsage(usage),
-      text,
+      reasoning: result.reasoning,
+      usage: normalizeUsage(result.usage),
       skills: getEnabledSkills(),
     }
   }
@@ -701,25 +702,74 @@ export const createAgent = (
         result.messages = response.messages
       },
     })
-    const attachmentQueue: Array<{ type: 'file'; path: string }> = []
-    const onAttachment = (a: { attachment: { type: 'file'; path: string } }) => attachmentQueue.push(a.attachment)
-    registry.events.on('attachment', onAttachment)
     yield {
       type: 'agent_start',
       input,
     }
     try {
-      for await (const chunk of fullStream) {
-        // Drain subagent attachments
-        while (attachmentQueue.length > 0) {
-          yield { type: 'attachment_delta' as const, attachments: [attachmentQueue.shift()!] }
-        }
-        if (chunk.type === 'error') {
-          throw new Error(
-            resolveStreamErrorMessage((chunk as { error?: unknown }).error),
-          )
-        }
-        switch (chunk.type) {
+      const HEARTBEAT_MS = 3000
+      const iterator = fullStream[Symbol.asyncIterator]()
+      const deltaQueue: Array<{ runId: string; name: string; delta: string }> = []
+      const statusQueue: Array<{ runId: string; name: string; status: string }> = []
+      const attachmentQueue: Array<{ runId: string; name: string; attachment: { type: 'file'; path: string } }> = []
+      const onDelta = (d: { runId: string; name: string; delta: string }) => deltaQueue.push(d)
+      const onStatus = (s: { runId: string; name: string; status: string }) => statusQueue.push(s)
+      const onAttachment = (a: { runId: string; name: string; attachment: { type: 'file'; path: string } }) => attachmentQueue.push(a)
+      registry.events.on('delta', onDelta)
+      registry.events.on('status', onStatus)
+      registry.events.on('attachment', onAttachment)
+      let done = false
+      try {
+        while (!done) {
+          // Drain queued deltas
+          while (deltaQueue.length > 0) {
+            const d = deltaQueue.shift()!
+            yield { type: 'subagent_delta' as const, runId: d.runId, name: d.name, delta: d.delta }
+          }
+          // Drain queued status changes
+          while (statusQueue.length > 0) {
+            const s = statusQueue.shift()!
+            yield { type: 'subagent_completed' as const, runId: s.runId, name: s.name, status: s.status }
+          }
+          // Drain queued attachments from subagents
+          while (attachmentQueue.length > 0) {
+            const a = attachmentQueue.shift()!
+            yield { type: 'attachment_delta' as const, attachments: [a.attachment] }
+          }
+          const activeRuns = registry.listActive()
+          let iterResult: IteratorResult<any>
+          if (activeRuns.length > 0) {
+            const nextChunk = iterator.next()
+            let timerId: ReturnType<typeof setTimeout>
+            const timer = new Promise<'tick'>((r) => { timerId = setTimeout(() => r('tick'), HEARTBEAT_MS) })
+            const race = await Promise.race([nextChunk.then((v) => ({ tag: 'chunk' as const, v })), timer.then((t) => ({ tag: t }))])
+            clearTimeout(timerId!)
+            if (race.tag === 'tick') {
+              for (const run of activeRuns) {
+                yield {
+                  type: 'subagent_progress' as const,
+                  runId: run.runId,
+                  name: run.name,
+                  task: run.task,
+                  status: run.status,
+                  elapsed_ms: Date.now() - run.startedAt,
+                }
+              }
+              iterResult = await nextChunk
+            } else {
+              iterResult = race.v
+            }
+          } else {
+            iterResult = await iterator.next()
+          }
+          if (iterResult.done) { done = true; break }
+          const chunk = iterResult.value
+          if (chunk.type === 'error') {
+            throw new Error(
+              resolveStreamErrorMessage((chunk as { error?: unknown }).error),
+            )
+          }
+          switch (chunk.type) {
           case 'reasoning-start':
             yield {
               type: 'reasoning_start',
@@ -801,7 +851,7 @@ export const createAgent = (
                 chunk as unknown as Record<string, unknown>,
               ),
             }
-            // Auto-emit attachment for write tool so frontend doesn't depend on LLM <attachments> tag
+            // Auto-emit attachment for file-write tools so frontend doesn't depend on LLM <attachments> tag
             if (FILE_WRITE_TOOLS.has(chunk.toolName) && isWriteSuccess(chunk.output)) {
               const writePath = extractWritePath(chunk.input)
               if (writePath && isDeliverableWrite(writePath)) {
@@ -815,15 +865,15 @@ export const createAgent = (
               image: chunk.file.base64,
               metadata: chunk,
             }
-        }
+          }
+      }
+      } finally {
+        registry.events.off('delta', onDelta)
+        registry.events.off('status', onStatus)
+        registry.events.off('attachment', onAttachment)
       }
     } finally {
-      registry.events.off('attachment', onAttachment)
       await safeClose()
-    }
-    // Final drain for any attachments that arrived after the last chunk
-    while (attachmentQueue.length > 0) {
-      yield { type: 'attachment_delta' as const, attachments: [attachmentQueue.shift()!] }
     }
 
     const { messages: strippedMessages } = stripAttachmentsFromMessages(
@@ -844,7 +894,7 @@ export const createAgent = (
   return {
     stream,
     ask,
-    askAsSubagent,
+    streamAsSubagent,
     triggerSchedule,
   }
 }

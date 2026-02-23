@@ -7,10 +7,12 @@ import { AgentAction, IdentityContext } from '../types/agent'
 import { SubagentRegistry } from '../registry'
 
 const MAX_SUBAGENT_CONTEXT = 20
+const SUBAGENT_TIMEOUT_MS = 180_000
 
 export interface SubagentToolParams {
   fetch: AuthFetcher
   model: ModelConfig
+  backgroundModel?: ModelConfig
   identity: IdentityContext
   auth: AgentAuthContext
   mcpConnections?: MCPConnection[]
@@ -22,6 +24,7 @@ export interface SubagentToolParams {
 export const getSubagentTools = ({
   fetch,
   model,
+  backgroundModel,
   identity,
   auth,
   mcpConnections = [],
@@ -122,8 +125,8 @@ export const getSubagentTools = ({
     execute: async ({ name, query }) => {
       if (!botId) throw new Error('bot_id is required')
       const { target, contextMessages } = await resolveSubagent(name)
-      const { askAsSubagent } = createSubagentAgent()
-      const result = await askAsSubagent({
+      const { streamAsSubagent } = createSubagentAgent()
+      const result = await streamAsSubagent({
         messages: contextMessages,
         input: query,
         name: target.name,
@@ -153,6 +156,7 @@ export const getSubagentTools = ({
       const { target, contextMessages } = await resolveSubagent(name)
       const runId = registry.generateRunId()
       const abortController = new AbortController()
+      const timeout = setTimeout(() => abortController.abort(), SUBAGENT_TIMEOUT_MS)
 
       const run = {
         runId,
@@ -173,13 +177,14 @@ export const getSubagentTools = ({
       // Fire-and-forget
       ;(async () => {
         try {
-          const { askAsSubagent } = createSubagentAgent()
-          const result = await askAsSubagent({
+          const { streamAsSubagent } = createSubagentAgent()
+          const result = await streamAsSubagent({
             messages: contextMessages,
             input: task,
             name: target.name,
             description: target.description,
             abortSignal: abortController.signal,
+            onDelta: (delta) => registry.emitDelta(runId, delta),
             onAttachment: (a) => registry.events.emit('attachment', { runId, name: target.name, attachment: a }),
           })
           const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
@@ -203,14 +208,18 @@ export const getSubagentTools = ({
           const message = err instanceof Error ? err.message : String(err)
           registry.fail(runId, message)
           persistRunUpdate(runId, 'failed', undefined, message)
+        } finally {
+          clearTimeout(timeout)
         }
       })()
 
+      const warning = registry.checkFailurePattern(target.name)
       return {
         runId,
         name: target.name,
         status: 'running',
         message: `Sub-agent "${target.name}" spawned. Use check_subagent_run with runId "${runId}" to poll for results.`,
+        ...(warning ? { warning } : {}),
       }
     },
   })
@@ -303,6 +312,7 @@ export const getSubagentTools = ({
       const { target, contextMessages } = await resolveSubagent(name)
       const newRunId = registry.generateRunId()
       const abortController = new AbortController()
+      const timeout = setTimeout(() => abortController.abort(), SUBAGENT_TIMEOUT_MS)
 
       const run = {
         runId: newRunId,
@@ -318,13 +328,14 @@ export const getSubagentTools = ({
 
       ;(async () => {
         try {
-          const { askAsSubagent } = createSubagentAgent()
-          const result = await askAsSubagent({
+          const { streamAsSubagent } = createSubagentAgent()
+          const result = await streamAsSubagent({
             messages: contextMessages,
             input: new_task,
             name: target.name,
             description: target.description,
             abortSignal: abortController.signal,
+            onDelta: (delta) => registry.emitDelta(newRunId, delta),
             onAttachment: (a) => registry.events.emit('attachment', { runId: newRunId, name: target.name, attachment: a }),
           })
           const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
@@ -339,19 +350,28 @@ export const getSubagentTools = ({
             ? lastContent
             : lastContent != null ? JSON.stringify(lastContent) : '(no output)'
           registry.complete(newRunId, summary)
+          persistRunUpdate(newRunId, 'completed', summary)
         } catch (err: unknown) {
-          if (abortController.signal.aborted) return
+          if (abortController.signal.aborted) {
+            persistRunUpdate(newRunId, 'aborted')
+            return
+          }
           const message = err instanceof Error ? err.message : String(err)
           registry.fail(newRunId, message)
+          persistRunUpdate(newRunId, 'failed', undefined, message)
+        } finally {
+          clearTimeout(timeout)
         }
       })()
 
+      const warning = registry.checkFailurePattern(target.name)
       return {
         previous_run_id: existingRun?.runId ?? null,
         new_run_id: newRunId,
         name: target.name,
         status: 'running',
         message: `Sub-agent "${target.name}" steered with new task. Poll check_subagent_run("${newRunId}").`,
+        ...(warning ? { warning } : {}),
       }
     },
   })
@@ -367,6 +387,7 @@ export const getSubagentTools = ({
       return {
         count: runs.length,
         runs: runs.map(({ abortController: _, ...rest }) => rest),
+        summary: registry.getSummary(),
       }
     },
   })
@@ -397,11 +418,13 @@ export const getSubagentTools = ({
   function createSubagentAgent() {
     return createAgent(
       {
-        model,
+        model: backgroundModel ?? model,
         allowedActions: [
           AgentAction.Web,
           AgentAction.Skill,
           AgentAction.Memory,
+          AgentAction.Schedule,
+          AgentAction.Message,
         ],
         // No external MCP for subagents — only builtin tools via getAgentTools
         identity,

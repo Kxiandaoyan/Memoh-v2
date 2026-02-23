@@ -1,9 +1,26 @@
+import { EventEmitter } from 'events'
+
 /**
  * In-memory registry for tracking asynchronous sub-agent runs.
  * Each run is associated with an AbortController for cancellation.
  */
 
-import { EventEmitter } from 'events'
+// ── Lightweight Jaccard similarity for failure pattern detection ──────────
+function tokenize(text: string): Set<string> {
+  const tokens = new Set<string>()
+  for (const m of text.toLowerCase().matchAll(/[a-z0-9_]+|[\u4e00-\u9fff]/g)) {
+    tokens.add(m[0])
+  }
+  return tokens
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const sa = tokenize(a), sb = tokenize(b)
+  if (!sa.size || !sb.size) return 0
+  let inter = 0
+  for (const t of sa) if (sb.has(t)) inter++
+  return inter / (sa.size + sb.size - inter)
+}
 
 export type RunStatus = 'running' | 'completed' | 'aborted' | 'error'
 
@@ -26,6 +43,8 @@ const DEFAULT_MAX_CHILDREN = 5
 
 export class SubagentRegistry {
   private runs = new Map<string, SubagentRun>()
+  private failureHistory = new Map<string, Array<{ error: string; ts: number }>>()
+  private lastDeltaTime = new Map<string, number>()
   readonly events = new EventEmitter()
   readonly maxSpawnDepth: number
   readonly maxChildren: number
@@ -103,6 +122,19 @@ export class SubagentRegistry {
     run.status = 'completed'
     run.result = result
     run.endedAt = Date.now()
+    this.lastDeltaTime.delete(runId)
+    this.events.emit('status', { runId, name: run.name, status: 'completed' })
+  }
+
+  /** Emit a text delta for a running sub-agent (throttled to 100ms per agent). */
+  emitDelta(runId: string, delta: string): void {
+    const now = Date.now()
+    const last = this.lastDeltaTime.get(runId) ?? 0
+    if (now - last < 100) return
+    const run = this.runs.get(runId)
+    if (!run || run.status !== 'running') return
+    this.lastDeltaTime.set(runId, now)
+    this.events.emit('delta', { runId, name: run.name, delta })
   }
 
   /** Mark a run as failed with an error. */
@@ -112,6 +144,12 @@ export class SubagentRegistry {
     run.status = 'error'
     run.error = error
     run.endedAt = Date.now()
+    this.events.emit('status', { runId, name: run.name, status: 'error' })
+    // Track failure for cross-run pattern detection
+    const hist = this.failureHistory.get(run.name) ?? []
+    hist.push({ error, ts: Date.now() })
+    if (hist.length > 10) hist.splice(0, hist.length - 10)
+    this.failureHistory.set(run.name, hist)
   }
 
   /**
@@ -127,6 +165,7 @@ export class SubagentRegistry {
       run.abortController.abort()
       run.status = 'aborted'
       run.endedAt = Date.now()
+      this.events.emit('status', { runId: run.runId, name: run.name, status: 'aborted' })
       count++
     }
 
@@ -150,7 +189,45 @@ export class SubagentRegistry {
         removed++
       }
     }
+    // Trim failureHistory to last 10 entries per agent.
+    for (const [name, hist] of this.failureHistory.entries()) {
+      if (hist.length > 10) this.failureHistory.set(name, hist.slice(-10))
+      else if (hist.length === 0) this.failureHistory.delete(name)
+    }
     return removed
+  }
+
+  /**
+   * Check if a sub-agent is stuck in a repeated failure pattern.
+   * Returns a warning string if 3+ recent failures share >60% similarity, null otherwise.
+   */
+  checkFailurePattern(name: string): string | null {
+    const hist = this.failureHistory.get(name)
+    if (!hist || hist.length < 3) return null
+    const recent = hist.slice(-3)
+    const sim01 = jaccardSimilarity(recent[0].error, recent[1].error)
+    const sim12 = jaccardSimilarity(recent[1].error, recent[2].error)
+    if (sim01 > 0.6 && sim12 > 0.6) {
+      return `Sub-agent "${name}" failed ${hist.length} times with similar errors. Consider changing the task description or skipping.`
+    }
+    return null
+  }
+
+  /** Aggregated progress summary: status counts + one-line per run. */
+  getSummary(): { running: number; completed: number; failed: number; aborted: number; lines: string[] } {
+    let running = 0, completed = 0, failed = 0, aborted = 0
+    const lines: string[] = []
+    for (const run of this.runs.values()) {
+      if (run.status === 'running') running++
+      else if (run.status === 'completed') completed++
+      else if (run.status === 'error') failed++
+      else if (run.status === 'aborted') aborted++
+      const elapsed = (run.endedAt ?? Date.now()) - run.startedAt
+      const tag = run.status === 'running' ? '⏳' : run.status === 'completed' ? '✅' : run.status === 'error' ? '❌' : '⏹️'
+      const detail = run.result ? run.result.slice(0, 80) : run.error ? run.error.slice(0, 80) : run.task.slice(0, 80)
+      lines.push(`${tag} [${run.name}] ${detail} (${Math.round(elapsed / 1000)}s)`)
+    }
+    return { running, completed, failed, aborted, lines }
   }
 
   /** Serialize runs for inspection (strips AbortController). */
