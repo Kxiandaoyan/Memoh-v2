@@ -327,7 +327,23 @@ func (m *Manager) execWithCaptureLima(ctx context.Context, req ExecRequest) (*Ex
 
 // execWithCaptureContainerd uses the containerd ExecTask API with FIFO pipes.
 // This works reliably on Linux where FIFO I/O stays on the same filesystem.
+// If the task has died (e.g. idle monitor reclaimed it), it restarts the task
+// and retries once.
 func (m *Manager) execWithCaptureContainerd(ctx context.Context, req ExecRequest) (*ExecWithCaptureResult, error) {
+	res, err := m.doExecWithCapture(ctx, req)
+	if err != nil && isTaskNotRunning(err) {
+		m.logger.Warn("task not running, restarting before retry",
+			slog.String("bot_id", req.BotID),
+			slog.Any("original_error", err))
+		if restartErr := m.restartTask(ctx, m.containerID(req.BotID)); restartErr != nil {
+			return nil, fmt.Errorf("restart task after death: %w (original: %v)", restartErr, err)
+		}
+		return m.doExecWithCapture(ctx, req)
+	}
+	return res, err
+}
+
+func (m *Manager) doExecWithCapture(ctx context.Context, req ExecRequest) (*ExecWithCaptureResult, error) {
 	fifoDir, err := os.MkdirTemp(m.dataRoot(), "exec-fifo-")
 	if err != nil {
 		return nil, fmt.Errorf("create fifo dir: %w", err)
@@ -351,6 +367,25 @@ func (m *Manager) execWithCaptureContainerd(ctx context.Context, req ExecRequest
 		Stderr:   stderrBuf.String(),
 		ExitCode: result.ExitCode,
 	}, nil
+}
+
+// restartTask force-deletes the dead task and starts a fresh one with networking.
+func (m *Manager) restartTask(ctx context.Context, containerID string) error {
+	if err := m.service.DeleteTask(ctx, containerID, &ctr.DeleteTaskOptions{Force: true}); err != nil {
+		m.logger.Warn("restartTask: delete failed (may already be gone)",
+			slog.String("container_id", containerID), slog.Any("error", err))
+	}
+	task, err := m.service.StartTask(ctx, containerID, &ctr.StartTaskOptions{UseStdio: false})
+	if err != nil {
+		return err
+	}
+	return ctr.SetupNetwork(ctx, task, containerID)
+}
+
+// isTaskNotRunning checks whether the error indicates the container's task is dead.
+func isTaskNotRunning(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "no running task found") || strings.Contains(msg, "task") && strings.Contains(msg, "not found")
 }
 
 // DataDir returns the host data directory for a bot.
