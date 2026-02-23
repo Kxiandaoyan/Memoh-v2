@@ -33,6 +33,16 @@ type RouteResolver interface {
 	ResolveConversation(ctx context.Context, input route.ResolveInput) (route.ResolveConversationResult, error)
 }
 
+// Broadcaster sends an outbound message to a specific channel.
+type Broadcaster interface {
+	Send(ctx context.Context, botID string, channelType channel.ChannelType, req channel.SendRequest) error
+}
+
+// RouteLister lists all routes for a bot.
+type RouteLister interface {
+	List(ctx context.Context, conversationID string) ([]route.Route, error)
+}
+
 // ChannelInboundProcessor routes channel inbound messages to the chat gateway.
 type ChannelInboundProcessor struct {
 	runner         flow.Runner
@@ -45,6 +55,8 @@ type ChannelInboundProcessor struct {
 	identity       *IdentityResolver
 	policyService  PolicyService
 	groupDebouncer *messagepkg.GroupDebouncer
+	broadcaster    Broadcaster
+	routeLister    RouteLister
 }
 
 // NewChannelInboundProcessor creates a processor with channel identity-based resolution.
@@ -88,6 +100,12 @@ func NewChannelInboundProcessor(
 // into a single agent invocation. Pass nil to disable.
 func (p *ChannelInboundProcessor) SetGroupDebouncer(d *messagepkg.GroupDebouncer) {
 	p.groupDebouncer = d
+}
+
+// SetBroadcaster enables cross-channel broadcast of assistant replies.
+func (p *ChannelInboundProcessor) SetBroadcaster(b Broadcaster, rl RouteLister) {
+	p.broadcaster = b
+	p.routeLister = rl
 }
 
 func (p *ChannelInboundProcessor) IdentityMiddleware() channel.Middleware {
@@ -472,6 +490,7 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 			p.logProcessingStatusError("processing_completed", msg, identity, notifyErr)
 		}
 	}
+	go p.broadcastToOtherChannels(identity.BotID, activeChatID, strings.ToLower(msg.Channel.String()), target, outputs)
 	return nil
 }
 
@@ -1158,6 +1177,59 @@ func formatTokenUsage(usage *gatewayUsage) string {
 	return fmt.Sprintf("⚡ %.1fk", kTokens)
 }
 
+// broadcastToOtherChannels sends assistant outputs to all other bound channels
+// for the same bot. Fire-and-forget: errors are logged, never returned.
+// It skips the originating route (matched by platform+replyTarget) and web routes.
+func (p *ChannelInboundProcessor) broadcastToOtherChannels(
+	botID, chatID, originPlatform, originTarget string,
+	outputs []conversation.AssistantOutput,
+) {
+	if p.broadcaster == nil || p.routeLister == nil || len(outputs) == 0 {
+		return
+	}
+	ctx := context.Background()
+	routes, err := p.routeLister.List(ctx, chatID)
+	if err != nil {
+		if p.logger != nil {
+			p.logger.Warn("broadcast: list routes failed",
+				slog.String("chat_id", chatID), slog.Any("error", err))
+		}
+		return
+	}
+	for _, r := range routes {
+		platform := strings.ToLower(strings.TrimSpace(r.Platform))
+		if platform == "web" {
+			continue
+		}
+		target := strings.TrimSpace(r.ReplyTarget)
+		if platform == originPlatform && target == originTarget {
+			continue
+		}
+		if target == "" {
+			continue
+		}
+		for _, output := range outputs {
+			text := strings.TrimSpace(output.Content)
+			if text == "" || isSilentReplyText(text) {
+				continue
+			}
+			if err := p.broadcaster.Send(ctx, botID,
+				channel.ChannelType(platform),
+				channel.SendRequest{
+					Target:  target,
+					Message: channel.Message{Text: text},
+				}); err != nil {
+				if p.logger != nil {
+					p.logger.Warn("broadcast: send failed",
+						slog.String("platform", platform),
+						slog.String("bot_id", botID),
+						slog.Any("error", err))
+				}
+			}
+		}
+	}
+}
+
 // dispatchGroupChat is called by the GroupDebouncer after the debounce window
 // expires. It runs the full chat processing pipeline (token generation, stream
 // open, runner.StreamChat) with the given merged text.
@@ -1289,7 +1361,8 @@ func (p *ChannelInboundProcessor) dispatchGroupChat(
 	if streamErr != nil {
 		return streamErr
 	}
-	_ = finalMessages
+	outputs := flow.ExtractAssistantOutputs(finalMessages)
+	go p.broadcastToOtherChannels(identity.BotID, activeChatID, strings.ToLower(msg.Channel.String()), target, outputs)
 	_ = collectedUsage
 	return nil
 }

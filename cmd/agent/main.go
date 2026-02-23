@@ -197,6 +197,7 @@ func main() {
 			startStaleRunReaper,
 			startServer,
 			wireTriggerSender,
+			wireBroadcaster,
 		),
 		fx.WithLogger(func(logger *slog.Logger) fxevent.Logger {
 			return &fxevent.SlogLogger{Logger: logger.With(slog.String("component", "fx"))}
@@ -446,6 +447,12 @@ func provideChannelManager(log *slog.Logger, registry *channel.Registry, channel
 // resolver constructor to avoid a circular dependency.
 func wireTriggerSender(resolver *flow.Resolver, channelManager *channel.Manager) {
 	resolver.SetTriggerSender(&channelTriggerSender{manager: channelManager})
+}
+
+// wireBroadcaster connects channel.Manager and route.DBService to the inbound
+// processor so assistant replies are broadcast to other bound channels.
+func wireBroadcaster(channelRouter *inbound.ChannelInboundProcessor, channelManager *channel.Manager, routeService *route.DBService) {
+	channelRouter.SetBroadcaster(channelManager, routeService)
 }
 
 // channelTriggerSender implements flow.TriggerMessageSender using channel.Manager.
