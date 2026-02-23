@@ -163,7 +163,11 @@
     "toolRunning": "Running",
     "toolInput": "Input",
     "toolResult": "Result",
-    "unknownUser": "{platform} User"
+    "unknownUser": "{platform} User",
+    "errors": {
+      "responseTimeout": "Response timed out. Please try again.",
+      "waitingForResponse": "Connection lost, waiting for response..."
+    }
   },
   "models": {
     "title": "Models",

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useUserStore } from '@/store/user'
+import i18n from '@/i18n'
 import {
   createChat,
   deleteChat as requestDeleteChat,
@@ -64,6 +65,7 @@ export interface ChatMessage {
   blocks: ContentBlock[]
   timestamp: Date
   streaming: boolean
+  isWaiting?: boolean
   platform?: string
   senderDisplayName?: string
   senderAvatarUrl?: string
@@ -76,6 +78,7 @@ export interface ChatMessage {
 export const useChatStore = defineStore('chat', () => {
   const messages = reactive<ChatMessage[]>([])
   const streaming = ref(false)
+  const waitingForResponse = ref(false)
   const chats = ref<ChatSummary[]>([])
   const loading = ref(false)
   const loadingChats = ref(false)
@@ -87,6 +90,7 @@ export const useChatStore = defineStore('chat', () => {
   const bots = ref<Bot[]>([])
 
   let abortFn: (() => void) | null = null
+  let waitingTimeout: ReturnType<typeof setTimeout> | null = null
   let messageEventsController: AbortController | null = null
   let messageEventsLoopVersion = 0
   let messageEventsSince = ''
@@ -341,9 +345,29 @@ export const useChatStore = defineStore('chat', () => {
   function appendRealtimeMessage(raw: Message) {
     updateSince(raw.created_at)
     const platform = (raw.platform ?? '').trim().toLowerCase()
-    console.debug('[appendRealtimeMessage] id=%s role=%s platform=%s', raw.id, raw.role, platform)
-    // Web-platform messages fall through to the generic dedup logic below so
-    // that messages arriving after a page refresh (backlog) are not lost.
+    console.debug('[appendRealtimeMessage] id=%s role=%s platform=%s waitingForResponse=%s', raw.id, raw.role, platform, waitingForResponse.value)
+
+    if (platform === 'web') {
+      // Replace waiting placeholder when backend finally delivers the assistant message
+      if (waitingForResponse.value && raw.role === 'assistant') {
+        const idx = messages.findIndex((m) => m.isWaiting)
+        if (idx >= 0) {
+          const item = messageToChat(raw)
+          if (item) {
+            messages.splice(idx, 1, item)
+            if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
+            waitingForResponse.value = false
+            touchChat(chatId.value ?? '')
+            return
+          }
+        }
+      }
+      // During active streaming, skip web-platform messages to avoid duplicates
+      if (streaming.value || loading.value) {
+        console.debug('[appendRealtimeMessage] skipped web msg during streaming, id=%s', raw.id)
+        return
+      }
+    }
     const mid = String(raw.id ?? '').trim()
     if (mid && hasMessageWithId(mid)) {
       console.debug('[appendRealtimeMessage] skipped duplicate, id=%s', mid)
@@ -509,6 +533,31 @@ export const useChatStore = defineStore('chat', () => {
         : visible[0]!.id
       chatId.value = activeChatId
       await loadMessages(bid, activeChatId)
+
+      // After refresh: if last message is user with no assistant reply,
+      // backend is likely still processing. Show waiting placeholder.
+      const last = messages[messages.length - 1]
+      if (last?.role === 'user') {
+        messages.push({
+          id: `wait-${Date.now()}`,
+          role: 'assistant',
+          blocks: [],
+          timestamp: new Date(),
+          streaming: false,
+          isWaiting: true,
+        })
+        waitingForResponse.value = true
+        waitingTimeout = setTimeout(() => {
+          const idx = messages.findIndex((m) => m.isWaiting)
+          if (idx >= 0) {
+            messages[idx]!.isWaiting = false
+            messages[idx]!.blocks = [{ type: 'text', content: i18n.global.t('chat.errors.responseTimeout') as string }]
+            waitingForResponse.value = false
+          }
+          waitingTimeout = null
+        }, 120_000)
+      }
+
       startMessageEvents(bid)
     } finally {
       loadingChats.value = false
@@ -792,6 +841,7 @@ export const useChatStore = defineStore('chat', () => {
   return {
     messages,
     streaming,
+    waitingForResponse,
     chats,
     participantChats,
     observedChats,

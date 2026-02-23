@@ -159,7 +159,11 @@
     "toolRunning": "运行中",
     "toolInput": "输入",
     "toolResult": "结果",
-    "unknownUser": "{platform}用户"
+    "unknownUser": "{platform}用户",
+    "errors": {
+      "responseTimeout": "响应超时，请重试。",
+      "waitingForResponse": "连接断开，等待响应中…"
+    }
   },
   "models": {
     "title": "模型",
