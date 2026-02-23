@@ -589,12 +589,10 @@ export const createAgent = (
   }
 
   // -- Write-tool attachment helpers --
-  const PLAIN_TEXT_EXTS = new Set(['.md', '.txt', '.log', '.csv', '.json', '.yaml', '.yml', '.toml', '.xml', '.ini', '.cfg', '.env', '.sh', '.bat'])
-
-  const hasDownloadableExtension = (p: string): boolean => {
+  const isDeliverableWrite = (p: string): boolean => {
+    if (!p.startsWith('/shared/')) return false
     const dot = p.lastIndexOf('.')
-    if (dot === -1) return false
-    return !PLAIN_TEXT_EXTS.has(p.slice(dot).toLowerCase())
+    return dot !== -1 && dot > p.lastIndexOf('/')
   }
 
   const extractWritePath = (input: unknown): string | null => {
@@ -751,7 +749,7 @@ export const createAgent = (
             // Auto-emit attachment for write tool so frontend doesn't depend on LLM <attachments> tag
             if (chunk.toolName === 'write' && isWriteSuccess(chunk.output)) {
               const writePath = extractWritePath(chunk.input)
-              if (writePath && hasDownloadableExtension(writePath)) {
+              if (writePath && isDeliverableWrite(writePath)) {
                 yield { type: 'attachment_delta', attachments: [{ type: 'file', path: writePath }] }
               }
             }

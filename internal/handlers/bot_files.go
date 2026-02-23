@@ -223,6 +223,33 @@ func (h *ContainerdHandler) DeleteBotFile(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// DownloadBotFile serves any file from the bot's data directory as a direct download.
+func (h *ContainerdHandler) DownloadBotFile(c echo.Context) error {
+	botID, err := h.requireBotAccess(c)
+	if err != nil {
+		return err
+	}
+	reqPath := strings.TrimPrefix(c.Param("*"), "/")
+	if reqPath == "" || strings.Contains(reqPath, "..") {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid file path")
+	}
+	dataDir, err := h.ensureBotDataRoot(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	filePath := filepath.Clean(filepath.Join(dataDir, reqPath))
+	if !strings.HasPrefix(filePath, dataDir) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid file path")
+	}
+	info, statErr := os.Stat(filePath)
+	if statErr != nil || info.IsDir() {
+		return echo.NewHTTPError(http.StatusNotFound, "file not found")
+	}
+	c.Response().Header().Set("Content-Disposition",
+		"attachment; filename=\""+filepath.Base(filePath)+"\"")
+	return c.File(filePath)
+}
+
 // validateFilename checks that the filename is safe (no path traversal, allowed extension).
 func validateFilename(name string) error {
 	name = strings.TrimSpace(name)

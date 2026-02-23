@@ -39,6 +39,7 @@ func NewSharedFilesHandler(cfg config.MCPConfig) *SharedFilesHandler {
 func (h *SharedFilesHandler) Register(e *echo.Echo) {
 	g := e.Group("/shared/files")
 	g.GET("", h.List)
+	g.GET("/download/*", h.Download)
 	g.GET("/*", h.Read)
 	g.PUT("/*", h.Write)
 	g.DELETE("/*", h.Delete)
@@ -197,6 +198,26 @@ func (h *SharedFilesHandler) Write(c echo.Context) error {
 		Content: req.Content,
 		Size:    int64(len(req.Content)),
 	})
+}
+
+// Download serves a file from the shared workspace as a direct download.
+func (h *SharedFilesHandler) Download(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	relPath := c.Param("*")
+	full, err := validateSharedPath(root, relPath)
+	if err != nil {
+		return err
+	}
+	info, statErr := os.Stat(full)
+	if statErr != nil || info.IsDir() {
+		return echo.NewHTTPError(http.StatusNotFound, "file not found")
+	}
+	c.Response().Header().Set("Content-Disposition",
+		"attachment; filename=\""+filepath.Base(full)+"\"")
+	return c.File(full)
 }
 
 // Delete removes a file from the shared workspace.

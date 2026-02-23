@@ -130,14 +130,17 @@
             v-else-if="block.type === 'attachment'"
             class="flex flex-wrap gap-2"
           >
-            <div
+            <button
               v-for="(att, ai) in (block as AttachmentBlockType).attachments"
               :key="ai"
-              class="inline-flex items-center gap-1.5 rounded-md border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground"
+              class="inline-flex items-center gap-2 rounded-lg border bg-muted/50 hover:bg-muted px-3 py-2 text-xs text-foreground transition-colors cursor-pointer"
+              :title="getAttachmentName(att, ai)"
+              @click="downloadAttachment(att, ai)"
             >
-              <FontAwesomeIcon :icon="['fas', 'file-lines']" class="size-3" />
-              <span>{{ typeof att === 'object' && att !== null && 'name' in att ? (att as Record<string, unknown>).name : `Attachment ${ai + 1}` }}</span>
-            </div>
+              <FontAwesomeIcon :icon="['fas', 'file-lines']" class="size-4 text-muted-foreground" />
+              <span class="truncate max-w-[200px]">{{ getAttachmentName(att, ai) }}</span>
+              <FontAwesomeIcon :icon="['fas', 'download']" class="size-3 text-muted-foreground ml-1" />
+            </button>
           </div>
         </template>
 
@@ -198,6 +201,7 @@ import { useUserStore } from '@/store/user'
 import { useChatStore } from '@/store/chat-list'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
+import { toast } from 'vue-sonner'
 import type {
   ChatMessage,
   TextBlock,
@@ -265,5 +269,45 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)
+}
+
+function getAttachmentName(att: unknown, index: number): string {
+  if (typeof att !== 'object' || att === null) return `Attachment ${index + 1}`
+  const obj = att as Record<string, unknown>
+  if (typeof obj.path === 'string' && obj.path) return obj.path.split('/').pop() || `Attachment ${index + 1}`
+  if (typeof obj.name === 'string' && obj.name) return obj.name
+  return `Attachment ${index + 1}`
+}
+
+function getAttachmentPath(att: unknown): string {
+  if (typeof att !== 'object' || att === null) return ''
+  const obj = att as Record<string, unknown>
+  return typeof obj.path === 'string' ? obj.path : ''
+}
+
+async function downloadAttachment(att: unknown, index: number) {
+  const path = getAttachmentPath(att)
+  if (!path || !currentBotId.value) return
+  const apiBase = (import.meta.env.VITE_API_URL?.trim() || '/api')
+  const url = path.startsWith('/shared/')
+    ? `${apiBase}/shared/files/download/${path.slice('/shared/'.length)}`
+    : `${apiBase}/bots/${currentBotId.value}/files/download/${path.replace(/^\/data\//, '')}`
+  const token = localStorage.getItem('token')
+  try {
+    const resp = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
+    const blob = await resp.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = getAttachmentName(att, index)
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { URL.revokeObjectURL(a.href); document.body.removeChild(a) }, 100)
+  } catch (e) {
+    console.error('Download failed:', e)
+    toast.error('Download failed')
+  }
 }
 </script>

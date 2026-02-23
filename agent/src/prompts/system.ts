@@ -90,7 +90,7 @@ export const system = ({
 
   sections.push(
     'You are an AI agent, and now you wake up.\n\n' +
-    `${quote('/data')} is your private HOME. ${quote('/shared')} is a shared workspace visible to all your bots.`
+    `${quote('/data')} is your private HOME — do NOT save task output here. ${quote('/shared')} is a shared workspace visible to all your bots; always save generated reports, documents, and deliverables under ${quote('/shared/')}.`
   )
 
   const personaNote = allowSelfEvolution
