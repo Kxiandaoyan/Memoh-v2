@@ -497,6 +497,7 @@ export const createAgent = (
     description: string;
     messages: ModelMessage[];
     abortSignal?: AbortSignal;
+    onAttachment?: (attachment: { type: 'file'; path: string }) => void;
   }) => {
     const userPrompt: UserModelMessage = {
       role: 'user',
@@ -529,6 +530,29 @@ export const createAgent = (
         }),
       isRetryableLLMError,
     )
+    // Scan response for file-write tool results and emit attachments
+    if (params.onAttachment) {
+      const toolInputs = new Map<string, unknown>()
+      for (const msg of response.messages) {
+        if (msg.role === 'assistant') {
+          for (const part of Array.isArray(msg.content) ? msg.content : []) {
+            if (part.type === 'tool-call' && FILE_WRITE_TOOLS.has(part.toolName)) {
+              toolInputs.set(part.toolCallId, part.input)
+            }
+          }
+        }
+        if (msg.role === 'tool') {
+          for (const part of Array.isArray(msg.content) ? msg.content : []) {
+            if (part.type === 'tool-result' && toolInputs.has(part.toolCallId) && isWriteSuccess(part.result)) {
+              const writePath = extractWritePath(toolInputs.get(part.toolCallId))
+              if (writePath && isDeliverableWrite(writePath)) {
+                params.onAttachment({ type: 'file', path: writePath })
+              }
+            }
+          }
+        }
+      }
+    }
     return {
       messages: stripReasoningFromMessages(
         truncateMessagesForTransport([userPrompt, ...response.messages]),
@@ -677,12 +701,19 @@ export const createAgent = (
         result.messages = response.messages
       },
     })
+    const attachmentQueue: Array<{ type: 'file'; path: string }> = []
+    const onAttachment = (a: { attachment: { type: 'file'; path: string } }) => attachmentQueue.push(a.attachment)
+    registry.events.on('attachment', onAttachment)
     yield {
       type: 'agent_start',
       input,
     }
     try {
       for await (const chunk of fullStream) {
+        // Drain subagent attachments
+        while (attachmentQueue.length > 0) {
+          yield { type: 'attachment_delta' as const, attachments: [attachmentQueue.shift()!] }
+        }
         if (chunk.type === 'error') {
           throw new Error(
             resolveStreamErrorMessage((chunk as { error?: unknown }).error),
@@ -787,7 +818,12 @@ export const createAgent = (
         }
       }
     } finally {
+      registry.events.off('attachment', onAttachment)
       await safeClose()
+    }
+    // Final drain for any attachments that arrived after the last chunk
+    while (attachmentQueue.length > 0) {
+      yield { type: 'attachment_delta' as const, attachments: [attachmentQueue.shift()!] }
     }
 
     const { messages: strippedMessages } = stripAttachmentsFromMessages(

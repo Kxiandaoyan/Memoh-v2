@@ -3,6 +3,8 @@
  * Each run is associated with an AbortController for cancellation.
  */
 
+import { EventEmitter } from 'events'
+
 export type RunStatus = 'running' | 'completed' | 'aborted' | 'error'
 
 export interface SubagentRun {
@@ -24,6 +26,7 @@ const DEFAULT_MAX_CHILDREN = 5
 
 export class SubagentRegistry {
   private runs = new Map<string, SubagentRun>()
+  readonly events = new EventEmitter()
   readonly maxSpawnDepth: number
   readonly maxChildren: number
 

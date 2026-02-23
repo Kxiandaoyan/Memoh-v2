@@ -180,6 +180,7 @@ export const getSubagentTools = ({
             name: target.name,
             description: target.description,
             abortSignal: abortController.signal,
+            onAttachment: (a) => registry.events.emit('attachment', { runId, name: target.name, attachment: a }),
           })
           const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
           try {
@@ -324,6 +325,7 @@ export const getSubagentTools = ({
             name: target.name,
             description: target.description,
             abortSignal: abortController.signal,
+            onAttachment: (a) => registry.events.emit('attachment', { runId: newRunId, name: target.name, attachment: a }),
           })
           const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
           try {
