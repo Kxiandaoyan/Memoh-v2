@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -13,11 +14,14 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/adapters/common"
 )
 
+const inboundDedupTTL = time.Minute
+
 // DiscordAdapter implements channel adapter interfaces for Discord.
 type DiscordAdapter struct {
-	logger   *slog.Logger
-	mu       sync.RWMutex
-	sessions map[string]*discordgo.Session
+	logger       *slog.Logger
+	mu           sync.RWMutex
+	sessions     map[string]*discordgo.Session
+	seenMessages map[string]time.Time
 }
 
 // NewDiscordAdapter creates a DiscordAdapter with the given logger.
@@ -26,8 +30,9 @@ func NewDiscordAdapter(log *slog.Logger) *DiscordAdapter {
 		log = slog.Default()
 	}
 	return &DiscordAdapter{
-		logger:   log.With(slog.String("adapter", "discord")),
-		sessions: make(map[string]*discordgo.Session),
+		logger:       log.With(slog.String("adapter", "discord")),
+		sessions:     make(map[string]*discordgo.Session),
+		seenMessages: make(map[string]time.Time),
 	}
 }
 
@@ -64,6 +69,8 @@ func (a *DiscordAdapter) Descriptor() channel.Descriptor {
 			Text:           true,
 			Markdown:       true,
 			Reply:          true,
+			Attachments:    true,
+			Media:          true,
 			Streaming:      true,
 			BlockStreaming: true,
 		},
@@ -231,7 +238,10 @@ func (a *DiscordAdapter) Connect(ctx context.Context, cfg channel.ChannelConfig,
 			return
 		}
 		text := strings.TrimSpace(m.Content)
-		if text == "" {
+		if text == "" && len(m.Attachments) == 0 {
+			return
+		}
+		if a.isDuplicateInbound(discordCfg.BotToken, m.ID) {
 			return
 		}
 		isDM := m.GuildID == ""
@@ -261,10 +271,11 @@ func (a *DiscordAdapter) Connect(ctx context.Context, cfg channel.ChannelConfig,
 		msg := channel.InboundMessage{
 			Channel: Type,
 			Message: channel.Message{
-				ID:     m.ID,
-				Format: channel.MessageFormatMarkdown,
-				Text:   text,
-				Reply:  replyRef,
+				ID:          m.ID,
+				Format:      channel.MessageFormatMarkdown,
+				Text:        text,
+				Attachments: a.collectAttachments(m.Message),
+				Reply:       replyRef,
 			},
 			BotID:       cfg.BotID,
 			ReplyTarget: m.ChannelID,
@@ -435,4 +446,56 @@ func (a *DiscordAdapter) ProcessingCompleted(_ context.Context, _ channel.Channe
 // ProcessingFailed is a no-op for Discord.
 func (a *DiscordAdapter) ProcessingFailed(_ context.Context, _ channel.ChannelConfig, _ channel.InboundMessage, _ channel.ProcessingStatusInfo, _ channel.ProcessingStatusHandle, _ error) error {
 	return nil
+}
+
+func (a *DiscordAdapter) collectAttachments(msg *discordgo.Message) []channel.Attachment {
+	if msg == nil || len(msg.Attachments) == 0 {
+		return nil
+	}
+	attachments := make([]channel.Attachment, 0, len(msg.Attachments))
+	for _, att := range msg.Attachments {
+		attachment := channel.Attachment{
+			Type:           channel.AttachmentFile,
+			URL:            att.URL,
+			PlatformKey:    att.ID,
+			SourcePlatform: Type.String(),
+			Name:           att.Filename,
+			Size:           int64(att.Size),
+		}
+		if att.ContentType != "" {
+			switch {
+			case strings.HasPrefix(att.ContentType, "image/"):
+				attachment.Type = channel.AttachmentImage
+				attachment.Width = att.Width
+				attachment.Height = att.Height
+			case strings.HasPrefix(att.ContentType, "video/"):
+				attachment.Type = channel.AttachmentVideo
+			case strings.HasPrefix(att.ContentType, "audio/"):
+				attachment.Type = channel.AttachmentAudio
+			}
+		}
+		attachments = append(attachments, attachment)
+	}
+	return attachments
+}
+
+func (a *DiscordAdapter) isDuplicateInbound(token, messageID string) bool {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(messageID) == "" {
+		return false
+	}
+	now := time.Now().UTC()
+	expireBefore := now.Add(-inboundDedupTTL)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for key, seenAt := range a.seenMessages {
+		if seenAt.Before(expireBefore) {
+			delete(a.seenMessages, key)
+		}
+	}
+	seenKey := token + ":" + messageID
+	if _, ok := a.seenMessages[seenKey]; ok {
+		return true
+	}
+	a.seenMessages[seenKey] = now
+	return false
 }

@@ -158,7 +158,7 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 		if err != nil {
 			return mcpgw.BuildToolErrorResult(err.Error()), nil
 		}
-		return mcpgw.BuildToolSuccessResult(map[string]any{"content": content}), nil
+		return mcpgw.BuildToolSuccessResult(map[string]any{"content": pruneToolOutputText(content, "read_file")}), nil
 
 	case toolWrite:
 		filePath := normalizePath(mcpgw.StringArg(arguments, "path"))
@@ -239,8 +239,8 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 			stderr = strings.TrimSpace(stderr) + "\n\nHint: Container exists but has no running task (main process exited). Start it first: POST /bots/" + botID + "/container/start or use the container start action in the UI."
 		}
 		return mcpgw.BuildToolSuccessResult(map[string]any{
-			"stdout":    result.Stdout,
-			"stderr":    stderr,
+			"stdout":    pruneToolOutputText(result.Stdout, "stdout"),
+			"stderr":    pruneToolOutputText(stderr, "stderr"),
 			"exit_code": result.ExitCode,
 		}), nil
 

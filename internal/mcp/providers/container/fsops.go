@@ -38,9 +38,18 @@ func ExecRead(ctx context.Context, runner ExecRunner, botID, workDir, filePath s
 	return result.Stdout, nil
 }
 
+const maxWriteContentBytes = 512 * 1024 // 512KB per file write
+
 // ExecWrite writes content to a file inside the container using base64 encoding
 // to avoid shell escaping issues.
 func ExecWrite(ctx context.Context, runner ExecRunner, botID, workDir, filePath, content string) error {
+	if len(content) > maxWriteContentBytes {
+		return fmt.Errorf("content too large: %d bytes (max %d)", len(content), maxWriteContentBytes)
+	}
+	clean := path.Clean(filePath)
+	if strings.Contains(clean, "..") {
+		return fmt.Errorf("path traversal not allowed: %s", filePath)
+	}
 	encoded := base64.StdEncoding.EncodeToString([]byte(content))
 	dir := path.Dir(filePath)
 	script := fmt.Sprintf("mkdir -p %s && echo %s | base64 -d > %s",
