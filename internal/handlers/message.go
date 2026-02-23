@@ -176,10 +176,14 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 		return nil
 	}
 
-	for {
+	ctx := c.Request().Context()
+	for chunkChan != nil || errChan != nil {
 		select {
+		case <-ctx.Done():
+			return nil
 		case chunk, ok := <-chunkChan:
 			if !ok {
+				chunkChan = nil
 				if processingState == "started" {
 					processingState = "completed"
 					if err := writeSSEJSON(writer, flusher, map[string]string{"type": "processing_completed"}); err != nil {
@@ -200,26 +204,31 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 			if err := writeSSEData(writer, flusher, string(chunk)); err != nil {
 				return nil
 			}
-		case err := <-errChan:
+		case err, ok := <-errChan:
+			if !ok {
+				errChan = nil
+				continue
+			}
 			if err != nil {
 				h.logger.Error("conversation stream failed", slog.Any("error", err))
-			if processingState == "started" {
-				processingState = "failed"
-				if writeErr := writeSSEJSON(writer, flusher, map[string]string{
-					"type":  "processing_failed",
-					"error": "conversation processing failed",
-				}); writeErr != nil {
-					h.logger.Warn("write SSE processing_failed event failed", slog.Any("error", writeErr))
+				if processingState == "started" {
+					processingState = "failed"
+					if writeErr := writeSSEJSON(writer, flusher, map[string]string{
+						"type":  "processing_failed",
+						"error": "conversation processing failed",
+					}); writeErr != nil {
+						h.logger.Warn("write SSE processing_failed event failed", slog.Any("error", writeErr))
+					}
 				}
-			}
-			errData := map[string]string{
-				"type":    "error",
-				"error":   "conversation failed",
-				"message": "conversation failed",
-			}
+				errData := map[string]string{
+					"type":    "error",
+					"error":   "conversation failed",
+					"message": "conversation failed",
+				}
 				if writeErr := writeSSEJSON(writer, flusher, errData); writeErr != nil {
 					return nil
 				}
+				writeSSEData(writer, flusher, "[DONE]")
 				return nil
 			}
 		}
