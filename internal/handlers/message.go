@@ -177,10 +177,16 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 	for chunkChan != nil || errChan != nil {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-heartbeat.C:
+			if err := writeSSEData(writer, flusher, `{"type":"ping"}`); err != nil {
+				return nil
+			}
 		case chunk, ok := <-chunkChan:
 			if !ok {
 				chunkChan = nil
@@ -233,6 +239,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 			}
 		}
 	}
+	return nil
 }
 
 func writeSSEData(writer *bufio.Writer, flusher http.Flusher, payload string) error {
