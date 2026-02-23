@@ -299,10 +299,18 @@ export const useChatStore = defineStore('chat', () => {
   function abort() {
     abortFn?.()
     abortFn = null
+    if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
     for (const msg of messages) {
       if (msg.streaming) msg.streaming = false
+      if (msg.isWaiting) msg.isWaiting = false
     }
     streaming.value = false
+    waitingForResponse.value = false
+  }
+
+  function clearWaiting() {
+    if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
+    waitingForResponse.value = false
   }
 
   // ---- Message list management ----
@@ -510,6 +518,7 @@ export const useChatStore = defineStore('chat', () => {
     if (initializing.value) return
     initializing.value = true
     loadingChats.value = true
+    clearWaiting()
     stopMessageEvents()
     try {
       const bid = await ensureBot()
@@ -576,6 +585,7 @@ export const useChatStore = defineStore('chat', () => {
   async function selectChat(targetChatId: string) {
     const cid = targetChatId.trim()
     if (!cid || cid === chatId.value) return
+    clearWaiting()
     chatId.value = cid
     loadingChats.value = true
     try {
@@ -588,6 +598,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function createNewChat() {
+    clearWaiting()
     loadingChats.value = true
     try {
       const bid = await ensureBot()
@@ -604,6 +615,7 @@ export const useChatStore = defineStore('chat', () => {
   async function removeChat(targetChatId: string) {
     const delId = targetChatId.trim()
     if (!delId) return
+    clearWaiting()
     loadingChats.value = true
     try {
       const bid = currentBotId.value ?? ''
