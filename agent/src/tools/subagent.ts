@@ -6,6 +6,8 @@ import { AuthFetcher } from '..'
 import { AgentAction, IdentityContext } from '../types/agent'
 import { SubagentRegistry } from '../registry'
 
+const MAX_SUBAGENT_CONTEXT = 20
+
 export interface SubagentToolParams {
   fetch: AuthFetcher
   model: ModelConfig
@@ -127,7 +129,7 @@ export const getSubagentTools = ({
         name: target.name,
         description: target.description,
       })
-      const updatedMessages = [...contextMessages, ...result.messages]
+      const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
       await saveContext(target.id, updatedMessages)
       return {
         success: true,
@@ -179,7 +181,7 @@ export const getSubagentTools = ({
             description: target.description,
             abortSignal: abortController.signal,
           })
-          const updatedMessages = [...contextMessages, ...result.messages]
+          const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
           try {
             await saveContext(target.id, updatedMessages)
           } catch (saveErr) {
@@ -323,7 +325,7 @@ export const getSubagentTools = ({
             description: target.description,
             abortSignal: abortController.signal,
           })
-          const updatedMessages = [...contextMessages, ...result.messages]
+          const updatedMessages = [...contextMessages, ...result.messages].slice(-MAX_SUBAGENT_CONTEXT)
           try {
             await saveContext(target.id, updatedMessages)
           } catch (saveErr) {
@@ -399,7 +401,7 @@ export const getSubagentTools = ({
           AgentAction.Skill,
           AgentAction.Memory,
         ],
-        mcpConnections,
+        // No external MCP for subagents — only builtin tools via getAgentTools
         identity,
         auth,
       },

@@ -123,7 +123,7 @@ export const createAgent = (
     { label: 'Image', tools: ['generate_image'], desc: 'generate image from text prompt (async, auto-delivered)' },
     { label: 'Schedule', tools: ['create_schedule', 'list_schedule', 'get_schedule', 'update_schedule', 'delete_schedule'], desc: 'manage cron-based recurring tasks' },
     { label: 'Skills', tools: ['use_skill', 'discover_skills', 'fork_skill'], desc: 'activate, search & import skills' },
-    { label: 'Subagent', tools: ['list_subagents', 'create_subagent', 'delete_subagent', 'query_subagent', 'spawn_subagent', 'check_subagent_run', 'kill_subagent_run', 'steer_subagent', 'list_subagent_runs'], desc: 'create & manage sub-agents' },
+    { label: 'Subagent', tools: ['list_subagents', 'create_subagent', 'delete_subagent', 'query_subagent', 'spawn_subagent', 'check_subagent_run', 'kill_subagent_run', 'steer_subagent', 'list_subagent_runs'], desc: 'create & manage sub-agents. ONLY use spawn_subagent when 2+ independent long-running tasks need parallel execution. For simple questions, single-step tasks, or sequential work — do it yourself, never spawn.' },
     { label: 'OpenViking', tools: ['ov_initialize', 'ov_find', 'ov_search', 'ov_read', 'ov_abstract', 'ov_overview', 'ov_ls', 'ov_tree', 'ov_add_resource', 'ov_rm', 'ov_session_commit'], desc: 'context database (see TOOLS.md for details)' },
   ]
 
@@ -299,6 +299,14 @@ export const createAgent = (
     })
   }
 
+  // Cache builtin MCP tool definitions to avoid repeated HTTP round-trips.
+  const mcpToolCache: {
+    tools: ToolSet
+    close: () => Promise<void>
+    extKey: string
+    expiry: number
+  } = { tools: {}, close: async () => {}, extKey: '', expiry: 0 }
+
   const getAgentTools = async (sessionId?: string) => {
     const baseUrl = normalizeBaseUrl(auth.baseUrl)
     const botId = identity.botId.trim()
@@ -311,22 +319,41 @@ export const createAgent = (
     }
     const baseHeaders = buildIdentityHeaders(identity, auth)
     const enabledExt = getEnabledExtendedTools()
+    const extKey = enabledExt.join(',')
     const builtinHeaders = enabledExt.length > 0
-      ? { ...baseHeaders, 'X-Memoh-Include-Tools': enabledExt.join(',') }
+      ? { ...baseHeaders, 'X-Memoh-Include-Tools': extKey }
       : baseHeaders
-    const builtins: MCPConnection[] = [
-      {
-        type: 'http',
-        name: 'builtin',
+
+    // Use cached builtin tools when available; always connect external MCP fresh.
+    let mcpTools: ToolSet
+    let closeMCP: () => Promise<void>
+
+    const cacheHit = mcpToolCache.expiry > Date.now()
+      && mcpToolCache.extKey === extKey
+      && Object.keys(mcpToolCache.tools).length > 0
+
+    if (!cacheHit) {
+      await mcpToolCache.close().catch(() => {})
+      const builtinConn: MCPConnection = {
+        type: 'http', name: 'builtin',
         url: `${baseUrl}/bots/${botId}/tools`,
         headers: builtinHeaders,
       }
-    ]
-    const { tools: mcpTools, close: closeMCP } = await getMCPTools([...builtins, ...mcpConnections], {
-      auth,
-      fetch,
-      botId,
-    })
+      const res = await getMCPTools([builtinConn], { auth, fetch, botId })
+      mcpToolCache.tools = res.tools
+      mcpToolCache.close = res.close
+      mcpToolCache.extKey = extKey
+      mcpToolCache.expiry = Date.now() + SYSTEM_FILE_CACHE_TTL_MS
+    }
+
+    if (mcpConnections.length > 0) {
+      const ext = await getMCPTools(mcpConnections, { auth, fetch, botId })
+      mcpTools = { ...mcpToolCache.tools, ...ext.tools }
+      closeMCP = ext.close
+    } else {
+      mcpTools = mcpToolCache.tools
+      closeMCP = async () => {}
+    }
     const tools = getTools(allowedActions, { fetch, model: modelConfig, backgroundModel: backgroundModelConfig, identity, auth, enableSkill, mcpConnections, registry, teamMembers, callDepth })
     const tierTools = createTierTools({ auth, identity, fetch })
     const merged = { ...tierTools, ...mcpTools, ...tools } as ToolSet
