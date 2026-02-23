@@ -63,21 +63,6 @@ func (s *Service) Create(ctx context.Context, botID string, req CreateRequest) (
 		Skills:      skillsPayload,
 	})
 	if err != nil {
-		// Unique conflict — try reviving a soft-deleted subagent with the same name.
-		if db.IsUniqueViolation(err) {
-			revived, revErr := s.queries.ReviveSubagent(ctx, sqlc.ReviveSubagentParams{
-				BotID:       pgBotID,
-				Name:        name,
-				Description: description,
-				Messages:    messagesPayload,
-				Metadata:    metadataPayload,
-				Skills:      skillsPayload,
-			})
-			if revErr != nil {
-				return Subagent{}, fmt.Errorf("create conflict and revive failed: %w (original: %v)", revErr, err)
-			}
-			return toSubagent(revived)
-		}
 		return Subagent{}, err
 	}
 	return toSubagent(row)

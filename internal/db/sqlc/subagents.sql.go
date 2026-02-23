@@ -12,9 +12,29 @@ import (
 )
 
 const createSubagent = `-- name: CreateSubagent :one
-INSERT INTO subagents (name, description, bot_id, messages, metadata, skills)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills
+WITH revived AS (
+  UPDATE subagents
+  SET deleted = false, deleted_at = NULL,
+      description = $2, messages = $4, metadata = $5, skills = $6, updated_at = now()
+  WHERE bot_id = $3 AND name = $1 AND deleted = true
+  RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills
+), inserted AS (
+  INSERT INTO subagents (name, description, bot_id, messages, metadata, skills)
+  SELECT $1, $2, $3, $4, $5, $6
+  WHERE NOT EXISTS (SELECT 1 FROM revived)
+    AND NOT EXISTS (SELECT 1 FROM subagents WHERE bot_id = $3 AND name = $1 AND deleted = false)
+  RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills
+), updated AS (
+  UPDATE subagents
+  SET description = $2, messages = $4, metadata = $5, skills = $6, updated_at = now()
+  WHERE bot_id = $3 AND name = $1 AND deleted = false
+    AND NOT EXISTS (SELECT 1 FROM revived)
+    AND NOT EXISTS (SELECT 1 FROM inserted)
+  RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills
+)
+SELECT * FROM revived
+UNION ALL SELECT * FROM inserted
+UNION ALL SELECT * FROM updated
 `
 
 type CreateSubagentParams struct {
@@ -116,53 +136,6 @@ func (q *Queries) ListSubagentsByBot(ctx context.Context, botID pgtype.UUID) ([]
 	return items, nil
 }
 
-const reviveSubagent = `-- name: ReviveSubagent :one
-UPDATE subagents
-SET deleted = false,
-    deleted_at = NULL,
-    description = $3,
-    messages = $4,
-    metadata = $5,
-    skills = $6,
-    updated_at = now()
-WHERE bot_id = $1 AND name = $2 AND deleted = true
-RETURNING id, name, description, created_at, updated_at, deleted, deleted_at, bot_id, messages, metadata, skills
-`
-
-type ReviveSubagentParams struct {
-	BotID       pgtype.UUID `json:"bot_id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Messages    []byte      `json:"messages"`
-	Metadata    []byte      `json:"metadata"`
-	Skills      []byte      `json:"skills"`
-}
-
-func (q *Queries) ReviveSubagent(ctx context.Context, arg ReviveSubagentParams) (Subagent, error) {
-	row := q.db.QueryRow(ctx, reviveSubagent,
-		arg.BotID,
-		arg.Name,
-		arg.Description,
-		arg.Messages,
-		arg.Metadata,
-		arg.Skills,
-	)
-	var i Subagent
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Deleted,
-		&i.DeletedAt,
-		&i.BotID,
-		&i.Messages,
-		&i.Metadata,
-		&i.Skills,
-	)
-	return i, err
-}
 
 const softDeleteSubagent = `-- name: SoftDeleteSubagent :exec
 UPDATE subagents
