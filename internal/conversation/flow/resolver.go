@@ -1550,7 +1550,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	}
 	url := r.gatewayBaseURL + "/chat/stream"
 	r.logger.Info("gateway stream request", slog.String("url", url), slog.String("body_prefix", truncate(string(body), 200)))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
