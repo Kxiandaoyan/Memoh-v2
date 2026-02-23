@@ -99,11 +99,13 @@ export const createAgent = (
   const registry = new SubagentRegistry()
   const enabledSkills: AgentSkill[] = []
 
-  const enableSkill = (skill: string) => {
+  const enableSkill = (skill: string): { content: string; description: string } | null => {
     const agentSkill = skills.find((s) => s.name === skill)
-    if (agentSkill) {
+    if (!agentSkill) return null
+    if (!enabledSkills.some((s) => s.name === skill)) {
       enabledSkills.push(agentSkill)
     }
+    return { content: agentSkill.content, description: agentSkill.description }
   }
 
   const getEnabledSkills = () => {

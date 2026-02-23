@@ -3223,10 +3223,10 @@ func isCJK(r rune) bool {
 // repairToolPairing removes tool_result messages whose matching tool_use was
 // dropped, and tool_use messages whose matching tool_result is missing.
 // This prevents API errors with providers that require strict pairing.
+// Handles both OpenAI format (top-level ToolCalls) and Vercel AI SDK format
+// (tool-call parts inside content array).
 func repairToolPairing(messages []conversation.ModelMessage) []conversation.ModelMessage {
-	// Collect all tool_call IDs present in assistant messages (tool_use).
 	toolUseIDs := make(map[string]struct{})
-	// Collect all tool_call IDs present in tool role messages (tool_result).
 	toolResultIDs := make(map[string]struct{})
 
 	for _, msg := range messages {
@@ -3239,6 +3239,8 @@ func repairToolPairing(messages []conversation.ModelMessage) []conversation.Mode
 					toolUseIDs[tc.ID] = struct{}{}
 				}
 			}
+			// Vercel AI SDK format: tool-call parts inside content array
+			extractContentToolCallIDs(msg.Content, toolUseIDs)
 		}
 	}
 
@@ -3253,26 +3255,68 @@ func repairToolPairing(messages []conversation.ModelMessage) []conversation.Mode
 		repaired = append(repaired, msg)
 	}
 
-	// Second pass: drop assistant tool_use calls whose results were dropped.
-	// Only drop if ALL tool calls in the message are orphaned.
 	final := make([]conversation.ModelMessage, 0, len(repaired))
 	for _, msg := range repaired {
-		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
-			allOrphaned := true
-			for _, tc := range msg.ToolCalls {
-				if _, ok := toolResultIDs[tc.ID]; ok {
-					allOrphaned = false
-					break
+		if msg.Role == "assistant" {
+			ids := collectAssistantToolIDs(msg)
+			if len(ids) > 0 {
+				allOrphaned := true
+				for _, id := range ids {
+					if _, ok := toolResultIDs[id]; ok {
+						allOrphaned = false
+						break
+					}
 				}
-			}
-			if allOrphaned && !msg.HasContent() {
-				continue
+				if allOrphaned && !msg.HasContent() {
+					continue
+				}
 			}
 		}
 		final = append(final, msg)
 	}
 
 	return final
+}
+
+func extractContentToolCallIDs(content json.RawMessage, ids map[string]struct{}) {
+	if len(content) == 0 {
+		return
+	}
+	var parts []struct {
+		Type       string `json:"type"`
+		ToolCallID string `json:"toolCallId"`
+	}
+	if err := json.Unmarshal(content, &parts); err != nil {
+		return
+	}
+	for _, p := range parts {
+		if p.Type == "tool-call" && strings.TrimSpace(p.ToolCallID) != "" {
+			ids[p.ToolCallID] = struct{}{}
+		}
+	}
+}
+
+func collectAssistantToolIDs(msg conversation.ModelMessage) []string {
+	var ids []string
+	for _, tc := range msg.ToolCalls {
+		if strings.TrimSpace(tc.ID) != "" {
+			ids = append(ids, tc.ID)
+		}
+	}
+	if len(msg.Content) > 0 {
+		var parts []struct {
+			Type       string `json:"type"`
+			ToolCallID string `json:"toolCallId"`
+		}
+		if err := json.Unmarshal(msg.Content, &parts); err == nil {
+			for _, p := range parts {
+				if p.Type == "tool-call" && strings.TrimSpace(p.ToolCallID) != "" {
+					ids = append(ids, p.ToolCallID)
+				}
+			}
+		}
+	}
+	return ids
 }
 
 // ── Context summarization ─────────────────────────────────────────────
