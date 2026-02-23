@@ -661,7 +661,6 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	}
 
 	preFilterCount := len(usableSkills)
-	usableSkills = filterSkillsByRelevance(usableSkills, req.Query, 10)
 	skillDur := int(time.Since(skillStart).Milliseconds())
 	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 		processlog.StepSkillsLoaded, processlog.LevelInfo, "Skills loaded",
