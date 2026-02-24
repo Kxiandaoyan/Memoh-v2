@@ -18,6 +18,9 @@ import (
 
 const (
 	toolWebSearch = "web_search"
+
+	// SearXNG local instance (deployed alongside via docker-compose).
+	searxngBaseURL = "http://searxng:8080"
 )
 
 type Executor struct {
@@ -38,9 +41,6 @@ func NewExecutor(log *slog.Logger, settingsSvc *settings.Service, searchSvc *sea
 }
 
 func (p *Executor) ListTools(ctx context.Context, session mcpgw.ToolSessionContext) ([]mcpgw.ToolDescriptor, error) {
-	if p.settings == nil || p.searchProviders == nil {
-		return []mcpgw.ToolDescriptor{}, nil
-	}
 	return []mcpgw.ToolDescriptor{
 		{
 			Name:        toolWebSearch,
@@ -58,8 +58,44 @@ func (p *Executor) ListTools(ctx context.Context, session mcpgw.ToolSessionConte
 }
 
 func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContext, toolName string, arguments map[string]any) (map[string]any, error) {
+	switch toolName {
+	case toolWebSearch:
+		return p.callWebSearchWithFallback(ctx, session, arguments)
+	default:
+		return nil, mcpgw.ErrToolNotFound
+	}
+}
+
+// callWebSearchWithFallback tries SearXNG first, then falls back to the
+// bot's configured commercial search provider.
+func (p *Executor) callWebSearchWithFallback(ctx context.Context, session mcpgw.ToolSessionContext, arguments map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(mcpgw.StringArg(arguments, "query"))
+	if query == "" {
+		return mcpgw.BuildToolErrorResult("query is required"), nil
+	}
+	count := 5
+	if value, ok, err := mcpgw.IntArg(arguments, "count"); err != nil {
+		return mcpgw.BuildToolErrorResult(err.Error()), nil
+	} else if ok && value > 0 {
+		count = value
+	}
+	if count > 20 {
+		count = 20
+	}
+
+	// 1. Try SearXNG (local, free, no API key needed).
+	result, err := p.callSearXNGSearch(ctx, query, count)
+	if err == nil {
+		return result, nil
+	}
+	p.logger.Warn("searxng search failed, falling back to configured provider",
+		slog.String("query", query),
+		slog.String("error", err.Error()),
+	)
+
+	// 2. Fallback to configured commercial provider.
 	if p.settings == nil || p.searchProviders == nil {
-		return mcpgw.BuildToolErrorResult("web tools are not available"), nil
+		return mcpgw.BuildToolErrorResult("searxng unavailable and no fallback search provider configured"), nil
 	}
 	botID := strings.TrimSpace(session.BotID)
 	if botID == "" {
@@ -71,19 +107,13 @@ func (p *Executor) CallTool(ctx context.Context, session mcpgw.ToolSessionContex
 	}
 	searchProviderID := strings.TrimSpace(botSettings.SearchProviderID)
 	if searchProviderID == "" {
-		return mcpgw.BuildToolErrorResult("search provider not configured for this bot"), nil
+		return mcpgw.BuildToolErrorResult("searxng unavailable and no fallback search provider configured"), nil
 	}
 	provider, err := p.searchProviders.GetRawByID(ctx, searchProviderID)
 	if err != nil {
 		return mcpgw.BuildToolErrorResult(err.Error()), nil
 	}
-
-	switch toolName {
-	case toolWebSearch:
-		return p.callWebSearch(ctx, provider.Provider, provider.Config, arguments)
-	default:
-		return nil, mcpgw.ErrToolNotFound
-	}
+	return p.callWebSearch(ctx, provider.Provider, provider.Config, arguments)
 }
 
 func (p *Executor) callWebSearch(ctx context.Context, providerName string, configJSON []byte, arguments map[string]any) (map[string]any, error) {
@@ -230,6 +260,73 @@ func (p *Executor) callSerpApiSearch(ctx context.Context, configJSON []byte, que
 			"title":       item.Title,
 			"url":         item.Link,
 			"description": item.Snippet,
+		})
+	}
+	return mcpgw.BuildToolSuccessResult(map[string]any{
+		"query":   query,
+		"results": results,
+	}), nil
+}
+
+// callSearXNGSearch queries the local SearXNG instance (docker-compose service).
+// Returns an error (instead of a tool-error map) so the caller can fallback.
+func (p *Executor) callSearXNGSearch(ctx context.Context, query string, count int) (map[string]any, error) {
+	reqURL, _ := url.Parse(searxngBaseURL + "/search")
+	params := reqURL.Query()
+	params.Set("q", query)
+	params.Set("format", "json")
+	params.Set("categories", "general")
+	reqURL.RawQuery = params.Encode()
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("searxng: build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("searxng: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("searxng: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("searxng: read body: %w", err)
+	}
+
+	var raw struct {
+		Results []struct {
+			Title   string  `json:"title"`
+			URL     string  `json:"url"`
+			Content string  `json:"content"`
+			Score   float64 `json:"score"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("searxng: invalid JSON: %w", err)
+	}
+	if len(raw.Results) == 0 {
+		return nil, fmt.Errorf("searxng: no results")
+	}
+
+	// SearXNG doesn't support count param; truncate client-side.
+	items := raw.Results
+	if len(items) > count {
+		items = items[:count]
+	}
+
+	results := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		results = append(results, map[string]any{
+			"title":       item.Title,
+			"url":         item.URL,
+			"description": item.Content,
 		})
 	}
 	return mcpgw.BuildToolSuccessResult(map[string]any{

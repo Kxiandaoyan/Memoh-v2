@@ -77,6 +77,14 @@
     "pdf": {
       "order": 290,
       "enabled": true
+    },
+    "frontend-slides": {
+      "order": 300,
+      "enabled": true
+    },
+    "x-tweet-fetcher": {
+      "order": 310,
+      "enabled": true
     }
   }
 }
