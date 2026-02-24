@@ -1179,7 +1179,7 @@ func formatTokenUsage(usage *gatewayUsage) string {
 
 // broadcastToOtherChannels sends assistant outputs to all other bound channels
 // for the same bot. Fire-and-forget: errors are logged, never returned.
-// It skips the originating route (matched by platform+replyTarget) and web routes.
+// It skips all routes on the same platform as the origin, and web routes.
 func (p *ChannelInboundProcessor) broadcastToOtherChannels(
 	botID, chatID, originPlatform, originTarget string,
 	outputs []conversation.AssistantOutput,
@@ -1202,7 +1202,7 @@ func (p *ChannelInboundProcessor) broadcastToOtherChannels(
 			continue
 		}
 		target := strings.TrimSpace(r.ReplyTarget)
-		if platform == originPlatform && target == originTarget {
+		if platform == originPlatform {
 			continue
 		}
 		if target == "" {

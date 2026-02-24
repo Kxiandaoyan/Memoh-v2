@@ -704,3 +704,72 @@ func TestChannelInboundProcessorProcessingFailedNotifyErrorDoesNotOverrideChatEr
 		t.Fatalf("unexpected processing status lifecycle: %+v", notifier.events)
 	}
 }
+
+// --- broadcast filtering tests ---
+
+type fakeBroadcaster struct {
+	calls []fakeBroadcastCall
+}
+
+type fakeBroadcastCall struct {
+	BotID       string
+	ChannelType channel.ChannelType
+	Target      string
+}
+
+func (b *fakeBroadcaster) Send(ctx context.Context, botID string, ct channel.ChannelType, req channel.SendRequest) error {
+	b.calls = append(b.calls, fakeBroadcastCall{BotID: botID, ChannelType: ct, Target: req.Target})
+	return nil
+}
+
+type fakeRouteLister struct {
+	routes []route.Route
+}
+
+func (l *fakeRouteLister) List(ctx context.Context, conversationID string) ([]route.Route, error) {
+	return l.routes, nil
+}
+
+func TestBroadcastSkipsSamePlatform(t *testing.T) {
+	bc := &fakeBroadcaster{}
+	rl := &fakeRouteLister{
+		routes: []route.Route{
+			{Platform: "feishu", ReplyTarget: "chat_id:oc_origin"},   // same platform, same target (origin)
+			{Platform: "feishu", ReplyTarget: "chat_id:oc_other"},    // same platform, different target
+			{Platform: "telegram", ReplyTarget: "tg_chat_123"},       // cross-platform — should receive
+			{Platform: "web", ReplyTarget: "web_session_1"},          // web — always skipped
+			{Platform: "slack", ReplyTarget: "C0001"},                // cross-platform — should receive
+		},
+	}
+
+	p := &ChannelInboundProcessor{logger: slog.Default(), broadcaster: bc, routeLister: rl}
+
+	outputs := []conversation.AssistantOutput{
+		{Content: "hello from bot"},
+	}
+	p.broadcastToOtherChannels("bot-1", "chat-1", "feishu", "chat_id:oc_origin", outputs)
+
+	// Expect exactly 2 sends: telegram + slack
+	if len(bc.calls) != 2 {
+		t.Fatalf("expected 2 broadcast calls, got %d: %+v", len(bc.calls), bc.calls)
+	}
+	for _, c := range bc.calls {
+		if string(c.ChannelType) == "feishu" {
+			t.Errorf("same-platform route should be skipped, got feishu target %s", c.Target)
+		}
+		if string(c.ChannelType) == "web" {
+			t.Errorf("web route should be skipped")
+		}
+	}
+	// Verify the two that did go through
+	targets := map[string]bool{}
+	for _, c := range bc.calls {
+		targets[c.Target] = true
+	}
+	if !targets["tg_chat_123"] {
+		t.Error("expected telegram route to receive broadcast")
+	}
+	if !targets["C0001"] {
+		t.Error("expected slack route to receive broadcast")
+	}
+}
