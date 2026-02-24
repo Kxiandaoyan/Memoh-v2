@@ -14,6 +14,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -45,7 +46,15 @@ const (
 	solutionsMinScoreThreshold     = 0.3
 	solutionsNamespace             = "solutions"
 	solutionsScopeID               = "global"
+
+	repetitiveResponseJaccardThreshold = 0.85
+	lastResponseTTL                    = 30 * time.Minute
 )
+
+type lastResponseEntry struct {
+	text      string
+	timestamp time.Time
+}
 
 func applyTemporalDecay(items []memoryContextItem) {
 	now := time.Now()
@@ -84,6 +93,46 @@ func textJaccardSimilarity(a, b string) float64 {
 		setB[w] = struct{}{}
 	}
 	return jaccardSimilarity(setA, setB)
+}
+
+// checkRepetitiveResponse detects if the current assistant response is
+// identical or highly similar to the previous one for the same chat.
+// It always updates the cache with the current response text.
+func (r *Resolver) checkRepetitiveResponse(chatID string, messages []conversation.ModelMessage) bool {
+	// Extract the last assistant text from the round.
+	var currentText string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			currentText = messages[i].TextContent()
+			break
+		}
+	}
+	if currentText == "" {
+		return false
+	}
+
+	// Load previous entry and store current one.
+	prev, _ := r.lastResponses.Swap(chatID, &lastResponseEntry{
+		text:      currentText,
+		timestamp: time.Now(),
+	})
+	if prev == nil {
+		return false
+	}
+	entry := prev.(*lastResponseEntry)
+
+	// Expired entries are not comparable.
+	if time.Since(entry.timestamp) > lastResponseTTL {
+		return false
+	}
+
+	// Exact match.
+	if entry.text == currentText {
+		return true
+	}
+
+	// Jaccard similarity check.
+	return textJaccardSimilarity(entry.text, currentText) >= repetitiveResponseJaccardThreshold
 }
 
 func applyMMR(items []memoryContextItem, lambda float64) []memoryContextItem {
@@ -182,6 +231,7 @@ type Resolver struct {
 	logger           *slog.Logger
 	httpClient       *http.Client
 	streamingClient  *http.Client
+	lastResponses    sync.Map // key: chatID (string), value: *lastResponseEntry
 }
 
 // NewResolver creates a Resolver that communicates with the agent gateway.
@@ -2305,6 +2355,30 @@ func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.Cha
 	if len(usage) > 0 {
 		usagePtr = usage[0]
 	}
+
+	// --- Repetitive response detection ---
+	if chatID := strings.TrimSpace(req.ChatID); chatID != "" {
+		if r.checkRepetitiveResponse(chatID, fullRound) {
+			r.logger.Warn("repetitive response detected",
+				slog.String("bot_id", req.BotID),
+				slog.String("chat_id", req.ChatID),
+			)
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepLLMResponseReceived, processlog.LevelWarn,
+				"Repetitive response detected — LLM returned same content as previous turn",
+				nil, 0)
+			// Append warning to the last assistant message.
+			for i := len(fullRound) - 1; i >= 0; i-- {
+				if fullRound[i].Role == "assistant" {
+					text := fullRound[i].TextContent()
+					fullRound[i].Content = conversation.NewTextContent(
+						text + "\n\n[⚠️ Warning: This response appears identical to the previous one. The model may be stuck in a loop.]")
+					break
+				}
+			}
+		}
+	}
+
 	r.storeMessages(ctx, req, fullRound, usagePtr)
 
 	// For memory extraction, always include the user's query so the LLM
