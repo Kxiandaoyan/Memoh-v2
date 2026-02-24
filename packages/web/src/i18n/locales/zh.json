@@ -419,7 +419,8 @@
       "skills": "技能",
       "heartbeat": "心跳",
       "persona": "人设",
-      "settings": "设置"
+      "settings": "设置",
+      "team": "团队"
     },
     "files": {
       "title": "Bot 文件",
@@ -916,5 +917,38 @@
       "model_fallback": "模型降级",
       "skills_filtered": "技能过滤"
     }
+  },
+  "teams": {
+    "createTeam": "组建团队",
+    "createTeamDescription": "选择成员机器人，自动生成一个团队大总管，实现多机器人协作。",
+    "step1": "选择成员",
+    "step2": "团队信息",
+    "step3": "确认创建",
+    "selectMembers": "选择团队成员",
+    "selectMembersHint": "选择要加入团队的 Bot，它们将能够互相调用协作。",
+    "noBotsAvailable": "没有可用的 Bot，请先创建 Bot。",
+    "memberRoles": "成员角色描述",
+    "roleDescriptionPlaceholder": "描述该成员在团队中的角色（可选）",
+    "teamName": "团队名称",
+    "teamNamePlaceholder": "输入团队名称",
+    "heartbeatPrompt": "心跳提示词",
+    "heartbeatPromptPlaceholder": "团队大总管的定期心跳提示词（可选）",
+    "heartbeatPromptHint": "如果设置，大总管会定期执行此提示词来协调团队工作。",
+    "memberCount": "共 {count} 名成员",
+    "confirmNote": "创建后将自动生成一个大总管 Bot 来管理团队。",
+    "create": "创建团队",
+    "teamGroup": "团队",
+    "independent": "独立 Bot",
+    "manager": "大总管",
+    "members": "成员",
+    "noMembers": "暂无成员",
+    "notInTeam": "该 Bot 不属于任何团队。",
+    "callLogs": "调用记录",
+    "noCallLogs": "暂无调用记录。",
+    "next": "下一步",
+    "createSuccess": "团队创建成功",
+    "createFailed": "团队创建失败",
+    "dissolve": "解散团队",
+    "dissolveConfirm": "确定要解散该团队吗？此操作不可撤销。"
   }
 }

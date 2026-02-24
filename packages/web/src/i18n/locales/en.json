@@ -423,7 +423,8 @@
       "skills": "Skills",
       "heartbeat": "Heartbeat",
       "persona": "Persona",
-      "settings": "Settings"
+      "settings": "Settings",
+      "team": "Team"
     },
     "files": {
       "title": "Bot Files",
@@ -920,5 +921,38 @@
       "model_fallback": "Model Fallback",
       "skills_filtered": "Skills Filter"
     }
+  },
+  "teams": {
+    "createTeam": "Build a Team",
+    "createTeamDescription": "Select member bots and automatically generate a manager bot to coordinate multi-bot collaboration.",
+    "step1": "Select Members",
+    "step2": "Team Info",
+    "step3": "Confirm",
+    "selectMembers": "Select Team Members",
+    "selectMembersHint": "Choose bots to join the team. They will be able to call each other for collaboration.",
+    "noBotsAvailable": "No bots available. Please create a bot first.",
+    "memberRoles": "Member Role Descriptions",
+    "roleDescriptionPlaceholder": "Describe this member's role in the team (optional)",
+    "teamName": "Team Name",
+    "teamNamePlaceholder": "Enter team name",
+    "heartbeatPrompt": "Heartbeat Prompt",
+    "heartbeatPromptPlaceholder": "Periodic heartbeat prompt for the team manager (optional)",
+    "heartbeatPromptHint": "If set, the manager will periodically execute this prompt to coordinate team work.",
+    "memberCount": "{count} members",
+    "confirmNote": "A manager bot will be automatically created to manage the team.",
+    "create": "Create Team",
+    "teamGroup": "Team",
+    "independent": "Independent Bots",
+    "manager": "Manager",
+    "members": "Members",
+    "noMembers": "No members",
+    "notInTeam": "This bot is not part of any team.",
+    "callLogs": "Call Logs",
+    "noCallLogs": "No call logs yet.",
+    "next": "Next",
+    "createSuccess": "Team created successfully",
+    "createFailed": "Failed to create team",
+    "dissolve": "Dissolve Team",
+    "dissolveConfirm": "Are you sure you want to dissolve this team? This action cannot be undone."
   }
 }

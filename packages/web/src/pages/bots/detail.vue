@@ -140,6 +140,10 @@
         <TabsTrigger value="settings">
           {{ $t('bots.tabs.settings') }}
         </TabsTrigger>
+        <TabsTrigger v-if="botInTeam" value="team">
+          <FontAwesomeIcon :icon="['fas', 'users']" class="mr-1.5 size-3" />
+          {{ $t('bots.tabs.team') }}
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent
@@ -636,6 +640,13 @@
           :bot-type="bot?.type"
         />
       </TabsContent>
+      <TabsContent
+        v-if="botInTeam"
+        value="team"
+        class="mt-6"
+      >
+        <BotTeam :bot-id="botId" />
+      </TabsContent>
     </Tabs>
 
     <!-- Edit avatar dialog -->
@@ -744,6 +755,8 @@ import BotSubagents from './components/bot-subagents.vue'
 import BotEvolution from './components/bot-evolution.vue'
 import BotHeartbeat from './components/bot-heartbeat.vue'
 import BotHistory from './components/bot-history.vue'
+import BotTeam from './components/bot-team.vue'
+import { useTeams } from '@/composables/use-teams'
 
 type BotCheck = BotsBotCheck
 type BotContainerInfo = HandlersGetContainerResponse
@@ -753,6 +766,9 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const botId = computed(() => route.params.botId as string)
+
+const { teamBotIds } = useTeams()
+const botInTeam = computed(() => teamBotIds.value.has(botId.value))
 
 const { data: bot } = useQuery({
   key: () => ['bot', botId.value],
@@ -819,6 +835,13 @@ watch(activeTab, (val) => {
 watch(() => route.query.tab, (val) => {
   if (val && val !== activeTab.value) {
     activeTab.value = val as string
+  }
+})
+
+// If team tab is active but bot leaves team, fall back to overview
+watch(botInTeam, (inTeam) => {
+  if (!inTeam && activeTab.value === 'team') {
+    activeTab.value = 'overview'
   }
 })
 const avatarDialogOpen = ref(false)
