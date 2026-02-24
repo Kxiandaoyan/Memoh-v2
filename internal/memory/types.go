@@ -152,6 +152,7 @@ type ExtractRequest struct {
 	Messages []Message      `json:"messages"`
 	Filters  map[string]any `json:"filters,omitempty"`
 	Metadata map[string]any `json:"metadata,omitempty"`
+	Area     string         `json:"area,omitempty"` // "solutions" uses dedicated prompt
 }
 
 type ExtractResponse struct {

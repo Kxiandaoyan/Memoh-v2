@@ -71,7 +71,9 @@ func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, erro
 	if req.Message == "" && len(req.Messages) == 0 {
 		return SearchResponse{}, fmt.Errorf("message or messages is required")
 	}
-	if req.BotID == "" && req.AgentID == "" && req.RunID == "" {
+	// Allow global SOLUTIONS area to skip bot_id requirement
+	isSolutions := req.Filters["namespace"] == "solutions"
+	if !isSolutions && req.BotID == "" && req.AgentID == "" && req.RunID == "" {
 		return SearchResponse{}, fmt.Errorf("bot_id, agent_id or run_id is required")
 	}
 
@@ -87,10 +89,15 @@ func (s *Service) Add(ctx context.Context, req AddRequest) (SearchResponse, erro
 		return s.addRawMessages(ctx, messages, filters, req.Metadata, embeddingEnabled)
 	}
 
+	area := ""
+	if ns, ok := filters["namespace"].(string); ok && ns == "solutions" {
+		area = "solutions"
+	}
 	extractResp, err := s.llm.Extract(ctx, ExtractRequest{
 		Messages: messages,
 		Filters:  filters,
 		Metadata: req.Metadata,
+		Area:     area,
 	})
 	if err != nil {
 		s.logger.Warn("memory.Add: extract failed", slog.String("bot_id", req.BotID), slog.Any("error", err))

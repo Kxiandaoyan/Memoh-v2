@@ -40,6 +40,11 @@ const (
 	memoryMinScoreThreshold    = 0.1
 	memoryDecayHalfLifeDays    = 30.0
 	sharedMemoryNamespace      = "bot"
+
+	solutionsContextLimit          = 2
+	solutionsMinScoreThreshold     = 0.3
+	solutionsNamespace             = "solutions"
+	solutionsScopeID               = "global"
 )
 
 func applyTemporalDecay(items []memoryContextItem) {
@@ -2080,6 +2085,37 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 		results = append(results, memoryContextItem{Namespace: sharedMemoryNamespace, Item: item})
 	}
 
+	// Search global SOLUTIONS area
+	solFilters := map[string]any{
+		"namespace": solutionsNamespace,
+		"scopeId":   solutionsScopeID,
+	}
+	solResp, solErr := r.memoryService.Search(ctx, memory.SearchRequest{
+		Query:   req.Query,
+		Limit:   solutionsContextLimit,
+		Filters: solFilters,
+		NoStats: true,
+	})
+	if solErr == nil {
+		for _, item := range solResp.Results {
+			if item.Score < solutionsMinScoreThreshold {
+				continue
+			}
+			key := strings.TrimSpace(item.ID)
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			results = append(results, memoryContextItem{
+				Namespace: solutionsNamespace,
+				Item:      item,
+			})
+		}
+	}
+
 	if filteredByScore > 0 || len(results) > 0 {
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
 			processlog.StepMemoryFiltered, processlog.LevelInfo, "Memory relevance filtering applied",
@@ -2637,6 +2673,12 @@ func (r *Resolver) storeMemory(ctx context.Context, botID string, messages []con
 	}
 
 	r.addMemory(ctx, botID, memMsgs, sharedMemoryNamespace, botID, mtc)
+
+	// Async: extract and store global SOLUTIONS
+	go func() {
+		defer func() { recover() }()
+		r.addSolutions(context.WithoutCancel(ctx), botID, memMsgs, mtc)
+	}()
 }
 
 func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Message, namespace, scopeID string, mtc memoryTraceCtx) {
@@ -2692,6 +2734,38 @@ func (r *Resolver) addMemory(ctx context.Context, botID string, msgs []memory.Me
 			"results_count":     len(result.Results),
 			"extracted_preview":  extractedPreview,
 		}, durationMs)
+}
+
+func (r *Resolver) addSolutions(ctx context.Context, botID string, msgs []memory.Message, mtc memoryTraceCtx) {
+	if r.memoryService == nil {
+		return
+	}
+	start := time.Now()
+	filters := map[string]any{
+		"namespace": solutionsNamespace,
+		"scopeId":   solutionsScopeID,
+	}
+	result, err := r.memoryService.Add(ctx, memory.AddRequest{
+		Messages: msgs,
+		Filters:  filters,
+	})
+	durationMs := int(time.Since(start).Milliseconds())
+	if err != nil {
+		if r.logger != nil {
+			r.logger.Warn("addSolutions failed",
+				slog.String("bot_id", botID),
+				slog.Any("error", err),
+			)
+		}
+		return
+	}
+	if r.logger != nil {
+		r.logger.Info("solutions extracted",
+			slog.String("bot_id", botID),
+			slog.Int("results_count", len(result.Results)),
+			slog.Int("duration_ms", durationMs),
+		)
+	}
 }
 
 // --- model failover ---

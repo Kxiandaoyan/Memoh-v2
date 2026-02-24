@@ -53,7 +53,12 @@ func (c *LLMClient) Extract(ctx context.Context, req ExtractRequest) (ExtractRes
 	}
 	c.logger.Debug("memory.llm.Extract: starting", slog.Int("message_count", len(req.Messages)))
 	parsedMessages := strings.Join(formatMessages(req.Messages), "\n")
-	systemPrompt, userPrompt := getFactRetrievalMessages(parsedMessages)
+	var systemPrompt, userPrompt string
+	if req.Area == "solutions" {
+		systemPrompt, userPrompt = getSolutionExtractionMessages(parsedMessages)
+	} else {
+		systemPrompt, userPrompt = getFactRetrievalMessages(parsedMessages)
+	}
 	content, err := c.callChat(ctx, []chatMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},

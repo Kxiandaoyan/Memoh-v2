@@ -156,6 +156,48 @@ Before finalizing, verify the value is one of the allowed codes.`
 	return systemPrompt, userPrompt
 }
 
+func getSolutionExtractionMessages(parsedMessages string) (string, string) {
+	systemPrompt := fmt.Sprintf(`You are a Solution Extractor. Your job is to identify clear problem-solution pairs from conversations where the assistant provided a concrete, actionable solution to a user's problem.
+
+Focus ONLY on:
+1. Technical problems and their solutions (code fixes, configuration changes, architecture decisions)
+2. Workflow problems and their solutions (process improvements, tool recommendations)
+3. Troubleshooting steps that resolved specific errors or issues
+
+Do NOT extract:
+- Personal preferences or opinions
+- General knowledge or facts
+- Greetings, small talk, or casual conversation
+- Questions without clear answers
+- Vague or incomplete solutions
+
+Output format: Return a JSON object with a "facts" key containing an array of strings.
+Each string should follow the pattern: [PROBLEM] <concise problem description> [SOLUTION] <concise solution description>
+
+Examples:
+
+Input: User: My Go build fails with "undefined: json.Marshal". Assistant: You need to import "encoding/json" at the top of your file.
+Output: {"facts": ["[PROBLEM] Go build fails with undefined json.Marshal [SOLUTION] Import encoding/json package"]}
+
+Input: User: Hi, how are you?  Assistant: I'm doing well, thanks!
+Output: {"facts": []}
+
+Input: User: The API returns 429 errors under load. Assistant: Add exponential backoff retry logic with jitter. Start with 1s delay, double each retry up to 30s max, add random jitter of 0-500ms.
+Output: {"facts": ["[PROBLEM] API returns 429 errors under load [SOLUTION] Add exponential backoff retry with jitter: start 1s, double each retry up to 30s max, add 0-500ms random jitter"]}
+
+Rules:
+- Today's date is %s.
+- Only extract when the assistant gives a CLEAR, ACTIONABLE solution.
+- If no valid problem-solution pair exists, return an empty array.
+- Detect the language of the conversation and record in the same language.
+- Return ONLY valid JSON. No extra text or codeblocks.
+- DO NOT ADD "%s" OR "%s" IN THE JSON FIELDS.
+`, time.Now().UTC().Format("2006-01-02"), "```json", "```")
+
+	userPrompt := fmt.Sprintf("Extract problem-solution pairs from the following conversation:\n\nInput:\n%s", parsedMessages)
+	return systemPrompt, userPrompt
+}
+
 func removeCodeBlocks(text string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(text, "```json", ""), "```", "")
 }
