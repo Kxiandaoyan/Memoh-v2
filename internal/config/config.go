@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -94,6 +95,9 @@ type AgentGatewayConfig struct {
 	// In Docker this is the service DNS name (e.g. "memoh-agent").
 	// When empty, falls back to Host (with 0.0.0.0 replaced by 127.0.0.1).
 	PublicHost string `toml:"public_host"`
+	// TimeoutSeconds is the HTTP client timeout for gateway requests.
+	// Defaults to 600 seconds when unset or zero.
+	TimeoutSeconds int `toml:"timeout_seconds"`
 }
 
 type SmitheryConfig struct {
@@ -114,6 +118,14 @@ func (c AgentGatewayConfig) BaseURL() string {
 		port = 8081
 	}
 	return "http://" + host + ":" + fmt.Sprint(port)
+}
+
+// GatewayTimeout returns the HTTP client timeout for gateway requests.
+func (c AgentGatewayConfig) GatewayTimeout() time.Duration {
+	if c.TimeoutSeconds > 0 {
+		return time.Duration(c.TimeoutSeconds) * time.Second
+	}
+	return 600 * time.Second
 }
 
 func Load(path string) (Config, error) {

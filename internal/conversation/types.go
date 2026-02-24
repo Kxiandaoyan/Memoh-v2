@@ -249,6 +249,8 @@ type ChatRequest struct {
 	// TaskType indicates whether this is a chat or background task (heartbeat/schedule/subagent).
 	// Background tasks may use a cheaper model when configured.
 	TaskType string `json:"-"`
+	// FileAttachments holds files created during streaming, to be persisted in message metadata.
+	FileAttachments []FileAttachment `json:"-"`
 }
 
 // TokenUsage summarises token consumption for a single request.
@@ -270,8 +272,15 @@ type ChatResponse struct {
 // StreamChunk is a raw JSON chunk from the streaming response.
 type StreamChunk = json.RawMessage
 
+// FileAttachment represents a file created by the bot inside its container.
+type FileAttachment struct {
+	Path string `json:"path"`
+	Name string `json:"name"`
+}
+
 // AssistantOutput holds extracted assistant content for downstream consumers.
 type AssistantOutput struct {
-	Content string
-	Parts   []ContentPart
+	Content     string
+	Parts       []ContentPart
+	Attachments []FileAttachment
 }

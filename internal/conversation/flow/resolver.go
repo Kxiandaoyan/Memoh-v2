@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -326,9 +327,15 @@ type gatewayRequest struct {
 }
 
 type gatewayResponse struct {
-	Messages []conversation.ModelMessage `json:"messages"`
-	Skills   []string                    `json:"skills"`
-	Usage    *gatewayUsage               `json:"usage,omitempty"`
+	Messages    []conversation.ModelMessage `json:"messages"`
+	Skills      []string                    `json:"skills"`
+	Usage       *gatewayUsage               `json:"usage,omitempty"`
+	Attachments []gatewayFileAttachment     `json:"attachments,omitempty"`
+}
+
+type gatewayFileAttachment struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
 }
 
 type gatewayUsage struct {
@@ -868,6 +875,16 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 			"usage":            resp.Usage,
 		}, syncDur)
 
+	// Extract file attachments from sync gateway response.
+	req.FileAttachments = extractGatewayAttachments(resp.Attachments)
+	if len(req.FileAttachments) > 0 {
+		r.logger.Debug("Chat: collected file attachments from sync response",
+			slog.Int("count", len(req.FileAttachments)),
+			slog.String("bot_id", req.BotID),
+			slog.String("chat_id", req.ChatID),
+		)
+	}
+
 	if err := r.storeRoundWithTrace(ctx, req, rc.traceID, resp.Messages, resp.Usage); err != nil {
 		return conversation.ChatResponse{}, err
 	}
@@ -1052,6 +1069,9 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 			"message_count":    len(resp.Messages),
 			"response_preview": responsePreview,
 		}, 0)
+
+	// Extract file attachments from sync trigger response.
+	req.FileAttachments = extractGatewayAttachments(resp.Attachments)
 
 	if err := r.storeRound(ctx, req, resp.Messages, resp.Usage); err != nil {
 		r.logger.Warn("executeTrigger: storeRound failed", slog.String("bot_id", p.botID), slog.Any("error", err))
@@ -1603,10 +1623,14 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		// Parse tool call events for process logging.
 		r.logToolCallEvent(ctx, req, traceID, data, toolCallTimers)
 
+		// Collect file attachments from attachment_delta events.
+		r.collectStreamAttachments(&req, data)
+
 		if stored {
 			continue
 		}
-		if handled, storeErr := r.tryStoreStream(ctx, req, currentEvent, data, modelID, traceID); storeErr != nil {
+		// Use a context that survives client disconnect so messages are always persisted.
+		if handled, storeErr := r.tryStoreStream(context.WithoutCancel(ctx), req, currentEvent, data, modelID, traceID); storeErr != nil {
 			return storeErr
 		} else if handled {
 			stored = true
@@ -1635,6 +1659,77 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		return fmt.Errorf("agent gateway connection lost before any response was received")
 	}
 	return scanErr
+}
+
+// extractGatewayAttachments converts gateway file attachments to conversation
+// FileAttachments, deduplicating by path.
+func extractGatewayAttachments(raw []gatewayFileAttachment) []conversation.FileAttachment {
+	if len(raw) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(raw))
+	var out []conversation.FileAttachment
+	for _, a := range raw {
+		if a.Type != "file" {
+			continue
+		}
+		p := strings.TrimSpace(a.Path)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, conversation.FileAttachment{
+			Path: p,
+			Name: path.Base(p),
+		})
+	}
+	return out
+}
+
+// collectStreamAttachments parses attachment_delta events from an SSE chunk
+// and appends file attachments to req.FileAttachments, deduplicating by path.
+func (r *Resolver) collectStreamAttachments(req *conversation.ChatRequest, data string) {
+	var env struct {
+		Type        string `json:"type"`
+		Attachments []struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+		} `json:"attachments"`
+	}
+	if json.Unmarshal([]byte(data), &env) != nil || env.Type != "attachment_delta" {
+		return
+	}
+	for _, a := range env.Attachments {
+		if a.Type != "file" {
+			continue
+		}
+		p := strings.TrimSpace(a.Path)
+		if p == "" {
+			continue
+		}
+		dup := false
+		for _, existing := range req.FileAttachments {
+			if existing.Path == p {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		req.FileAttachments = append(req.FileAttachments, conversation.FileAttachment{
+			Path: p,
+			Name: path.Base(p),
+		})
+		r.logger.Debug("collectStreamAttachments: collected file",
+			slog.String("path", p),
+			slog.String("bot_id", req.BotID),
+			slog.String("chat_id", req.ChatID),
+		)
+	}
 }
 
 // logToolCallEvent parses a stream chunk and logs tool_call_started / tool_call_completed.
@@ -2258,9 +2353,11 @@ func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatReque
 	}
 	meta := buildRouteMetadata(req)
 
-	// Find the index of the last assistant message to attach token usage.
+	// Find the index of the last assistant message to attach token usage and file attachments.
+	hasUsage := usage != nil && usage.TotalTokens > 0
+	hasAttachments := len(req.FileAttachments) > 0
 	lastAssistantIdx := -1
-	if usage != nil && usage.TotalTokens > 0 {
+	if hasUsage || hasAttachments {
 		for i := len(messages) - 1; i >= 0; i-- {
 			if messages[i].Role == "assistant" {
 				lastAssistantIdx = i
@@ -2289,14 +2386,23 @@ func (r *Resolver) storeMessages(ctx context.Context, req conversation.ChatReque
 			sourceReplyToMessageID = req.ExternalMessageID
 		}
 
-		// Build per-message metadata; embed token usage on the last assistant message.
+		// Build per-message metadata; embed token usage and file attachments on the last assistant message.
 		msgMeta := meta
 		if i == lastAssistantIdx {
 			msgMeta = copyMap(meta)
-			msgMeta["token_usage"] = map[string]any{
-				"prompt_tokens":     usage.PromptTokens,
-				"completion_tokens": usage.CompletionTokens,
-				"total_tokens":      usage.TotalTokens,
+			if hasUsage {
+				msgMeta["token_usage"] = map[string]any{
+					"prompt_tokens":     usage.PromptTokens,
+					"completion_tokens": usage.CompletionTokens,
+					"total_tokens":      usage.TotalTokens,
+				}
+			}
+			if hasAttachments {
+				atts := make([]map[string]string, len(req.FileAttachments))
+				for j, a := range req.FileAttachments {
+					atts[j] = map[string]string{"type": "file", "path": a.Path, "name": a.Name}
+				}
+				msgMeta["file_attachments"] = atts
 			}
 		}
 

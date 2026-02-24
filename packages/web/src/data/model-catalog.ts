@@ -35,7 +35,7 @@ export const providerCatalog: Record<string, ProviderInfo> = {
   },
   anthropic: {
     label: 'Anthropic',
-    defaultBaseUrl: 'https://api.anthropic.com',
+    defaultBaseUrl: 'https://api.anthropic.com/v1',
     models: [
       { modelId: 'claude-opus-4-6', name: 'Claude Opus 4.6', contextWindow: 200000, maxTokens: 128000, reasoning: true, isMultimodal: true },
       { modelId: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, maxTokens: 64000, reasoning: true, isMultimodal: true },

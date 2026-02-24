@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useUserStore } from '@/store/user'
-import i18n from '@/i18n'
 import {
   createChat,
   deleteChat as requestDeleteChat,
@@ -19,6 +18,18 @@ import {
   streamMessage,
   streamMessageEvents,
 } from '@/composables/api/useChat'
+import i18n from '@/i18n'
+
+const BILLING_ERRORS: Record<string, string> = {
+  daily_limit_exceeded: 'chat.errors.dailyLimitExceeded',
+  insufficient_balance: 'chat.errors.insufficientBalance',
+}
+
+function resolveBillingError(msg: string): string {
+  const key = BILLING_ERRORS[msg]
+  if (key) return i18n.global.t(key) as string
+  return msg
+}
 
 // ---- Message model (blocks-based, aligned with main branch) ----
 
@@ -51,7 +62,20 @@ export interface AttachmentBlock {
   attachments: unknown[]
 }
 
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ImageBlock | AttachmentBlock
+export interface SubagentProgressBlock {
+  type: 'subagent_progress'
+  runs: Array<{
+    runId: string
+    name: string
+    task: string
+    status: string
+    elapsed_ms: number
+    delta?: string
+    completedAt?: number
+  }>
+}
+
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ImageBlock | AttachmentBlock | SubagentProgressBlock
 
 export interface TokenUsage {
   promptTokens: number
@@ -110,7 +134,9 @@ export const useChatStore = defineStore('chat', () => {
 
   watch(currentBotId, (newId) => {
     if (newId) {
-      void initialize()
+      if (!initializing.value) {
+        void initialize()
+      }
     } else {
       stopMessageEvents()
       messageEventsSince = ''
@@ -144,6 +170,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function extractFileAttachments(raw: Message): AttachmentBlock | null {
+    const meta = raw.metadata
+    if (!meta || typeof meta !== 'object') return null
+    const fa = meta.file_attachments
+    if (!Array.isArray(fa) || fa.length === 0) return null
+    return { type: 'attachment', attachments: fa }
+  }
+
   function messageToChat(raw: Message): ChatMessage | null {
     if (raw.role !== 'user' && raw.role !== 'assistant') return null
 
@@ -172,10 +206,14 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
+    const blocks: ContentBlock[] = [{ type: 'text', content: text }]
+    const attBlock = extractFileAttachments(raw)
+    if (attBlock) blocks.push(attBlock)
+
     return {
       id: raw.id || nextId(),
       role: 'assistant',
-      blocks: [{ type: 'text', content: text }],
+      blocks,
       timestamp,
       streaming: false,
       ...(channelTag && { platform: channelTag }),
@@ -253,6 +291,8 @@ export const useChatStore = defineStore('chat', () => {
         // Assistant message without tool_calls
         if (pendingAssistant && text) {
           pendingAssistant.blocks.push({ type: 'text', content: text })
+          const attBlock = extractFileAttachments(raw)
+          if (attBlock) pendingAssistant.blocks.push(attBlock)
           // Attach token usage from the final assistant message to the merged message.
           const tu = extractTokenUsageFromMetadata(raw)
           if (tu) pendingAssistant.tokenUsage = tu
@@ -396,7 +436,24 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleStreamEvent(targetBotId: string, event: Record<string, unknown>) {
-    if (String(event.type ?? '').toLowerCase() !== 'message_created') return
+    const eventType = String(event.type ?? '').toLowerCase()
+
+    // Subagent completed: reset waiting timer so we don't timeout prematurely
+    if (eventType === 'subagent_completed' && waitingForResponse.value && waitingTimeout) {
+      clearTimeout(waitingTimeout)
+      waitingTimeout = setTimeout(() => {
+        const idx = messages.findIndex((m) => m.isWaiting)
+        if (idx >= 0) {
+          messages[idx]!.isWaiting = false
+          messages[idx]!.blocks = [{ type: 'text', content: i18n.global.t('chat.errors.responseTimeout') as string }]
+          waitingForResponse.value = false
+        }
+        waitingTimeout = null
+      }, 180_000)
+      return
+    }
+
+    if (eventType !== 'message_created') return
     const eBotId = String(event.bot_id ?? '').trim()
     if (eBotId && eBotId !== targetBotId) return
     const payload = event.message
@@ -418,6 +475,8 @@ export const useChatStore = defineStore('chat', () => {
 
     const run = async () => {
       let delay = 1000
+      let retries = 0
+      const maxRetries = 50
       while (!controller.signal.aborted && messageEventsLoopVersion === version) {
         try {
           await streamMessageEvents(
@@ -426,11 +485,17 @@ export const useChatStore = defineStore('chat', () => {
             messageEventsSince || undefined,
           )
           delay = 1000
+          retries = 0
           if (!controller.signal.aborted && messageEventsLoopVersion === version) {
             await sleep(300)
           }
         } catch {
           if (controller.signal.aborted || messageEventsLoopVersion !== version) return
+          retries++
+          if (retries >= maxRetries) {
+            console.warn(`[message-events] max retries (${maxRetries}) reached, stopping`)
+            return
+          }
           await sleep(delay)
           delay = Math.min(delay * 2, 5000)
         }
@@ -564,7 +629,7 @@ export const useChatStore = defineStore('chat', () => {
             waitingForResponse.value = false
           }
           waitingTimeout = null
-        }, 120_000)
+        }, 180_000)
       }
 
       startMessageEvents(bid)
@@ -757,6 +822,48 @@ export const useChatStore = defineStore('chat', () => {
               }
               break
 
+            case 'subagent_progress': {
+              const runId = String((event as any).runId ?? '')
+              if (!runId) break
+              let spBlock = assistantMsg.blocks.find((b): b is SubagentProgressBlock => b.type === 'subagent_progress') as SubagentProgressBlock | undefined
+              if (!spBlock) {
+                spBlock = { type: 'subagent_progress', runs: [] }
+                pushBlock(spBlock)
+              }
+              const existing = spBlock.runs.find((r) => r.runId === runId)
+              const info = { runId, name: String((event as any).name ?? ''), task: String((event as any).task ?? ''), status: String((event as any).status ?? 'running'), elapsed_ms: Number((event as any).elapsed_ms ?? 0) }
+              if (existing) { Object.assign(existing, info) } else { spBlock.runs.push(info) }
+              const now = Date.now()
+              spBlock.runs = spBlock.runs.filter((r) => !r.completedAt || now - r.completedAt < 10_000)
+              break
+            }
+
+            case 'subagent_delta': {
+              const runId = String((event as any).runId ?? '')
+              const delta = String((event as any).delta ?? '')
+              if (!runId || !delta) break
+              const spBlock = assistantMsg.blocks.find((b): b is SubagentProgressBlock => b.type === 'subagent_progress') as SubagentProgressBlock | undefined
+              if (spBlock) {
+                const run = spBlock.runs.find((r) => r.runId === runId)
+                if (run) run.delta = (run.delta ?? '') + delta
+              }
+              break
+            }
+
+            case 'subagent_completed': {
+              const runId = String((event as any).runId ?? '')
+              if (!runId) break
+              const spBlock = assistantMsg.blocks.find((b): b is SubagentProgressBlock => b.type === 'subagent_progress') as SubagentProgressBlock | undefined
+              if (spBlock) {
+                const run = spBlock.runs.find((r) => r.runId === runId)
+                if (run) {
+                  run.status = String((event as any).status ?? 'completed')
+                  run.completedAt = Date.now()
+                }
+              }
+              break
+            }
+
             case 'processing_started':
               if (assistantMsg.blocks.length === 0) {
                 pushBlock({ type: 'text', content: '' })
@@ -781,11 +888,8 @@ export const useChatStore = defineStore('chat', () => {
               break
 
             case 'error': {
-              const errMsg = typeof event.message === 'string'
-                ? event.message
-                : typeof event.error === 'string'
-                  ? event.error
-                  : 'Stream error'
+              const rawErr = typeof event.error === 'string' ? event.error : typeof event.message === 'string' ? event.message : 'Stream error'
+              const errMsg = resolveBillingError(rawErr)
               if (textBlockIdx < 0 || assistantMsg.blocks[textBlockIdx]?.type !== 'text') {
                 textBlockIdx = pushBlock({ type: 'text', content: '' })
               }
@@ -813,35 +917,67 @@ export const useChatStore = defineStore('chat', () => {
           touchChat(cid)
         },
         (err) => {
-          if (assistantMsg.blocks.length === 0) {
-            assistantMsg.blocks.push({
-              type: 'text',
-              content: `Failed to send message: ${err.message}`,
-            })
-          }
           assistantMsg.streaming = false
-          streaming.value = false
           loading.value = false
           abortFn = null
+
+          if (assistantMsg.blocks.length > 0) {
+            // Partial content already received — keep it and stop streaming normally.
+            streaming.value = false
+            return
+          }
+
+          // No content received: enter waiting state.
+          assistantMsg.isWaiting = true
+          waitingForResponse.value = true
+          streaming.value = false
+
+          waitingTimeout = setTimeout(() => {
+            if (assistantMsg.isWaiting) {
+              assistantMsg.isWaiting = false
+              assistantMsg.blocks = [{
+                type: 'text',
+                content: i18n.global.t('chat.errors.responseTimeout') as string,
+              }]
+              waitingForResponse.value = false
+            }
+            waitingTimeout = null
+          }, 180_000)
         },
       )
     } catch (err) {
-      const reason = err instanceof Error ? err.message : 'Unknown error'
+      const raw = err instanceof Error ? err.message : 'Unknown error'
+      const reason = resolveBillingError(raw)
       const last = messages[messages.length - 1]
       if (last?.role === 'assistant' && last.streaming) {
-        last.blocks = [{ type: 'text', content: `Failed to send message: ${reason}` }]
+        last.blocks = [{ type: 'text', content: reason }]
         last.streaming = false
       } else {
         messages.push({
           id: nextId(),
           role: 'assistant',
-          blocks: [{ type: 'text', content: `Failed to send message: ${reason}` }],
+          blocks: [{ type: 'text', content: reason }],
           timestamp: new Date(),
           streaming: false,
         })
       }
       streaming.value = false
       loading.value = false
+    }
+  }
+
+  function retryLastMessage() {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user' && messages[i].blocks[0]?.type === 'text') {
+        const text = (messages[i].blocks[0] as TextBlock).content
+        messages.splice(i + 1)
+        streaming.value = false
+        loading.value = false
+        waitingForResponse.value = false
+        if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
+        void sendMessage(text)
+        return
+      }
     }
   }
 
@@ -874,6 +1010,7 @@ export const useChatStore = defineStore('chat', () => {
     removeChat,
     deleteChat: removeChat,
     sendMessage,
+    retryLastMessage,
     clearMessages,
     loadOlderMessages,
     abort,

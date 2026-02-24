@@ -98,7 +98,7 @@ func InitializeBotSkills(botID, dataRoot string) error {
 
 	// Determine defaults directory
 	// Try to find it relative to the current executable or working directory
-	defaultsDir, err := findDefaultsDir()
+	defaultsDir, err := FindDefaultsDir()
 	if err != nil {
 		return fmt.Errorf("find defaults directory: %w", err)
 	}
@@ -196,35 +196,37 @@ func copyFile(src, dest string) error {
 	return nil
 }
 
-// findDefaultsDir attempts to locate the defaults directory.
-// It tries multiple locations relative to the executable and working directory.
-func findDefaultsDir() (string, error) {
-	// Try relative to current working directory first
-	cwd, err := os.Getwd()
-	if err == nil {
-		possiblePaths := []string{
-			filepath.Join(cwd, "internal", "skills", "defaults"),
-			filepath.Join(cwd, "skills", "defaults"),
-		}
-		for _, path := range possiblePaths {
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
-			}
-		}
+// FindDefaultsDir attempts to locate the defaults directory.
+// It tries multiple locations: Docker container path, working directory, and executable directory.
+func FindDefaultsDir() (string, error) {
+	// Docker container path (highest priority).
+	if _, err := os.Stat("/app/skills/defaults"); err == nil {
+		return "/app/skills/defaults", nil
 	}
 
-	// Try relative to executable
+	// Try relative to current working directory.
+	candidates := []string{}
+	cwd, err := os.Getwd()
+	if err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, "internal", "skills", "defaults"),
+			filepath.Join(cwd, "skills", "defaults"),
+		)
+	}
+
+	// Try relative to executable.
 	execPath, err := os.Executable()
 	if err == nil {
 		execDir := filepath.Dir(execPath)
-		possiblePaths := []string{
+		candidates = append(candidates,
 			filepath.Join(execDir, "internal", "skills", "defaults"),
 			filepath.Join(execDir, "skills", "defaults"),
-		}
-		for _, path := range possiblePaths {
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
-			}
+		)
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
 		}
 	}
 
