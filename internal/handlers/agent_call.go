@@ -131,5 +131,9 @@ func (h *AgentCallHandler) triggerTargetBot(ctx context.Context, targetBot bots.
 			}
 		}
 	}
-	return strings.TrimSpace(strings.Join(parts, "\n")), nil
+	result := strings.TrimSpace(strings.Join(parts, "\n"))
+	if result != "" && targetBot.DisplayName != "" {
+		result = "【" + targetBot.DisplayName + "】" + result
+	}
+	return result, nil
 }

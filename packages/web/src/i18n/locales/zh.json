@@ -949,6 +949,7 @@
     "createSuccess": "团队创建成功",
     "createFailed": "团队创建失败",
     "dissolve": "解散团队",
-    "dissolveConfirm": "确定要解散该团队吗？此操作不可撤销。"
+    "dissolveConfirm": "确定要解散该团队吗？此操作不可撤销。",
+    "setupPlatform": "设置平台"
   }
 }

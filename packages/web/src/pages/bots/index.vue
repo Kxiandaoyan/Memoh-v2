@@ -32,6 +32,15 @@
           <FontAwesomeIcon :icon="['fas', 'users']" class="text-primary size-4" />
           <h4 class="font-semibold text-base">{{ team.name }}</h4>
           <span class="text-xs text-muted-foreground">{{ $t('teams.teamGroup') }}</span>
+          <RouterLink
+            :to="{ name: 'bot-detail', params: { botId: team.manager_bot_id }, query: { tab: 'channels' } }"
+            class="ml-auto"
+          >
+            <Button variant="outline" size="sm">
+              <FontAwesomeIcon :icon="['fas', 'plug']" class="mr-1.5 size-3" />
+              {{ $t('teams.setupPlatform') }}
+            </Button>
+          </RouterLink>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <BotCard

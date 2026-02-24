@@ -953,6 +953,7 @@
     "createSuccess": "Team created successfully",
     "createFailed": "Failed to create team",
     "dissolve": "Dissolve Team",
-    "dissolveConfirm": "Are you sure you want to dissolve this team? This action cannot be undone."
+    "dissolveConfirm": "Are you sure you want to dissolve this team? This action cannot be undone.",
+    "setupPlatform": "Setup Platform"
   }
 }
