@@ -97,13 +97,17 @@ export const createAgent = (
   const registry = new SubagentRegistry()
   const enabledSkills: AgentSkill[] = []
 
-  const enableSkill = (skill: string): { content: string; description: string } | null => {
+  const enableSkill = async (skill: string): Promise<{ content: string; description: string } | null> => {
     const agentSkill = skills.find((s) => s.name === skill)
     if (!agentSkill) return null
-    if (!enabledSkills.some((s) => s.name === skill)) {
-      enabledSkills.push(agentSkill)
+    let content = agentSkill.content
+    if (!content) {
+      content = await readSkillContent(skill)
     }
-    return { content: agentSkill.content, description: agentSkill.description }
+    if (content && !enabledSkills.some((s) => s.name === skill)) {
+      enabledSkills.push({ ...agentSkill, content })
+    }
+    return content ? { content, description: agentSkill.description } : null
   }
 
   const getEnabledSkills = () => {
@@ -149,6 +153,23 @@ export const createAgent = (
       return typeof structured.content === 'string' ? structured.content : ''
     }
     return ''
+  }
+
+  const skillContentCache = new Map<string, Promise<string>>()
+
+  const readSkillContent = (skillName: string): Promise<string> => {
+    if (!skillContentCache.has(skillName)) {
+      const promise = readContainerFile(`/data/.skills/${skillName}/SKILL.md`)
+        .then((content) => {
+          if (!content) {
+            skillContentCache.delete(skillName)
+            console.warn(`[${identity.botId}] failed to load skill content for "${skillName}" from container`)
+          }
+          return content
+        })
+      skillContentCache.set(skillName, promise)
+    }
+    return skillContentCache.get(skillName)!
   }
 
   const TOOL_CATEGORIES: Array<{ label: string; tools: string[]; desc: string }> = [
@@ -453,7 +474,7 @@ export const createAgent = (
   const ask = async (input: AgentInput) => {
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
-    input.skills.forEach((skill) => enableSkill(skill))
+    await Promise.all(input.skills.map((skill) => enableSkill(skill)))
     const sessionId = `ask:${identity.botId}:${Date.now()}`
     const { tools, toolNames, close } = await getAgentTools(sessionId)
     const systemPrompt = await generateSystemPrompt('full', toolNames)
@@ -658,7 +679,7 @@ export const createAgent = (
       ],
     }
     const messages = [...sanitizeMessages(params.messages), scheduleMessage]
-    params.skills.forEach((skill) => enableSkill(skill))
+    await Promise.all(params.skills.map((skill) => enableSkill(skill)))
     const sessionId = `schedule:${identity.botId}:${params.schedule.id}:${Date.now()}`
     const { tools, toolNames: schedToolNames, close } = await getAgentTools(sessionId)
     const systemPromptText = await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal', schedToolNames)
@@ -742,7 +763,7 @@ export const createAgent = (
   async function* stream(input: AgentInput): AsyncGenerator<AgentAction> {
     const userPrompt = generateUserPrompt(input)
     const messages = [...sanitizeMessages(input.messages), userPrompt]
-    input.skills.forEach((skill) => enableSkill(skill))
+    await Promise.all(input.skills.map((skill) => enableSkill(skill)))
     const sessionId = `stream:${identity.botId}:${Date.now()}`
     const { tools, toolNames: streamToolNames, close } = await getAgentTools(sessionId)
     const systemPrompt = await generateSystemPrompt('full', streamToolNames)

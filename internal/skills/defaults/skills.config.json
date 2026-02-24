@@ -2,6 +2,10 @@
   "version": 1,
   "description": "Default skill configuration for Memoh-v2-saas",
   "defaults": {
+    "agent-reach": {
+      "order": 10,
+      "enabled": true
+    },
     "frontend-design": {
       "order": 100,
       "enabled": true
@@ -80,10 +84,6 @@
     },
     "frontend-slides": {
       "order": 300,
-      "enabled": true
-    },
-    "x-tweet-fetcher": {
-      "order": 310,
       "enabled": true
     }
   }

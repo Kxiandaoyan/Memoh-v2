@@ -16,6 +16,12 @@ const (
 	SkillFileName = "SKILL.md"
 )
 
+// DeprecatedSkills lists skills that have been removed and should be cleaned up
+// from existing bot directories during sync/migration.
+var DeprecatedSkills = []string{
+	"x-tweet-fetcher", // Replaced by agent-reach which covers Twitter + more platforms
+}
+
 // SyncDefaultSkills synchronizes default skills to a bot's skills directory.
 // It reads all skills from defaultsDir and copies them to botSkillsDir.
 // If force=true, it will overwrite existing skills.
@@ -77,6 +83,16 @@ func SyncDefaultSkills(botSkillsDir, defaultsDir string, force bool) (int, error
 		}
 
 		syncCount++
+	}
+
+	// Clean up deprecated skills from bot directory
+	for _, deprecated := range DeprecatedSkills {
+		deprecatedDir := filepath.Join(botSkillsDir, deprecated)
+		if _, err := os.Stat(deprecatedDir); err == nil {
+			if err := os.RemoveAll(deprecatedDir); err != nil {
+				return syncCount, fmt.Errorf("remove deprecated skill %s: %w", deprecated, err)
+			}
+		}
 	}
 
 	return syncCount, nil

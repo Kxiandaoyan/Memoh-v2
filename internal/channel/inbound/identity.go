@@ -198,6 +198,9 @@ func (r *IdentityResolver) Resolve(ctx context.Context, cfg channel.ChannelConfi
 	if strings.TrimSpace(state.Identity.UserID) == "" {
 		state.Identity.UserID = r.tryLinkConfiglessChannelIdentityToUser(ctx, msg, channelIdentityID)
 	}
+	if strings.TrimSpace(state.Identity.UserID) == "" {
+		state.Identity.UserID = r.tryLinkWebhookChannelIdentity(ctx, msg, channelIdentityID)
+	}
 	state.Identity.DisplayName = displayName
 	state.Identity.AvatarURL = avatarURL
 
@@ -564,6 +567,31 @@ func (r *IdentityResolver) tryLinkConfiglessChannelIdentityToUser(ctx context.Co
 	if err := r.channelIdentities.LinkChannelIdentityToUser(ctx, channelIdentityID, candidateUserID); err != nil {
 		if r.logger != nil {
 			r.logger.Warn("auto link configless channel identity failed",
+				slog.String("channel", msg.Channel.String()),
+				slog.String("channel_identity_id", channelIdentityID),
+				slog.String("user_id", candidateUserID),
+				slog.Any("error", err),
+			)
+		}
+		return ""
+	}
+	return candidateUserID
+}
+
+func (r *IdentityResolver) tryLinkWebhookChannelIdentity(ctx context.Context, msg channel.InboundMessage, channelIdentityID string) string {
+	if strings.TrimSpace(msg.Source) != "wechat_webhook" {
+		return ""
+	}
+	if r.channelIdentities == nil {
+		return ""
+	}
+	candidateUserID := strings.TrimSpace(msg.Sender.Attribute("user_id"))
+	if candidateUserID == "" {
+		return ""
+	}
+	if err := r.channelIdentities.LinkChannelIdentityToUser(ctx, channelIdentityID, candidateUserID); err != nil {
+		if r.logger != nil {
+			r.logger.Warn("auto link webhook channel identity failed",
 				slog.String("channel", msg.Channel.String()),
 				slog.String("channel_identity_id", channelIdentityID),
 				slog.String("user_id", candidateUserID),

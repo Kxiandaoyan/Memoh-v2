@@ -2,7 +2,7 @@ import { tool } from 'ai'
 import { z } from 'zod'
 
 interface SkillToolParams {
-  useSkill: (skill: string) => { content: string; description: string } | null
+  useSkill: (skill: string) => Promise<{ content: string; description: string } | null>
 }
 
 export const getSkillTools = ({ useSkill }: SkillToolParams) => {
@@ -13,7 +13,7 @@ export const getSkillTools = ({ useSkill }: SkillToolParams) => {
       reason: z.string().describe('The reason why you think this skill is relevant to the current task'),
     }),
     execute: async ({ skillName, reason }) => {
-      const skill = useSkill(skillName)
+      const skill = await useSkill(skillName)
       if (!skill) {
         return { success: false, skillName, reason, error: 'Skill not found' }
       }

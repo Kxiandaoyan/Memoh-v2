@@ -13,7 +13,7 @@ export interface ToolsParams {
   backgroundModel?: ModelConfig
   identity: IdentityContext
   auth: AgentAuthContext
-  enableSkill: (skill: string) => { content: string; description: string } | null
+  enableSkill: (skill: string) => Promise<{ content: string; description: string } | null>
   mcpConnections?: MCPConnection[]
   registry?: SubagentRegistry
   parentRunId?: string

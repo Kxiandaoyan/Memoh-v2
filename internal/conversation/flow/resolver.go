@@ -714,7 +714,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 				usableSkills = append(usableSkills, gatewaySkill{
 					Name:        e.Name,
 					Description: desc,
-					Content:     e.Content,
+					Content:     "",
 					Metadata:    e.Metadata,
 				})
 			}

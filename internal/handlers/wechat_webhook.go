@@ -207,6 +207,7 @@ func (h *WeChatWebhookHandler) HandleWebhook(c echo.Context) error {
 			Attributes: map[string]string{
 				"sender_id":   req.Sender,
 				"sender_name": req.SenderName,
+				"user_id":     key.IssuedByUserID,
 			},
 		},
 		Conversation: channel.Conversation{
