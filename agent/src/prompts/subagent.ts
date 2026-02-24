@@ -48,6 +48,8 @@ export const subagentSystem = ({
 
   sections.push(
     '## Instructions\n\n' +
+    '`/data` is the private HOME — do NOT save task output here. ' +
+    '`/shared` is the shared workspace; always save generated files under `/shared/`.\n\n' +
     'Complete your assigned task thoroughly. When finished, provide a clear summary of what you accomplished and any results or output file paths.',
   )
 

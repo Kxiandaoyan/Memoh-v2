@@ -66,10 +66,11 @@ type ContainerdConfig struct {
 }
 
 type MCPConfig struct {
-	Image       string `toml:"image"`
-	Snapshotter string `toml:"snapshotter"`
-	DataRoot    string `toml:"data_root"`
-	DataMount   string `toml:"data_mount"`
+	Image              string `toml:"image"`
+	Snapshotter        string `toml:"snapshotter"`
+	DataRoot           string `toml:"data_root"`
+	DataMount          string `toml:"data_mount"`
+	IdleTimeoutMinutes int    `toml:"idle_timeout_minutes"` // 0 = disabled
 }
 
 type PostgresConfig struct {

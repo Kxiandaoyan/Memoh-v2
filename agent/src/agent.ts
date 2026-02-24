@@ -41,20 +41,16 @@ import {
   sanitizeToolChunkMetadata,
   truncateMessagesForTransport,
   stripReasoningFromMessages,
-  computeMaxToolResultChars,
 } from './utils/sse'
 import type { SystemMode } from './prompts/system'
 
-const HEAD_RATIO = 0.7
-const TAIL_RATIO = 0.2
-
-const CHAR_BUDGETS: Record<SystemMode, { soul: number; tools: number }> = {
-  full:    { soul: 3000, tools: 3000 },
-  minimal: { soul: 800,  tools: 800  },
-  micro:   { soul: 0,    tools: 0    },
-}
-
-const FILE_SIZE_WARN_THRESHOLD = 8000
+import {
+  HEAD_RATIO,
+  TAIL_RATIO,
+  CHAR_BUDGETS,
+  FILE_SIZE_WARN_THRESHOLD,
+  SYSTEM_FILE_CACHE_TTL_MS,
+} from './config'
 
 function truncateHeadTail(content: string, maxChars: number): string {
   if (maxChars <= 0 || !content) return ''
@@ -97,6 +93,7 @@ export const createAgent = (
 ) => {
   const model = createModel(modelConfig)
   const providerOptions = getProviderOptions(modelConfig)
+  const backgroundModel = backgroundModelConfig ? createModel(backgroundModelConfig) : null
   const registry = new SubagentRegistry()
   const enabledSkills: AgentSkill[] = []
 
@@ -113,6 +110,47 @@ export const createAgent = (
     return enabledSkills.map((skill) => skill.name)
   }
 
+  const mcpHeaders = (): Record<string, string> => {
+    const h: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      Authorization: `Bearer ${auth.bearer}`,
+    }
+    if (identity.channelIdentityId) {
+      h['X-Memoh-Channel-Identity-Id'] = identity.channelIdentityId
+    }
+    return h
+  }
+
+  const mcpToolsURL = `${normalizeBaseUrl(auth.baseUrl)}/bots/${identity.botId}/tools`
+
+  const readContainerFile = async (path: string): Promise<string> => {
+    if (!auth?.bearer || !identity.botId) return ''
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: `read-${path}`,
+      method: 'tools/call',
+      params: { name: 'read', arguments: { path } },
+    })
+    const response = await fetch(mcpToolsURL, { method: 'POST', headers: mcpHeaders(), body })
+    if (!response.ok) return ''
+    const data = await response.json().catch(() => ({}))
+    const structured =
+      data?.result?.structuredContent ?? data?.result?.content?.[0]?.text
+    if (typeof structured === 'string') {
+      try {
+        const parsed = JSON.parse(structured)
+        return typeof parsed?.content === 'string' ? parsed.content : ''
+      } catch {
+        return structured
+      }
+    }
+    if (typeof structured === 'object' && structured?.content) {
+      return typeof structured.content === 'string' ? structured.content : ''
+    }
+    return ''
+  }
+
   const TOOL_CATEGORIES: Array<{ label: string; tools: string[]; desc: string }> = [
     { label: 'File', tools: ['read', 'write', 'list', 'edit'], desc: '/data/ (private), /shared/ (cross-bot)' },
     { label: 'Shell', tools: ['exec'], desc: 'run commands in container' },
@@ -123,8 +161,10 @@ export const createAgent = (
     { label: 'Image', tools: ['generate_image'], desc: 'generate image from text prompt (async, auto-delivered)' },
     { label: 'Schedule', tools: ['create_schedule', 'list_schedule', 'get_schedule', 'update_schedule', 'delete_schedule'], desc: 'manage cron-based recurring tasks' },
     { label: 'Skills', tools: ['use_skill', 'discover_skills', 'fork_skill'], desc: 'activate, search & import skills' },
+    { label: 'Team', tools: ['call_agent'], desc: 'delegate tasks to team member bots' },
     { label: 'Subagent', tools: ['list_subagents', 'create_subagent', 'delete_subagent', 'query_subagent', 'spawn_subagent', 'check_subagent_run', 'kill_subagent_run', 'steer_subagent', 'list_subagent_runs'], desc: 'create & manage sub-agents. ONLY use spawn_subagent when 2+ independent long-running tasks need parallel execution. For simple questions, single-step tasks, or sequential work — do it yourself, never spawn.' },
     { label: 'OpenViking', tools: ['ov_initialize', 'ov_find', 'ov_search', 'ov_read', 'ov_abstract', 'ov_overview', 'ov_ls', 'ov_tree', 'ov_add_resource', 'ov_rm', 'ov_session_commit'], desc: 'context database (see TOOLS.md for details)' },
+    { label: 'Admin', tools: ['admin_list_bots', 'admin_create_bot', 'admin_delete_bot', 'admin_list_models', 'admin_create_model', 'admin_delete_model', 'admin_list_providers', 'admin_create_provider', 'admin_update_provider'], desc: 'manage bots, models & providers' },
   ]
 
   const generateToolContext = (toolNames: string[] = []): string => {
@@ -171,8 +211,6 @@ export const createAgent = (
     expiry: number
   } | null = { key: '', data: { identityContent: '', soulContent: '', toolsContent: '' }, expiry: 0 }
 
-  const SYSTEM_FILE_CACHE_TTL_MS = 60_000
-
   const loadSystemFiles = async () => {
     if (!auth?.bearer || !identity.botId) {
       return {
@@ -187,45 +225,7 @@ export const createAgent = (
       return systemFileCache.data
     }
 
-    const mcpHeaders = (): Record<string, string> => {
-      const h: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        Authorization: `Bearer ${auth.bearer}`,
-      }
-      if (identity.channelIdentityId) {
-        h['X-Memoh-Channel-Identity-Id'] = identity.channelIdentityId
-      }
-      return h
-    }
-
-    const mcpToolsURL = `${normalizeBaseUrl(auth.baseUrl)}/bots/${identity.botId}/tools`
-
-    const readViaMCP = async (path: string): Promise<string> => {
-      const body = JSON.stringify({
-        jsonrpc: '2.0',
-        id: `read-${path}`,
-        method: 'tools/call',
-        params: { name: 'read', arguments: { path } },
-      })
-      const response = await fetch(mcpToolsURL, { method: 'POST', headers: mcpHeaders(), body })
-      if (!response.ok) return ''
-      const data = await response.json().catch(() => ({}))
-      const structured =
-        data?.result?.structuredContent ?? data?.result?.content?.[0]?.text
-      if (typeof structured === 'string') {
-        try {
-          const parsed = JSON.parse(structured)
-          return typeof parsed?.content === 'string' ? parsed.content : ''
-        } catch {
-          return structured
-        }
-      }
-      if (typeof structured === 'object' && structured?.content) {
-        return typeof structured.content === 'string' ? structured.content : ''
-      }
-      return ''
-    }
+    const readViaMCP = readContainerFile
 
     // Async restore: write DB persona content back to container if the file is
     // missing/empty. Fires in the background; failures are silently ignored so
@@ -238,7 +238,9 @@ export const createAgent = (
         method: 'tools/call',
         params: { name: 'write', arguments: { path, content } },
       })
-      fetch(mcpToolsURL, { method: 'POST', headers: mcpHeaders(), body }).catch(() => {})
+      fetch(mcpToolsURL, { method: 'POST', headers: mcpHeaders(), body }).catch((e) => {
+        console.warn(`[restore] failed to write ${path}:`, e?.message ?? e)
+      })
     }
 
     const needIdentity = !botIdentity
@@ -491,6 +493,68 @@ export const createAgent = (
     }
   }
 
+  const askAsSubagent = async (params: {
+    input: string;
+    name: string;
+    description: string;
+    messages: ModelMessage[];
+    abortSignal?: AbortSignal;
+  }) => {
+    const userPrompt: UserModelMessage = {
+      role: 'user',
+      content: [{ type: 'text', text: params.input }],
+    }
+    const rolePath = `/data/subagent-roles/${params.name}`
+    const [roleIdentity, roleSoul, roleTask] = await Promise.all([
+      readContainerFile(`${rolePath}/identity.md`).catch(() => ''),
+      readContainerFile(`${rolePath}/soul.md`).catch(() => ''),
+      readContainerFile(`${rolePath}/task.md`).catch(() => ''),
+    ])
+    const messages = [...sanitizeMessages(params.messages), userPrompt]
+    const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
+    const { tools, toolNames, close } = await getAgentTools(sessionId)
+    const toolContext = generateToolContext(toolNames)
+    const generateSubagentSystemPrompt = () => {
+      return subagentSystem({
+        date: new Date(),
+        name: params.name,
+        description: params.description,
+        timezone,
+        toolContext,
+        skills,
+        identityContent: roleIdentity,
+        soulContent: roleSoul,
+        taskContent: roleTask,
+      })
+    }
+    const subagentModel = backgroundModel ?? model
+    const { response, reasoning, text, usage } = await withRetry(
+      () =>
+        generateText({
+          model: subagentModel,
+          messages,
+          system: generateSubagentSystemPrompt(),
+          stopWhen: stepCountIs(Infinity),
+          onFinish: async () => {
+            await close()
+          },
+          tools,
+          abortSignal: params.abortSignal,
+          providerOptions,
+        }),
+      isRetryableLLMError,
+    )
+    return {
+      messages: stripReasoningFromMessages(
+        truncateMessagesForTransport([userPrompt, ...response.messages]),
+      ),
+      reasoning: reasoning.map((part) => part.text),
+      usage: normalizeUsage(usage),
+      text,
+      skills: getEnabledSkills(),
+    }
+  }
+
   const streamAsSubagent = async (params: {
     input: string;
     name: string;
@@ -504,6 +568,12 @@ export const createAgent = (
       role: 'user',
       content: [{ type: 'text', text: params.input }],
     }
+    const rolePath = `/data/subagent-roles/${params.name}`
+    const [roleIdentity, roleSoul, roleTask] = await Promise.all([
+      readContainerFile(`${rolePath}/identity.md`).catch(() => ''),
+      readContainerFile(`${rolePath}/soul.md`).catch(() => ''),
+      readContainerFile(`${rolePath}/task.md`).catch(() => ''),
+    ])
     const messages = [...sanitizeMessages(params.messages), userPrompt]
     const sessionId = `subagent:${identity.botId}:${params.name}:${Date.now()}`
     const { tools, toolNames: _subToolNames, close } = await getAgentTools(sessionId)
@@ -515,6 +585,10 @@ export const createAgent = (
       description: params.description,
       timezone,
       toolContext,
+      skills,
+      identityContent: roleIdentity,
+      soulContent: roleSoul,
+      taskContent: roleTask,
     })
 
     const result: { messages: ModelMessage[]; reasoning: string[]; usage: LanguageModelUsage | null } = {
@@ -588,10 +662,11 @@ export const createAgent = (
     const sessionId = `schedule:${identity.botId}:${params.schedule.id}:${Date.now()}`
     const { tools, toolNames: schedToolNames, close } = await getAgentTools(sessionId)
     const systemPromptText = await generateSystemPrompt(isHeartbeat ? 'micro' : 'minimal', schedToolNames)
+    const scheduleModel = backgroundModel ?? model
     const { response, reasoning, text, usage } = await withRetry(
       () =>
         generateText({
-          model,
+          model: scheduleModel,
           messages,
           system: systemPromptText,
           stopWhen: stepCountIs(Infinity),
@@ -894,6 +969,7 @@ export const createAgent = (
   return {
     stream,
     ask,
+    askAsSubagent,
     streamAsSubagent,
     triggerSchedule,
   }

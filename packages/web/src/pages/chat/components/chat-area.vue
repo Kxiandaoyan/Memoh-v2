@@ -3,9 +3,18 @@
     <!-- No bot selected -->
     <div
       v-if="!currentBotId"
-      class="flex-1 flex items-center justify-center text-muted-foreground"
+      class="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4"
     >
-      <div class="text-center">
+      <!-- Mobile: show bot list button -->
+      <Button
+        variant="outline"
+        class="md:hidden gap-2"
+        @click="emit('toggle-bot-list')"
+      >
+        <FontAwesomeIcon :icon="['fas', 'bars']" class="size-3.5" />
+        {{ $t('chat.selectBot') }}
+      </Button>
+      <div class="text-center hidden md:block">
         <p class="text-lg">{{ $t('chat.selectBot') }}</p>
         <p class="text-sm mt-1">{{ $t('chat.selectBotHint') }}</p>
       </div>
@@ -17,6 +26,15 @@
         v-if="currentBot"
         class="flex items-center gap-3 px-4 py-2.5 border-b"
       >
+        <!-- Mobile: toggle bot list -->
+        <Button
+          variant="ghost"
+          size="sm"
+          class="md:hidden -ml-1 shrink-0 size-8 p-0"
+          @click="emit('toggle-bot-list')"
+        >
+          <FontAwesomeIcon :icon="['fas', 'bars']" class="size-3.5" />
+        </Button>
         <Avatar class="size-8 shrink-0">
           <AvatarImage
             v-if="currentBot.avatar_url"
@@ -47,7 +65,7 @@
         role="log"
         aria-live="polite"
         aria-relevant="additions text"
-        class="flex-1 overflow-y-auto"
+        class="flex-1 overflow-y-auto relative"
         @scroll="handleScroll"
       >
         <div class="max-w-3xl mx-auto px-4 py-6 space-y-6">
@@ -79,6 +97,22 @@
             :message="msg"
           />
         </div>
+
+        <!-- Scroll to bottom button -->
+        <ScrollToBottom
+          :visible="showScrollBtn"
+          :unread-count="unreadCount"
+          @click="scrollToBottomClicked"
+        />
+      </div>
+
+      <!-- Waiting for response banner -->
+      <div
+        v-if="waitingForResponse"
+        class="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-t border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs"
+      >
+        <FontAwesomeIcon :icon="['fas', 'spinner']" class="size-3 animate-spin shrink-0" />
+        <span>{{ $t('chat.errors.waitingForResponse') }}</span>
       </div>
 
       <!-- Input -->
@@ -122,11 +156,15 @@ import { Textarea, Button, Avatar, AvatarImage, AvatarFallback, Badge } from '@m
 import { useChatStore } from '@/store/chat-list'
 import { storeToRefs } from 'pinia'
 import MessageItem from './message-item.vue'
+import ScrollToBottom from './scroll-to-bottom.vue'
+
+const emit = defineEmits<{ (e: 'toggle-bot-list'): void }>()
 
 const chatStore = useChatStore()
 const {
   messages,
   streaming,
+  waitingForResponse,
   currentBotId,
   bots,
   activeChatReadOnly,
@@ -137,13 +175,23 @@ const {
 
 const inputText = ref('')
 const scrollContainer = ref<HTMLElement>()
+const showScrollBtn = ref(false)
+const unreadCount = ref(0)
 
 const currentBot = computed(() =>
   bots.value.find((b) => b.id === currentBotId.value) ?? null,
 )
 
-onMounted(() => {
-  void chatStore.initialize()
+onMounted(async () => {
+  await chatStore.initialize()
+})
+
+// When messages finish loading, scroll to bottom instantly.
+watch(loadingChats, (loading, wasLoading) => {
+  if (wasLoading && !loading && messages.value.length > 0) {
+    userScrolledUp = false
+    scrollToBottomAfterRender()
+  }
 })
 
 // ---- Auto-scroll ----
@@ -161,11 +209,37 @@ function scrollToBottom(smooth = true) {
   })
 }
 
+// Wait for two render cycles + a rAF before scrolling so that all child
+// components have had a chance to paint and scrollHeight is stable.
+function scrollToBottomAfterRender() {
+  nextTick(() => {
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        const el = scrollContainer.value
+        if (!el) return
+        el.scrollTo({ top: el.scrollHeight, behavior: 'instant' })
+      })
+    })
+  })
+}
+
+function scrollToBottomClicked() {
+  userScrolledUp = false
+  unreadCount.value = 0
+  showScrollBtn.value = false
+  scrollToBottom(true)
+}
+
 function handleScroll() {
   const el = scrollContainer.value
   if (!el) return
   const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
-  userScrolledUp = distanceFromBottom > 50
+  // During streaming, use a generous threshold so that Markdown layout shifts
+  // don't falsely disengage auto-scroll.
+  const threshold = streaming.value ? 300 : 150
+  userScrolledUp = distanceFromBottom > threshold
+  showScrollBtn.value = userScrolledUp
+  if (!userScrolledUp) unreadCount.value = 0
 
   // Load older messages when scrolled near top
   if (el.scrollTop < 200 && hasMoreOlder.value && !loadingOlder.value) {
@@ -195,14 +269,26 @@ watch(
   },
 )
 
-// New message auto-scroll
+// New message auto-scroll / unread counter
 watch(
   () => messages.value.length,
   () => {
-    userScrolledUp = false
-    scrollToBottom()
+    if (userScrolledUp) {
+      unreadCount.value += 1
+    } else {
+      unreadCount.value = 0
+      userScrolledUp = false
+      scrollToBottom()
+    }
   },
 )
+
+// When streaming ends, always scroll to show the complete response
+watch(streaming, (isStreaming, wasStreaming) => {
+  if (wasStreaming && !isStreaming) {
+    nextTick(() => scrollToBottom(true))
+  }
+})
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.isComposing) return

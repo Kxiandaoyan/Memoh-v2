@@ -82,6 +82,15 @@ async function readSSEStream(
   const decoder = new TextDecoder()
   let buffer = ''
 
+  function processDataLines(text: string) {
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const payload = trimmed.replace(/^data:\s*/, '').trim()
+      if (payload && payload !== '[DONE]') onData(payload)
+    }
+  }
+
   try {
     while (true) {
       const { value, done } = await reader.read()
@@ -92,21 +101,17 @@ async function readSSEStream(
       buffer = chunks.pop() ?? ''
 
       for (const chunk of chunks) {
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data:')) continue
-          const payload = line.replace(/^data:\s*/, '').trim()
-          if (payload && payload !== '[DONE]') onData(payload)
-        }
+        processDataLines(chunk)
       }
     }
 
-    // Flush remaining buffer
+    // Flush final decoder output (handles incomplete multi-byte sequences)
+    buffer += decoder.decode()
+
     if (buffer.trim()) {
-      for (const line of buffer.split('\n')) {
-        const trimmed = line.trim()
-        if (!trimmed.startsWith('data:')) continue
-        const payload = trimmed.replace(/^data:\s*/, '').trim()
-        if (payload && payload !== '[DONE]') onData(payload)
+      // Handle buffer that may contain one or more events without trailing \n\n
+      for (const chunk of buffer.split('\n\n')) {
+        processDataLines(chunk)
       }
     }
   } finally {

@@ -131,6 +131,13 @@
             </div>
             <div class="flex gap-2 shrink-0">
               <Button
+                variant="outline"
+                size="sm"
+                @click="handleDownload"
+              >
+                {{ $t('sharedWorkspace.download') }}
+              </Button>
+              <Button
                 variant="destructive"
                 size="sm"
                 :disabled="deleting"
@@ -142,25 +149,27 @@
                 />
                 {{ $t('common.delete') }}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                :disabled="!isDirty"
-                @click="handleDiscard"
-              >
-                {{ $t('bots.files.discard') }}
-              </Button>
-              <Button
-                size="sm"
-                :disabled="!isDirty || saving"
-                @click="handleSave"
-              >
-                <Spinner
-                  v-if="saving"
-                  class="mr-1.5"
-                />
-                {{ $t('common.save') }}
-              </Button>
+              <template v-if="!isPreviewable">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  :disabled="!isDirty"
+                  @click="handleDiscard"
+                >
+                  {{ $t('bots.files.discard') }}
+                </Button>
+                <Button
+                  size="sm"
+                  :disabled="!isDirty || saving"
+                  @click="handleSave"
+                >
+                  <Spinner
+                    v-if="saving"
+                    class="mr-1.5"
+                  />
+                  {{ $t('common.save') }}
+                </Button>
+              </template>
             </div>
           </div>
 
@@ -173,9 +182,53 @@
             <span>{{ $t('common.loading') }}</span>
           </div>
 
-          <!-- Textarea editor -->
+          <!-- Preview: image -->
+          <div
+            v-else-if="previewType === 'image' && previewBlobUrl"
+            class="rounded-md border p-4 flex items-center justify-center bg-muted/30 min-h-[400px]"
+          >
+            <img
+              :src="previewBlobUrl"
+              :alt="activeFileName"
+              class="max-w-full max-h-[500px] object-contain rounded"
+            >
+          </div>
+
+          <!-- Preview: PDF / HTML -->
+          <iframe
+            v-else-if="(previewType === 'pdf' || previewType === 'html') && previewBlobUrl"
+            :src="previewBlobUrl"
+            class="w-full min-h-[600px] rounded-md border"
+            :sandbox="previewType === 'html' ? 'allow-same-origin' : undefined"
+          />
+
+          <!-- Preview: video -->
+          <video
+            v-else-if="previewType === 'video' && previewBlobUrl"
+            :src="previewBlobUrl"
+            controls
+            class="w-full rounded-md border max-h-[500px]"
+          />
+
+          <!-- Preview: audio -->
+          <audio
+            v-else-if="previewType === 'audio' && previewBlobUrl"
+            :src="previewBlobUrl"
+            controls
+            class="w-full mt-2"
+          />
+
+          <!-- No preview available (binary files) -->
+          <div
+            v-else-if="previewType === 'none'"
+            class="rounded-md border p-8 text-center text-sm text-muted-foreground"
+          >
+            {{ $t('sharedWorkspace.noPreview') }}
+          </div>
+
+          <!-- Text editor -->
           <Textarea
-            v-else
+            v-else-if="previewType === 'text'"
             v-model="editContent"
             class="font-mono text-sm min-h-[500px] resize-y"
             :placeholder="$t('sharedWorkspace.editorPlaceholder')"
@@ -278,11 +331,73 @@ const activeFileName = computed(() => {
 
 const isDirty = computed(() => editContent.value !== originalContent.value)
 
+const fileExt = computed(() => {
+  const name = activeFileName.value.toLowerCase()
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1) : ''
+})
+
+type PreviewType = 'image' | 'pdf' | 'video' | 'audio' | 'html' | 'text' | 'none'
+
+const previewType = computed<PreviewType>(() => {
+  const ext = fileExt.value
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return 'image'
+  if (ext === 'pdf') return 'pdf'
+  if (['mp4', 'webm', 'ogg', 'mov'].includes(ext)) return 'video'
+  if (['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(ext)) return 'audio'
+  if (['html', 'htm'].includes(ext)) return 'html'
+  if (['md', 'txt', 'json', 'csv', 'xml', 'yaml', 'yml', 'toml', 'log', 'js', 'ts', 'css', 'py', 'go', 'sh', 'sql', 'env', 'ini', 'conf', 'cfg'].includes(ext)) return 'text'
+  return 'none'
+})
+
+const isPreviewable = computed(() => previewType.value !== 'text' && previewType.value !== 'none')
+
+const previewBlobUrl = ref('')
+
+function buildFileUrl(filePath: string): string {
+  const baseUrl = client.getConfig().baseUrl || '/api'
+  return `${baseUrl}/shared/files/download/${encodeURIComponent(filePath)}`
+}
+
+async function fetchBlob(filePath: string): Promise<Blob> {
+  const token = localStorage.getItem('token') || ''
+  const resp = await fetch(buildFileUrl(filePath), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return resp.blob()
+}
+
+async function handleDownload() {
+  if (!activeFile.value) return
+  try {
+    const blob = await fetchBlob(activeFile.value)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = activeFileName.value
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    toast.error(t('sharedWorkspace.downloadFailed'))
+  }
+}
+
 function joinPath(base: string, name: string): string {
   return base ? `${base}/${name}` : name
 }
 
+function revokePreview() {
+  if (previewBlobUrl.value) {
+    URL.revokeObjectURL(previewBlobUrl.value)
+    previewBlobUrl.value = ''
+  }
+}
+
 function navigateTo(path: string) {
+  revokePreview()
   currentPath.value = path
   activeFile.value = ''
   editContent.value = ''
@@ -325,18 +440,27 @@ async function loadCurrentDir() {
 
 async function selectFile(filePath: string) {
   if (filePath === activeFile.value) return
+  revokePreview()
   activeFile.value = filePath
+  editContent.value = ''
+  originalContent.value = ''
   fileLoading.value = true
   try {
-    const { data } = await client.get({
-      url: `/shared/files/${filePath}`,
-    }) as { data: { content: string } }
-    editContent.value = data.content ?? ''
-    originalContent.value = editContent.value
+    // Determine preview type from extension before loading
+    const ext = filePath.split('.').pop()?.toLowerCase() || ''
+    const binaryExts = ['png','jpg','jpeg','gif','webp','svg','bmp','ico','pdf','mp4','webm','ogg','mov','mp3','wav','flac','aac','html','htm']
+    if (binaryExts.includes(ext)) {
+      const blob = await fetchBlob(filePath)
+      previewBlobUrl.value = URL.createObjectURL(blob)
+    } else {
+      const { data } = await client.get({
+        url: `/shared/files/${filePath}`,
+      }) as { data: { content: string } }
+      editContent.value = data.content ?? ''
+      originalContent.value = editContent.value
+    }
   } catch {
     toast.error(t('sharedWorkspace.readFailed'))
-    editContent.value = ''
-    originalContent.value = ''
   } finally {
     fileLoading.value = false
   }
@@ -372,6 +496,7 @@ async function handleDelete() {
       url: `/shared/files/${activeFile.value}`,
     })
     toast.success(t('sharedWorkspace.deleteSuccess'))
+    revokePreview()
     activeFile.value = ''
     editContent.value = ''
     originalContent.value = ''

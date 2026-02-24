@@ -476,9 +476,11 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 
 	// Inject existing conversation summary as the first message.
 	if summary := r.loadSummary(ctx, req.BotID, req.ChatID); summary != "" {
+		summaryText := "[Previous conversation summary]\n\n" + summary
+		encodedSummary, _ := json.Marshal(summaryText)
 		summaryMsg := conversation.ModelMessage{
 			Role:    "user",
-			Content: json.RawMessage(`"[Previous conversation summary]\n\n` + strings.ReplaceAll(summary, `"`, `\"`) + `"`),
+			Content: json.RawMessage(encodedSummary),
 		}
 		messages = append([]conversation.ModelMessage{summaryMsg}, messages...)
 		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
