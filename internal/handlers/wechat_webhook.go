@@ -87,7 +87,7 @@ func NewWeChatWebhookHandler(
 
 // Register registers the WeChat webhook routes.
 func (h *WeChatWebhookHandler) Register(e *echo.Echo) {
-	group := e.Group("/api/channels/wechat/webhook")
+	group := e.Group("/channels/wechat/webhook")
 	group.POST("/:botID", h.HandleWebhook)
 	group.GET("/:botID/poll", h.PollReplies)
 }
@@ -123,7 +123,7 @@ type WeChatWebhookResponse struct {
 // @Failure 400 {object} WeChatWebhookResponse
 // @Failure 401 {object} WeChatWebhookResponse
 // @Failure 500 {object} WeChatWebhookResponse
-// @Router /api/channels/wechat/webhook/{botID} [post]
+// @Router /channels/wechat/webhook/{botID} [post]
 func (h *WeChatWebhookHandler) HandleWebhook(c echo.Context) error {
 	botID := strings.TrimSpace(c.Param("botID"))
 	if botID == "" {

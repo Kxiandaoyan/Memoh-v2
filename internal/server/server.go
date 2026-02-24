@@ -54,6 +54,10 @@ func NewServer(log *slog.Logger, addr string, jwtSecret string,
 		if strings.HasPrefix(path, "/api/docs") {
 			return true
 		}
+		// Webhook endpoints use their own API key authentication, skip JWT.
+		if strings.HasPrefix(path, "/channels/") && strings.Contains(path, "/webhook/") {
+			return true
+		}
 		return false
 	}))
 
