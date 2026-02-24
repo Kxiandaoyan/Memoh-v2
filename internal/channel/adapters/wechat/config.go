@@ -19,9 +19,12 @@ type UserConfig struct {
 }
 
 func normalizeConfig(raw map[string]any) (map[string]any, error) {
-	// WeChat uses webhook mode with system-generated credentials
-	// No user configuration needed
-	return map[string]any{}, nil
+	// WeChat uses webhook mode — preserve the system-generated api_key
+	result := map[string]any{}
+	if v := channel.ReadString(raw, "api_key", "apiKey"); v != "" {
+		result["api_key"] = v
+	}
+	return result, nil
 }
 
 func normalizeUserConfig(raw map[string]any) (map[string]any, error) {

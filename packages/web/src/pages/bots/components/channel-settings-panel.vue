@@ -17,8 +17,120 @@
 
     <Separator />
 
+    <!-- WeChat: Special display with Webhook URL and API Key -->
+    <div
+      v-if="channelItem.meta.type === 'wechat'"
+      class="space-y-4"
+    >
+      <h4 class="text-sm font-medium">
+        {{ $t('bots.channels.wechatConfig') }}
+      </h4>
+
+      <!-- Webhook URL -->
+      <div class="space-y-2">
+        <Label>{{ $t('bots.channels.webhookUrl') }}</Label>
+        <div class="flex items-center gap-2">
+          <code class="flex-1 rounded-md border border-border bg-muted/50 px-3 py-2 font-mono text-sm break-all select-all">
+            {{ wechatWebhookUrl }}
+          </code>
+          <Button
+            variant="outline"
+            size="sm"
+            @click="copyToClipboard(wechatWebhookUrl, $t('bots.channels.webhookUrlCopied'))"
+          >
+            <FontAwesomeIcon
+              :icon="['fas', 'copy']"
+              class="size-3.5"
+            />
+          </Button>
+        </div>
+        <p class="text-xs text-muted-foreground">
+          {{ $t('bots.channels.webhookUrlDesc') }}
+        </p>
+      </div>
+
+      <!-- API Key -->
+      <div class="space-y-2">
+        <Label>{{ $t('bots.channels.apiKey') }}</Label>
+        <div class="flex items-center gap-2">
+          <code class="flex-1 rounded-md border border-border bg-muted/50 px-3 py-2 font-mono text-sm break-all select-all">
+            {{ wechatApiKeyVisible ? (wechatApiKey || '...') : '••••••••••••••••' }}
+          </code>
+          <Button
+            variant="outline"
+            size="sm"
+            @click="wechatApiKeyVisible = !wechatApiKeyVisible"
+          >
+            <FontAwesomeIcon
+              :icon="['fas', wechatApiKeyVisible ? 'eye-slash' : 'eye']"
+              class="size-3.5"
+            />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="!wechatApiKey"
+            @click="copyToClipboard(wechatApiKey || '', $t('bots.channels.apiKeyCopied'))"
+          >
+            <FontAwesomeIcon
+              :icon="['fas', 'copy']"
+              class="size-3.5"
+            />
+          </Button>
+        </div>
+        <p class="text-xs text-muted-foreground">
+          {{ $t('bots.channels.apiKeyDesc') }}
+        </p>
+      </div>
+
+      <!-- Copy config as JSON -->
+      <div class="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="!wechatApiKey"
+          @click="copyWeChatConfig"
+        >
+          <FontAwesomeIcon
+            :icon="['fas', 'file-code']"
+            class="mr-2 size-3.5"
+          />
+          {{ $t('bots.channels.copyConfig') }}
+        </Button>
+      </div>
+
+      <!-- Quick start guide -->
+      <div class="rounded-md bg-muted p-3 text-sm space-y-2">
+        <p class="font-medium">
+          {{ $t('bots.channels.quickStartGuide') }}
+        </p>
+        <ol class="list-decimal list-inside space-y-1 text-muted-foreground">
+          <li>{{ $t('bots.channels.step1') }}</li>
+          <li>{{ $t('bots.channels.step2') }}</li>
+          <li>{{ $t('bots.channels.step3') }}</li>
+        </ol>
+      </div>
+
+      <!-- Generate API Key if not exists -->
+      <div
+        v-if="!wechatApiKey"
+        class="flex justify-end"
+      >
+        <Button
+          :disabled="isGeneratingKey"
+          @click="generateApiKey"
+        >
+          <Spinner v-if="isGeneratingKey" />
+          {{ $t('bots.channels.generateApiKey') }}
+        </Button>
+      </div>
+    </div>
+
     <!-- Credentials form (dynamic from config_schema) -->
-    <div class="space-y-4">
+    <div
+      v-else
+      class="space-y-4"
+    >
       <h4 class="text-sm font-medium">
         {{ $t('bots.channels.credentials') }}
       </h4>
@@ -111,8 +223,11 @@
 
     <Separator />
 
-    <!-- Status -->
-    <div class="flex items-center justify-between">
+    <!-- Status (not for WeChat) -->
+    <div
+      v-if="channelItem.meta.type !== 'wechat'"
+      class="flex items-center justify-between"
+    >
       <Label>{{ $t('common.status') }}</Label>
       <Switch
         :model-value="form.status === 'active'"
@@ -120,8 +235,11 @@
       />
     </div>
 
-    <!-- Save -->
-    <div class="flex justify-end">
+    <!-- Save (not for WeChat) -->
+    <div
+      v-if="channelItem.meta.type !== 'wechat'"
+      class="flex justify-end"
+    >
       <Button
         :disabled="isLoading"
         @click="handleSave"
@@ -148,7 +266,7 @@ import {
   SelectContent,
   SelectItem,
 } from '@memoh/ui'
-import { reactive, watch, computed } from 'vue'
+import { reactive, watch, computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { useI18n } from 'vue-i18n'
 import { useMutation, useQueryCache } from '@pinia/colada'
@@ -197,6 +315,80 @@ const form = reactive<{
 })
 
 const visibleSecrets = reactive<Record<string, boolean>>({})
+
+// ---- WeChat specific ----
+
+const wechatApiKeyVisible = ref(false)
+const wechatApiKey = computed<string | null>(() => {
+  if (props.channelItem.meta.type !== 'wechat') return null
+  const creds = props.channelItem.config?.credentials
+  return creds?.api_key as string ?? null
+})
+
+const wechatWebhookUrl = computed(() => {
+  const baseUrl = window.location.origin
+  return `${baseUrl}/api/channels/wechat/webhook/${botIdRef.value}`
+})
+
+const isGeneratingKey = ref(false)
+
+async function generateApiKey() {
+  isGeneratingKey.value = true
+  try {
+    const token = localStorage.getItem('token') || ''
+    const response = await fetch(`/api/bots/${botIdRef.value}/preauth_keys`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ ttl_seconds: 365 * 24 * 60 * 60 }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to generate API key')
+    }
+
+    const data = await response.json()
+    const apiKey = data.token || data.Token
+
+    if (!apiKey) {
+      throw new Error('API key not found in response')
+    }
+
+    await upsertChannel({
+      platform: 'wechat',
+      data: {
+        credentials: { api_key: apiKey },
+        status: 'active',
+      },
+    })
+
+    toast.success(t('bots.channels.apiKeyGenerated'))
+    emit('saved')
+  } catch {
+    toast.error(t('bots.channels.apiKeyGenerateFailed'))
+  } finally {
+    isGeneratingKey.value = false
+  }
+}
+
+function copyToClipboard(text: string, successMsg: string) {
+  navigator.clipboard.writeText(text).then(() => {
+    toast.success(successMsg)
+  }).catch(() => {
+    toast.error(t('common.copyFailed'))
+  })
+}
+
+function copyWeChatConfig() {
+  const config = {
+    webhook_url: wechatWebhookUrl.value,
+    api_key: wechatApiKey.value,
+    bot_id: botIdRef.value,
+  }
+  copyToClipboard(JSON.stringify(config, null, 2), t('bots.channels.configCopied'))
+}
 
 // Schema fields sorted: required first
 const orderedFields = computed(() => {
