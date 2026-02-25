@@ -12,8 +12,13 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
 
 FROM alpine:latest
 
+ARG TZ=UTC
+ENV TZ=${TZ}
+
 # Base utilities
-RUN apk add --no-cache grep curl bash
+RUN apk add --no-cache grep curl bash tzdata gcompat \
+    && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
+    && echo "${TZ}" > /etc/timezone
 
 # Node.js + npm (provides npx for JS/TS MCP servers)
 RUN apk add --no-cache nodejs npm
@@ -42,4 +47,4 @@ RUN apk add --no-cache --virtual .ov-build-deps \
 WORKDIR /app
 COPY --from=build /out/mcp /opt/mcp
 COPY cmd/mcp/template /opt/mcp-template
-ENTRYPOINT ["/bin/sh","-lc","bootstrap(){ [ -e /app/mcp ] || { mkdir -p /app; [ -f /opt/mcp ] && cp -a /opt/mcp /app/mcp 2>/dev/null || true; }; }; bootstrap; if [ -x /app/mcp ]; then exec /app/mcp \"$@\"; fi; exec /opt/mcp \"$@\"","--"]
+ENTRYPOINT ["/bin/sh","-lc","bootstrap(){ [ -e /app/mcp ] || { mkdir -p /app; [ -f /opt/mcp ] && cp -a /opt/mcp /app/mcp 2>/dev/null || true; }; [ -d /tmp ] || mkdir -p /tmp; chmod 1777 /tmp 2>/dev/null || true; }; bootstrap; if [ -x /app/mcp ]; then exec /app/mcp \"$@\"; fi; exec /opt/mcp \"$@\"","--"]

@@ -19,9 +19,14 @@ RUN cd agent && bun run build --external jsdom
 
 FROM oven/bun:1-alpine
 
+ARG TZ=UTC
+ENV TZ=${TZ}
+
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates wget
+RUN apk add --no-cache ca-certificates wget tzdata \
+    && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
+    && echo "${TZ}" > /etc/timezone
 
 COPY --from=builder /build/agent/dist /app/dist
 COPY --from=builder /build/agent/node_modules /app/node_modules

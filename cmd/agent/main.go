@@ -249,10 +249,14 @@ func provideContainerdClient(lc fx.Lifecycle, rc *boot.RuntimeConfig) (*containe
 	return client, nil
 }
 
-func provideDBConn(lc fx.Lifecycle, cfg config.Config) (*pgxpool.Pool, error) {
+func provideDBConn(lc fx.Lifecycle, cfg config.Config, log *slog.Logger) (*pgxpool.Pool, error) {
 	conn, err := db.Open(context.Background(), cfg.Postgres)
 	if err != nil {
 		return nil, fmt.Errorf("db connect: %w", err)
+	}
+	if err := ensureModelsSchemaCompatibility(context.Background(), conn, log); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("db schema compatibility check: %w", err)
 	}
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
@@ -261,6 +265,50 @@ func provideDBConn(lc fx.Lifecycle, cfg config.Config) (*pgxpool.Pool, error) {
 		},
 	})
 	return conn, nil
+}
+
+func ensureModelsSchemaCompatibility(ctx context.Context, conn *pgxpool.Pool, log *slog.Logger) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var hasModelsTable bool
+	if err := conn.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM information_schema.tables
+  WHERE table_schema = current_schema()
+    AND table_name = 'models'
+);`).Scan(&hasModelsTable); err != nil {
+		return fmt.Errorf("check models table existence: %w", err)
+	}
+	if !hasModelsTable {
+		return errors.New("models table does not exist; run database migrations")
+	}
+
+	var hasIsMultimodalColumn bool
+	if err := conn.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM information_schema.columns
+  WHERE table_schema = current_schema()
+    AND table_name = 'models'
+    AND column_name = 'is_multimodal'
+);`).Scan(&hasIsMultimodalColumn); err != nil {
+		return fmt.Errorf("check models.is_multimodal column existence: %w", err)
+	}
+	if hasIsMultimodalColumn {
+		return nil
+	}
+
+	if _, err := conn.Exec(ctx, `
+ALTER TABLE models
+  ADD COLUMN IF NOT EXISTS is_multimodal BOOLEAN NOT NULL DEFAULT false;
+`); err != nil {
+		return fmt.Errorf("add models.is_multimodal column: %w", err)
+	}
+
+	log.Warn("auto-repaired legacy database schema by adding models.is_multimodal; run db migration 0040 to keep schema_migrations consistent")
+	return nil
 }
 
 func provideDBQueries(conn *pgxpool.Pool) *dbsqlc.Queries {
