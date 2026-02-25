@@ -1627,7 +1627,10 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	}
 	url := r.gatewayBaseURL + "/chat/stream"
 	r.logger.Info("gateway stream request", slog.String("url", url), slog.String("body_prefix", truncate(string(body), 200)))
-	httpReq, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost, url, bytes.NewReader(body))
+	// Use a cancellable context so the HTTP request is aborted when the client
+	// disconnects or the idle-timeout fires. Persistence operations below use
+	// context.WithoutCancel individually to survive cancellation.
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -1651,7 +1654,12 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		return fmt.Errorf("agent gateway error (status %d): %s", resp.StatusCode, safe)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
+	// Wrap the response body with an idle-timeout reader. The TS agent sends
+	// heartbeat events every 3s, so 30s without any data means the stream is
+	// stuck. This prevents scanner.Scan() from blocking forever.
+	const streamIdleTimeout = 30 * time.Second
+	idleReader := newIdleTimeoutReader(resp.Body, streamIdleTimeout)
+	scanner := bufio.NewScanner(idleReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 
 	currentEvent := ""
@@ -1701,21 +1709,76 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		)
 	}
 	scanErr := scanner.Err()
-	if scanErr != nil && stored {
-		r.logger.Warn("gateway stream scanner error after store (ignored)",
-			slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
-		return nil
-	}
-	if scanErr != nil && (errors.Is(scanErr, io.ErrUnexpectedEOF) || errors.Is(scanErr, io.EOF)) {
-		if receivedChunks > 0 {
-			r.logger.Warn("gateway stream ended with EOF after receiving data",
-				slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
-			return fmt.Errorf("agent gateway stream interrupted — the model may have returned a partial response")
+	if scanErr != nil {
+		isIdleTimeout := strings.Contains(scanErr.Error(), "stream idle timeout")
+		if isIdleTimeout {
+			// Idle timeout is always an error — the stream hung. Propagate so
+			// the frontend shows an error instead of "thinking" forever.
+			r.logger.Error("gateway stream idle timeout",
+				slog.Any("error", scanErr), slog.Int("chunks", receivedChunks), slog.Bool("stored", stored))
+			return fmt.Errorf("agent response timed out — please try again")
 		}
-		r.logger.Error("gateway stream EOF with no data", slog.Any("error", scanErr))
-		return fmt.Errorf("agent gateway connection lost before any response was received")
+		if stored {
+			r.logger.Warn("gateway stream scanner error after store (ignored)",
+				slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
+			return nil
+		}
+		if errors.Is(scanErr, io.ErrUnexpectedEOF) || errors.Is(scanErr, io.EOF) {
+			if receivedChunks > 0 {
+				r.logger.Warn("gateway stream ended with EOF after receiving data",
+					slog.Any("error", scanErr), slog.Int("chunks", receivedChunks))
+				return fmt.Errorf("agent gateway stream interrupted — the model may have returned a partial response")
+			}
+			r.logger.Error("gateway stream EOF with no data", slog.Any("error", scanErr))
+			return fmt.Errorf("agent gateway connection lost before any response was received")
+		}
 	}
 	return scanErr
+}
+
+// idleTimeoutReader wraps an io.Reader and returns an error if no data is
+// received within the configured timeout. This prevents scanner.Scan() from
+// blocking forever when the upstream agent stops sending SSE events.
+type idleTimeoutReader struct {
+	r       io.Reader
+	timeout time.Duration
+	timer   *time.Timer
+}
+
+func newIdleTimeoutReader(r io.Reader, timeout time.Duration) *idleTimeoutReader {
+	return &idleTimeoutReader{
+		r:       r,
+		timeout: timeout,
+		timer:   time.NewTimer(timeout),
+	}
+}
+
+func (itr *idleTimeoutReader) Read(p []byte) (int, error) {
+	type readResult struct {
+		n   int
+		err error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		n, err := itr.r.Read(p)
+		ch <- readResult{n, err}
+	}()
+
+	// Reset timer for each read attempt.
+	if !itr.timer.Stop() {
+		select {
+		case <-itr.timer.C:
+		default:
+		}
+	}
+	itr.timer.Reset(itr.timeout)
+
+	select {
+	case res := <-ch:
+		return res.n, res.err
+	case <-itr.timer.C:
+		return 0, fmt.Errorf("stream idle timeout: no data received for %s", itr.timeout)
+	}
 }
 
 // buildGatewayAttachments converts InputAttachments into the []any format

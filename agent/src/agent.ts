@@ -784,6 +784,12 @@ export const createAgent = (
         await close()
       }
     }
+    // Abort controller for the streamText call. The per-step timeout is generous
+    // (10 min) because tool executions (file writes, API calls) can be slow.
+    // This is a safety net — the Go-side idle-timeout (30s) catches most hangs.
+    const streamAbort = new AbortController()
+    const STREAM_TIMEOUT_MS = 10 * 60 * 1000
+    const streamTimeoutId = setTimeout(() => streamAbort.abort(), STREAM_TIMEOUT_MS)
     const { fullStream } = streamText({
       model,
       messages,
@@ -791,7 +797,9 @@ export const createAgent = (
       stopWhen: stepCountIs(Infinity),
       tools,
       providerOptions,
+      abortSignal: streamAbort.signal,
       onFinish: async ({ usage, reasoning, response }) => {
+        clearTimeout(streamTimeoutId)
         await safeClose()
         result.usage = usage as never
         result.reasoning = reasoning.map((part) => part.text)
@@ -969,6 +977,7 @@ export const createAgent = (
         registry.events.off('attachment', onAttachment)
       }
     } finally {
+      clearTimeout(streamTimeoutId)
       await safeClose()
     }
 

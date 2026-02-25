@@ -190,6 +190,32 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 		case chunk, ok := <-chunkChan:
 			if !ok {
 				chunkChan = nil
+				// After chunkChan closes, briefly wait for errChan to see if the
+				// stream ended with an error (e.g. idle timeout). Without this,
+				// the frontend would receive a normal [DONE] even on failure.
+				select {
+				case streamErr, errOk := <-errChan:
+					errChan = nil
+					if errOk && streamErr != nil {
+						h.logger.Error("conversation stream failed", slog.Any("error", streamErr))
+						if processingState == "started" {
+							processingState = "failed"
+							writeSSEJSON(writer, flusher, map[string]string{
+								"type":  "processing_failed",
+								"error": "conversation processing failed",
+							})
+						}
+						writeSSEJSON(writer, flusher, map[string]string{
+							"type":    "error",
+							"error":   streamErr.Error(),
+							"message": streamErr.Error(),
+						})
+						writeSSEData(writer, flusher, "[DONE]")
+						return nil
+					}
+				case <-time.After(500 * time.Millisecond):
+					// No error within 500ms — treat as normal completion.
+				}
 				if processingState == "started" {
 					processingState = "completed"
 					if err := writeSSEJSON(writer, flusher, map[string]string{"type": "processing_completed"}); err != nil {
