@@ -354,6 +354,9 @@ func (a *FeishuAdapter) Connect(ctx context.Context, cfg channel.ChannelConfig, 
 	if a.logger != nil {
 		a.logger.Info("bot identity", slog.String("config_id", cfg.ID), slog.String("bot_open_id", botOpenID))
 	}
+	// API client for enriching inbound attachments (image downloads).
+	apiClient := lark.NewClient(feishuCfg.AppID, feishuCfg.AppSecret)
+
 	connCtx, cancel := context.WithCancel(ctx)
 	newClient := func() *larkws.Client {
 		eventDispatcher := dispatcher.NewEventDispatcher(
@@ -365,6 +368,10 @@ func (a *FeishuAdapter) Connect(ctx context.Context, cfg channel.ChannelConfig, 
 				return nil
 			}
 			msg := extractFeishuInbound(event, botOpenID)
+			// Download image binary so the LLM can actually see the image content.
+			if len(msg.Message.Attachments) > 0 {
+				msg.Message.Attachments = EnrichAttachments(connCtx, apiClient, msg.Message.Attachments, a.logger)
+			}
 			text := msg.Message.PlainText()
 			rawMessageID := ""
 			rawMessageType := ""
@@ -694,7 +701,7 @@ func (a *FeishuAdapter) sendAttachment(ctx context.Context, client *lark.Client,
 	} else {
 		downloadURL := strings.TrimSpace(att.URL)
 		if downloadURL == "" {
-			return fmt.Errorf("failed to download attachment: url is required when platform key is unavailable")
+			return fmt.Errorf("failed to send attachment %q (type=%s): url is required when platform key and binary data are unavailable", att.Name, att.Type)
 		}
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 		if err != nil {

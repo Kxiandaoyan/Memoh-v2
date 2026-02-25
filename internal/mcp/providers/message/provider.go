@@ -367,6 +367,11 @@ func (p *Executor) resolveAttachments(ctx context.Context, botID string, arr []a
 		default:
 			continue
 		}
+		// Skip attachments with no usable reference to avoid downstream errors
+		// like "url is required" when the adapter tries to send them.
+		if len(att.Data) == 0 && strings.TrimSpace(att.URL) == "" && strings.TrimSpace(att.PlatformKey) == "" {
+			continue
+		}
 		out = append(out, att)
 	}
 	return out

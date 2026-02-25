@@ -1,0 +1,3 @@
+CF这一招真妙啊 只要是有这个请求头Accept: text/markdown 就会把网页自动转换为markdown 
+
+转换过程高效 在边缘网络完成无需修改源站 响应头中包含x-markdown-tokens 这样对于agent 非常友好 也节省token CC和opencode也已经支持了

@@ -801,7 +801,7 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 			ReplyTarget:       strings.TrimSpace(req.ReplyTarget),
 			SessionToken:      req.ChatToken,
 		},
-		Attachments:        []any{},
+		Attachments:        buildGatewayAttachments(req.InputAttachments),
 		BotIdentity:        botIdentity,
 		BotSoul:            botSoul,
 		BotTask:            botTask,
@@ -1716,6 +1716,29 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		return fmt.Errorf("agent gateway connection lost before any response was received")
 	}
 	return scanErr
+}
+
+// buildGatewayAttachments converts InputAttachments into the []any format
+// expected by the gateway request. Each image attachment becomes
+// { "type": "image", "base64": "..." } matching the TypeScript agent schema.
+func buildGatewayAttachments(inputs []conversation.InputAttachment) []any {
+	if len(inputs) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(inputs))
+	for _, att := range inputs {
+		if att.Base64 == "" {
+			continue
+		}
+		out = append(out, map[string]string{
+			"type":   att.Type,
+			"base64": att.Base64,
+		})
+	}
+	if len(out) == 0 {
+		return []any{}
+	}
+	return out
 }
 
 // extractGatewayAttachments converts gateway file attachments to conversation

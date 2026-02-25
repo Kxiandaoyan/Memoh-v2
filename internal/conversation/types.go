@@ -217,6 +217,13 @@ type ToolCallFunction struct {
 	Arguments string `json:"arguments"`
 }
 
+// InputAttachment carries a user-supplied attachment (e.g. image) to be forwarded to the LLM.
+type InputAttachment struct {
+	Type   string `json:"type"`   // "image" or "file"
+	Base64 string `json:"base64"` // base64-encoded binary data
+	Path   string `json:"path"`   // optional file path
+}
+
 // ChatRequest is the input for Chat and StreamChat.
 type ChatRequest struct {
 	BotID                   string `json:"-"`
@@ -249,6 +256,9 @@ type ChatRequest struct {
 	// TaskType indicates whether this is a chat or background task (heartbeat/schedule/subagent).
 	// Background tasks may use a cheaper model when configured.
 	TaskType string `json:"-"`
+	// InputAttachments carries user-supplied attachments (images, files) to forward to the LLM.
+	InputAttachments []InputAttachment `json:"-"`
+
 	// FileAttachments holds files created during streaming, to be persisted in message metadata.
 	FileAttachments []FileAttachment `json:"-"`
 }

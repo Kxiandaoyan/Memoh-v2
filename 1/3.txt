@@ -1,0 +1,23 @@
+﻿
+终于！我搞定了 vps 上 🦞使用浏览器的难题
+
+终于！我终于解决了在 VPS 上运行 🦞 浏览器的问题。
+
+省流版:browser-control.js + xvfb + Playwright，在 Linux VPS 上实现完整的浏览器自动化
+
+browser-control.js ：龙虾为 AI Agent 打造的专属浏览器控制器，简单➕原生。
+具体参见下方引文。
+
+龙虾版提提示词安装：
+
+1. 安装：git clone <repo>/tools/browser-control.js
+2. 依赖：PIP 安装 Playwright & & Playwright 安装 Chromium & apt 安装 xvfb
+3. 使用：xvfb-run --auto-servernum node tools/browser-control.js <command>
+命令：开始 |导航 <url> |截图 |快照 |状态 |停下
+
+达成效果：
+1.安装 browser-control.js
+2.安装 Playwright + xvfb
+3.知道如何使用
+
+快去试试吧！欢迎在评论区交流你们的浏览器解决方案

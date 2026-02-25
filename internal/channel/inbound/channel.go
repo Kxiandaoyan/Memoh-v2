@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode"
 
+	"encoding/base64"
+
 	"github.com/Kxiandaoyan/Memoh-v2/internal/auth"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/route"
@@ -351,6 +353,7 @@ func (p *ChannelInboundProcessor) HandleInbound(ctx context.Context, cfg channel
 		CurrentChannel:          msg.Channel.String(),
 		Channels:                []string{msg.Channel.String()},
 		UserMessagePersisted:    userMessagePersisted,
+		InputAttachments:        buildInputAttachments(msg.Message.Attachments),
 	})
 
 	var (
@@ -1312,6 +1315,7 @@ func (p *ChannelInboundProcessor) dispatchGroupChat(
 		CurrentChannel:          msg.Channel.String(),
 		Channels:                []string{msg.Channel.String()},
 		UserMessagePersisted:    userMessagePersisted,
+		InputAttachments:        buildInputAttachments(msg.Message.Attachments),
 	})
 
 	var (
@@ -1365,4 +1369,29 @@ func (p *ChannelInboundProcessor) dispatchGroupChat(
 	go p.broadcastToOtherChannels(identity.BotID, activeChatID, strings.ToLower(msg.Channel.String()), target, outputs)
 	_ = collectedUsage
 	return nil
+}
+
+// buildInputAttachments converts channel attachments with binary data into
+// conversation.InputAttachment entries for the LLM gateway.
+func buildInputAttachments(attachments []channel.Attachment) []conversation.InputAttachment {
+	if len(attachments) == 0 {
+		return nil
+	}
+	var out []conversation.InputAttachment
+	for _, att := range attachments {
+		if len(att.Data) == 0 {
+			continue
+		}
+		if att.Type != channel.AttachmentImage {
+			continue // only images for now
+		}
+		out = append(out, conversation.InputAttachment{
+			Type:   "image",
+			Base64: base64.StdEncoding.EncodeToString(att.Data),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

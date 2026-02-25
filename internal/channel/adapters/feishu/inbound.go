@@ -1,12 +1,16 @@
 package feishu
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel"
@@ -315,4 +319,103 @@ func resolveFeishuReceiveID(raw string) (string, string, error) {
 		return strings.TrimPrefix(raw, "chat_id:"), larkim.ReceiveIdTypeChatId, nil
 	}
 	return raw, larkim.ReceiveIdTypeOpenId, nil
+}
+
+// maxImageDownloadSize is the upper bound for image binary downloads (10 MB).
+const maxImageDownloadSize = 10 * 1024 * 1024
+
+// EnrichAttachments downloads binary data for image attachments from Feishu,
+// populating att.Data and att.Mime so downstream consumers can forward the
+// actual image content to the LLM instead of just an image_key string.
+func EnrichAttachments(ctx context.Context, client *lark.Client, attachments []channel.Attachment, logger *slog.Logger) []channel.Attachment {
+	if client == nil || len(attachments) == 0 {
+		return attachments
+	}
+	for i := range attachments {
+		att := &attachments[i]
+		if att.Type != channel.AttachmentImage {
+			continue
+		}
+		if len(att.Data) > 0 {
+			continue // already has binary data
+		}
+		key := strings.TrimSpace(att.PlatformKey)
+		if key == "" {
+			continue
+		}
+		data, mime, err := downloadFeishuImage(ctx, client, key)
+		if err != nil {
+			if logger != nil {
+				logger.Warn("enrich attachment: download image failed",
+					slog.String("image_key", key),
+					slog.Any("error", err),
+				)
+			}
+			continue
+		}
+		att.Data = data
+		if mime != "" {
+			att.Mime = mime
+		}
+	}
+	return attachments
+}
+
+// downloadFeishuImage fetches image binary via the Lark Im.V1.Image.Get API.
+func downloadFeishuImage(ctx context.Context, client *lark.Client, imageKey string) ([]byte, string, error) {
+	req := larkim.NewGetImageReqBuilder().
+		ImageKey(imageKey).
+		Build()
+	resp, err := client.Im.V1.Image.Get(ctx, req)
+	if err != nil {
+		return nil, "", fmt.Errorf("image get api: %w", err)
+	}
+	if resp == nil || !resp.Success() {
+		code, msg := 0, ""
+		if resp != nil {
+			code = resp.Code
+			msg = resp.Msg
+		}
+		return nil, "", fmt.Errorf("image get failed: %s (code: %d)", msg, code)
+	}
+	if resp.File == nil {
+		return nil, "", fmt.Errorf("image get: empty file reader")
+	}
+
+	// Detect MIME from response headers when available.
+	mime := ""
+	if resp.Header != nil {
+		ct := resp.Header.Get("Content-Type")
+		if ct != "" {
+			mime = strings.TrimSpace(strings.SplitN(ct, ";", 2)[0])
+		}
+	}
+
+	// Read with size limit.
+	limited := io.LimitReader(resp.File, maxImageDownloadSize+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, "", fmt.Errorf("read image body: %w", err)
+	}
+	if len(data) > maxImageDownloadSize {
+		return nil, "", fmt.Errorf("image exceeds %d bytes limit", maxImageDownloadSize)
+	}
+
+	// Fallback MIME detection from magic bytes.
+	if mime == "" || mime == "application/octet-stream" {
+		mime = detectImageMime(data)
+	}
+	return data, mime, nil
+}
+
+// detectImageMime sniffs the MIME type from the first bytes of image data.
+func detectImageMime(data []byte) string {
+	if len(data) == 0 {
+		return "image/png" // safe default
+	}
+	ct := http.DetectContentType(data)
+	if strings.HasPrefix(ct, "image/") {
+		return ct
+	}
+	return "image/png"
 }

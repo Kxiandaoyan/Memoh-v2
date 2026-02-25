@@ -1,0 +1,61 @@
+Over the past two weeks since using @openclaw (fka Clawdbot), I've been expanding my team of agents. In this article I'll walk through how I've set them up and the systems I use to manage them for maximum output.
+Over the course of my career I've managed a lot of teams, both big and small, and my general approach with agents is to manage them the same way I'd manage human employees.
+Turns out the hard part of AI isn't the intelligence, it's the management.
+What you quickly learn about running multiple AI agents is that without structure, they're just expensive chaos. 
+They will duplicate work, forget context, overwrite each other, make decisions that contradict previously agreed upon strategies, etc. It was painfully annoying at first.
+It's basically the same problems that dysfunctional human teams have, and I've seen this firsthand so it was a problem I was confident in solving.
+So I built a system that includes:
+Agent "hiring" and onboarding
+Leveling system
+Performance reviews
+Shared context
+Coordination protocols
+Let's walk through each one.
+Agent "Hiring" and Onboarding
+The first step in the process is defining the role for each agent and building the SOUL.md files - this is where you store the important context about the agent, it's personality, it's skills, it's output and everything about them.
+You DO NOT want to rush through the creation of the SOUL.md - it's like rushing through the hiring process IRL, if you hire the first candidate to apply you're not going to get top talent.
+A couple simple rules for defining agents:
+Be as specific as possible - for example, instead of a Research Analyst agent, you're better off defining it to a specific domain and type of analysis. Better - SaaS Equity Research Analyst. Now make the agent much more dialed into that specialty.
+Be thorough - give the agent an origin story (get creative) and explain how this origin story shows up in their work, core philosophy (what is its north star guiding principles), inspirational anchors (who does it model its thinking after),  skills and methods, behavior rules, never dos, etc. Put in the work as if you were describing the absolute ideal person for this role.
+Get feedback - once you've gotten your first draft, run it through a couple LLMs for feedback to make it even more robust
+Once you are ready with the SOUL.md, you need a proper onboarding process. This includes the setup of the agent files (consistent with other agents), the access it needs, an announcement to the other agents so they all know this new agent exists, and inclusion into the workflow system. 
+Just like companies have onboarding checklists, you need the same in your agent management system.
+Agent Leveling Framework
+When you hire a new employee IRL, you don't just give them root keys on day 1 - you loop them in as you gain trust over time. You should do the same with your agents.
+I've setup a 4-level system for my agents and they each start off at level 1 and they get up-leveled through performance reviews.
+Observer: can perform assigned tasks (e.g., research, writing, reviews, etc), but cannot take action
+Advisor: can perform assigned tasks, recommend actions and execute on approval
+Operator: can autonomously execute on assigned projects within guardrails (defined specifically) and reports out daily on progress
+Autonomous: has full authority over permissioned domains (also subject to guardrails)
+Trust is earned, not granted. 
+Agent Performance Reviews
+In some cases your new agents will crush it out of the gate, in other cases (i.e., a content writer for example) may take more time to find its groove.
+This is where performance reviews come into play. I've just started this, but whenever I initiate a performance review, we go through a summary of the output and rate it, then based on that rating, make any decisions to up-level. Then feedback is passed to the agent for continual learning and improvement.
+Agents can move both directions. I had a content agent at L3 who started rushing work. Quality dropped so I bumped it back to L2 for a week.
+You need to treat it just like managing humans. 
+Shared Context Changed Everything
+One of my big breakthroughs was treating project context like a shared workspace with a central directory where any agent can read and update. When one agent learns something, it logs it so the next agent has full context.
+This eliminated the cold starts when I initiated agents on projects. 
+The key here is to develop a file structure for your context that makes sense. Each project has it's own folder with the following structure:
+ACCESS.md - outlines which agents have access
+CONTEXT.md - the working context for that project
+research/ - the folder with all supporting documents
+Any agent can read any project unless ACCESS.md denies them, then when an agent learns new context, they update CONTEXT.md. Context files have a "Last updated by" header I know who touched it.
+They Coordinate With Each Other
+I built an agent registry with skills and capabilities. When one agent needs help, there's a protocol: check who's available, provide context, hand off the task.
+Last week I watched my design agent request help from a research agent for competitive analysis. Research agent delivered insights in 20 minutes. Design agent incorporated them and kept moving.
+I didn't coordinate any of that.
+Also, my agents built a web app that allows me to see an activity feed of everything going on, including which agents are active vs idle. This visibility gives me the confidence to let them do more work more autonomously.
+The Key - Memory That Persists
+My most annoying learning when I first started was agents forgetting things. I kept having to say "I've already told you this, go back through our chat logs and find it" but that didn't fix the core problem.
+The real fix was a more robust memory system.
+Every agent maintains three types of memory:
+Daily notes (raw logs)
+Long-term memory (curated insights)
+Project-specific context (shared across agents)
+It's backed up persistently. If I lose an agent and spin up a replacement, it has institutional memory from day one.
+The Real Insight
+AI agent management is the new workforce management.
+What will separate top human performers from everyone else will be the ability to manage agentic workforces, and this will favor people who are more generalists, have prior management experience because they know how to coordinate output at scale, and those who are systems thinkers and can communicate well.
+If you're building with AI, you're not just a developer anymore, you're a manager.
+And most people are really bad at management so I hope this guide helps.
