@@ -62,6 +62,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.containerd
+      args:
+        - TZ=${TZ:-UTC}
     container_name: memoh-containerd
     privileged: true
     pid: host
@@ -78,6 +80,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.server
       args:
+        - TZ=${TZ:-UTC}
         - VERSION=${MEMOH_VERSION:-dev}
         - COMMIT_HASH=${MEMOH_COMMIT:-unknown}
         - BUILD_TIME=${MEMOH_BUILD_TIME:-unknown}
@@ -112,6 +115,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.agent
+      args:
+        - TZ=${TZ:-UTC}
     container_name: memoh-agent
     volumes:
       - ${MEMOH_CONFIG:-./docker/config/config.docker.toml}:/config.toml:ro
@@ -128,6 +133,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.web
       args:
+        - TZ=${TZ:-UTC}
         - VITE_API_URL=${VITE_API_URL:-/api}
         - VITE_AGENT_URL=${VITE_AGENT_URL:-/agent}
     container_name: memoh-web

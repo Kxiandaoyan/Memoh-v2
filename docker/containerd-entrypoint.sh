@@ -22,22 +22,18 @@ if ! ctr version >/dev/null 2>&1; then
 fi
 echo "containerd is running"
 
-# Import MCP image if not already present
-if ! ctr -n default images check "name==${MCP_IMAGE}" 2>/dev/null | grep -q "${MCP_IMAGE}"; then
-  echo "Importing MCP image into containerd..."
-  for tar in /opt/images/*.tar; do
-    if [ -f "$tar" ]; then
-      ctr -n default images import --all-platforms "$tar" 2>&1 || true
-    fi
-  done
-fi
+# Always import bundled MCP image tar so startup picks up image updates
+echo "Importing MCP image into containerd..."
+for tar in /opt/images/*.tar; do
+  if [ -f "$tar" ]; then
+    ctr -n default images import --all-platforms "$tar" 2>&1 || true
+  fi
+done
 
-# Ensure the image is unpacked into the overlayfs snapshotter.
-# `ctr images import` only stores metadata; the image layers must be
-# unpacked so that containerd can create snapshots from them.
+# Verify image availability after import.
+# For this ctr version, explicit "images unpack" is not available; snapshot
+# preparation is handled when creating containers from the image.
 if ctr -n default images check "name==${MCP_IMAGE}" 2>/dev/null | grep -q "${MCP_IMAGE}"; then
-  echo "Unpacking MCP image into overlayfs snapshotter..."
-  ctr -n default images unpack --snapshotter overlayfs "${MCP_IMAGE}" 2>&1 || true
   echo "MCP image ready: ${MCP_IMAGE}"
 else
   echo "WARNING: MCP image not available after import, will try pull at runtime"

@@ -41,9 +41,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:latest
 
+ARG TZ=UTC
+ENV TZ=${TZ}
+
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates tzdata wget nerdctl cni-plugins iptables \
+    && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
+    && echo "${TZ}" > /etc/timezone \
     && mkdir -p /opt/cni/bin \
     && (cp -a /usr/lib/cni/. /opt/cni/bin/ 2>/dev/null || true) \
     && (cp -a /usr/libexec/cni/. /opt/cni/bin/ 2>/dev/null || true) \

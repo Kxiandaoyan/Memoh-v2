@@ -24,8 +24,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- Stage 2: Assemble MCP image rootfs ----
 FROM alpine:latest AS mcp-rootfs
 
+ARG TZ=UTC
+ENV TZ=${TZ}
+
 # Base utilities
-RUN apk add --no-cache grep curl bash
+RUN apk add --no-cache grep curl bash tzdata gcompat \
+    && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
+    && echo "${TZ}" > /etc/timezone
 
 # Node.js + npm (provides npx for JS/TS MCP servers)
 RUN apk add --no-cache nodejs npm
@@ -56,13 +61,15 @@ COPY cmd/mcp/template /opt/mcp-template
 
 RUN printf '#!/bin/sh\n\
 [ -e /app/mcp ] || { mkdir -p /app; [ -f /opt/mcp ] && cp -a /opt/mcp /app/mcp 2>/dev/null || true; }\n\
+[ -d /tmp ] || mkdir -p /tmp\n\
+chmod 1777 /tmp 2>/dev/null || true\n\
 if [ -x /app/mcp ]; then exec /app/mcp "$@"; fi\n\
 exec /opt/mcp "$@"\n' > /opt/entrypoint.sh && chmod +x /opt/entrypoint.sh
 
 # Create rootfs tar excluding pseudo-filesystems
 RUN tar -cf /tmp/rootfs.tar \
     --exclude='./proc' --exclude='./sys' --exclude='./dev' \
-    --exclude='./tmp' --exclude='./run' \
+    --exclude='./run' \
     -C / .
 
 # ---- Stage 3: Package rootfs as Docker image tar ----
@@ -76,7 +83,7 @@ RUN set -e \
     && LAYER_SIZE=$(wc -c < /tmp/layer.tar) \
     && mkdir -p "/tmp/image/${LAYER_SHA}" /out \
     && mv /tmp/layer.tar "/tmp/image/${LAYER_SHA}/layer.tar" \
-    && printf '{"architecture":"amd64","os":"linux","created":"1970-01-01T00:00:00Z","config":{"Entrypoint":["/opt/entrypoint.sh"],"WorkingDir":"/app","Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]},"rootfs":{"type":"layers","diff_ids":["sha256:%s"]},"history":[{"created":"1970-01-01T00:00:00Z","comment":"memoh-mcp image"}]}' \
+    && printf '{"architecture":"amd64","os":"linux","created":"1970-01-01T00:00:00Z","config":{"Entrypoint":["/opt/entrypoint.sh"],"WorkingDir":"/app","Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1","AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser"]},"rootfs":{"type":"layers","diff_ids":["sha256:%s"]},"history":[{"created":"1970-01-01T00:00:00Z","comment":"memoh-mcp image"}]}' \
        "${LAYER_SHA}" > /tmp/config.json \
     && CONFIG_SHA=$(sha256sum /tmp/config.json | awk '{print $1}') \
     && mv /tmp/config.json "/tmp/image/${CONFIG_SHA}.json" \
@@ -87,7 +94,12 @@ RUN set -e \
 # ---- Stage 4: Containerd runtime ----
 FROM alpine:latest
 
-RUN apk add --no-cache containerd containerd-ctr
+ARG TZ=UTC
+ENV TZ=${TZ}
+
+RUN apk add --no-cache containerd containerd-ctr tzdata \
+    && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
+    && echo "${TZ}" > /etc/timezone
 
 COPY --from=oci-exporter /out/memoh-mcp.tar /opt/images/memoh-mcp.tar
 COPY docker/containerd-entrypoint.sh /entrypoint.sh
