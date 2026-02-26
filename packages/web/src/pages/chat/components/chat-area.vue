@@ -122,7 +122,7 @@
           <div v-if="uploadingFiles.length" class="space-y-1">
             <div v-for="(f, i) in uploadingFiles" :key="i" class="flex items-center gap-2 text-xs text-muted-foreground">
               <span class="truncate max-w-[200px]">{{ f.name }}</span>
-              <Progress :model-value="f.progress" class="flex-1 h-1.5" />
+              <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full transition-all" :style="{ width: f.progress + '%' }" /></div>
               <span>{{ f.progress }}%</span>
             </div>
           </div>
@@ -194,7 +194,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { Textarea, Button, Avatar, AvatarImage, AvatarFallback, Badge, Progress } from '@memoh/ui'
+import { Textarea, Button, Avatar, AvatarImage, AvatarFallback, Badge } from '@memoh/ui'
 import { useChatStore } from '@/store/chat-list'
 import { useChat } from '@/composables/api/useChat'
 import type { FileRef } from '@/composables/api/useChat'
