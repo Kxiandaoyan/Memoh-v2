@@ -960,8 +960,17 @@
       "token_budget_calculated": "Token 预算",
       "tool_result_trimmed": "工具结果裁剪",
       "model_fallback": "模型降级",
-      "skills_filtered": "技能过滤"
-    }
+      "skills_filtered": "技能过滤",
+      "history_skipped": "历史跳过",
+      "model_selected": "模型选择",
+      "container_resolved": "容器解析",
+      "trigger_started": "触发开始",
+      "trigger_completed": "触发完成",
+      "quota_checked": "配额检查",
+      "resolve_completed": "解析完成"
+    },
+    "systemTask": "系统任务",
+    "unknownBot": "未知机器人"
   },
   "teams": {
     "createTeam": "组建团队",

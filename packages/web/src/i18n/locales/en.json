@@ -964,8 +964,17 @@
       "token_budget_calculated": "Token Budget",
       "tool_result_trimmed": "Tool Trimmed",
       "model_fallback": "Model Fallback",
-      "skills_filtered": "Skills Filter"
-    }
+      "skills_filtered": "Skills Filter",
+      "history_skipped": "History Skipped",
+      "model_selected": "Model Selected",
+      "container_resolved": "Container Resolved",
+      "trigger_started": "Trigger Started",
+      "trigger_completed": "Trigger Completed",
+      "quota_checked": "Quota Checked",
+      "resolve_completed": "Resolve Done"
+    },
+    "systemTask": "System Task",
+    "unknownBot": "Unknown Bot"
   },
   "teams": {
     "createTeam": "Build a Team",

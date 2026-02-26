@@ -17,7 +17,7 @@
             :key="bot.id"
             :value="bot.id"
           >
-            {{ bot.display_name || bot.name || bot.id.slice(0, 8) }}
+            {{ bot.display_name || bot.name || $t('logs.unknownBot') }}
           </option>
         </select>
         <select
@@ -125,7 +125,7 @@
           </span>
           <!-- Query preview -->
           <span class="text-sm truncate flex-1 min-w-0">
-            {{ group.query || group.traceId.slice(0, 8) }}
+            {{ group.query || $t('logs.systemTask') }}
           </span>
           <!-- Step count -->
           <span class="text-xs text-muted-foreground shrink-0">
@@ -300,6 +300,13 @@ const stepLabels: Record<string, string> = {
   tool_result_trimmed: t('logs.steps.tool_result_trimmed'),
   model_fallback: t('logs.steps.model_fallback'),
   skills_filtered: t('logs.steps.skills_filtered'),
+  history_skipped: t('logs.steps.history_skipped'),
+  model_selected: t('logs.steps.model_selected'),
+  container_resolved: t('logs.steps.container_resolved'),
+  trigger_started: t('logs.steps.trigger_started'),
+  trigger_completed: t('logs.steps.trigger_completed'),
+  quota_checked: t('logs.steps.quota_checked'),
+  resolve_completed: t('logs.steps.resolve_completed'),
 }
 
 const traceGroups = computed<TraceGroup[]>(() => {
@@ -342,7 +349,7 @@ const chatList = computed(() => {
     const chatId = group.steps[0]?.chat_id
     if (!chatId) continue
     if (!chats.has(chatId)) {
-      chats.set(chatId, { chatId, query: group.query || chatId.slice(0, 8), count: 0 })
+      chats.set(chatId, { chatId, query: group.query || t('logs.systemTask'), count: 0 })
     }
     chats.get(chatId)!.count++
   }
@@ -399,7 +406,7 @@ function formatTimeDetailed(dateStr: string) {
 
 function getBotName(botId: string) {
   const bot = botList.value.find(b => b.id === botId)
-  return bot?.display_name || bot?.name || botId.slice(0, 8)
+  return bot?.display_name || bot?.name || t('logs.unknownBot')
 }
 
 function toggleTrace(traceId: string) {

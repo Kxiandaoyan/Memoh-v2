@@ -44,6 +44,14 @@ const (
 	StepToolResultTrimmed      ProcessLogStep = "tool_result_trimmed"
 	StepModelFallback          ProcessLogStep = "model_fallback"
 	StepSkillsFiltered         ProcessLogStep = "skills_filtered"
+
+	StepHistorySkipped    ProcessLogStep = "history_skipped"
+	StepModelSelected     ProcessLogStep = "model_selected"
+	StepContainerResolved ProcessLogStep = "container_resolved"
+	StepTriggerStarted    ProcessLogStep = "trigger_started"
+	StepTriggerCompleted  ProcessLogStep = "trigger_completed"
+	StepQuotaChecked      ProcessLogStep = "quota_checked"
+	StepResolveCompleted  ProcessLogStep = "resolve_completed"
 )
 
 // ProcessLogLevel represents the log level

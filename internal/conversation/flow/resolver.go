@@ -451,10 +451,22 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		return resolvedContext{}, fmt.Errorf("chat id is required")
 	}
 
-	skipHistory := req.MaxContextLoadTime < 0
+	resolveStart := time.Now()
 
+	skipHistory := req.MaxContextLoadTime < 0
+	if skipHistory {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepHistorySkipped, processlog.LevelInfo, "History loading skipped",
+			map[string]any{"reason": "negative_max_context"}, 0)
+	}
+
+	botSettingsStart := time.Now()
 	botSettings, err := r.loadBotSettings(ctx, req.BotID)
+	botSettingsDur := int(time.Since(botSettingsStart).Milliseconds())
 	if err != nil {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepModelSelected, processlog.LevelError, "Bot settings load failed",
+			map[string]any{"error": err.Error()}, botSettingsDur)
 		return resolvedContext{}, err
 	}
 
@@ -463,16 +475,35 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	if r.conversationSvc != nil {
 		chatSettings, err = r.conversationSvc.GetSettings(ctx, req.ChatID)
 		if err != nil {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepModelSelected, processlog.LevelError, "Chat settings load failed",
+				map[string]any{"error": err.Error()}, 0)
 			return resolvedContext{}, err
 		}
 	}
 
+	modelSelectStart := time.Now()
 	chatModel, provider, err := r.selectChatModel(ctx, req, botSettings, chatSettings)
+	modelSelectDur := int(time.Since(modelSelectStart).Milliseconds())
 	if err != nil {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepModelSelected, processlog.LevelError, "Model selection failed",
+			map[string]any{"error": err.Error()}, modelSelectDur)
 		return resolvedContext{}, err
 	}
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepModelSelected, processlog.LevelInfo, "Model selected",
+		map[string]any{
+			"model_id":       chatModel.ModelID,
+			"provider":       provider.ClientType,
+			"context_window": chatModel.ContextWindow,
+		}, modelSelectDur)
+
 	clientType, err := normalizeClientType(provider.ClientType)
 	if err != nil {
+		r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+			processlog.StepModelSelected, processlog.LevelError, "Client type normalization failed",
+			map[string]any{"error": err.Error(), "client_type": provider.ClientType}, 0)
 		return resolvedContext{}, err
 	}
 	maxCtx := coalescePositiveInt(req.MaxContextLoadTime, botSettings.MaxContextLoadTime, defaultMaxContextMinutes)
@@ -498,6 +529,9 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 	if !skipHistory && r.conversationSvc != nil {
 		msgs, err := r.loadMessages(ctx, req.ChatID, maxCtx)
 		if err != nil {
+			r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+				processlog.StepHistoryLoaded, processlog.LevelError, "Message load failed",
+				map[string]any{"error": err.Error()}, 0)
 			return resolvedContext{}, err
 		}
 		messages = limitHistoryTurns(msgs, historyLimit)
@@ -697,6 +731,13 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 
 	skills := dedup(req.Skills)
 	containerID := r.resolveContainerID(ctx, req.BotID, req.ContainerID)
+	isExplicit := strings.TrimSpace(req.ContainerID) != ""
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepContainerResolved, processlog.LevelInfo, "Container resolved",
+		map[string]any{
+			"container_id": containerID,
+			"explicit":     isExplicit,
+		}, 0)
 
 	skillStart := time.Now()
 	var usableSkills []gatewaySkill
@@ -844,6 +885,17 @@ func (r *Resolver) resolve(ctx context.Context, req conversation.ChatRequest) (r
 		}
 	}
 
+	resolveDur := int(time.Since(resolveStart).Milliseconds())
+	r.logProcessStep(ctx, req.BotID, req.ChatID, traceID, req.UserID, req.CurrentChannel,
+		processlog.StepResolveCompleted, processlog.LevelInfo, "Resolve completed",
+		map[string]any{
+			"model_id":      chatModel.ModelID,
+			"provider":      provider.ClientType,
+			"message_count": len(messages),
+			"skills_count":  len(usableSkills),
+			"container_id":  containerID,
+		}, resolveDur)
+
 	return resolvedContext{payload: payload, model: chatModel, provider: provider, traceID: traceID}, nil
 }
 
@@ -906,10 +958,19 @@ func (r *Resolver) Chat(ctx context.Context, req conversation.ChatRequest) (conv
 	// Context overflow recovery: if the LLM rejected the prompt as too long,
 	// re-prune more aggressively (0.4 budget ratio) and retry once.
 	if isContextOverflowError(err) {
+		beforeCount := len(rc.payload.Messages)
 		r.logger.Warn("Chat: context overflow detected, retrying with reduced context",
 			slog.String("bot_id", req.BotID),
 			slog.String("original_error", err.Error()))
 		rc.payload.Messages = repruneWithLowerBudget(rc.payload.Messages, rc.model.ContextWindow, 0.4)
+		afterCount := len(rc.payload.Messages)
+		r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
+			processlog.StepTokenTrimmed, processlog.LevelWarn, "Context overflow recovery",
+			map[string]any{
+				"before_messages": beforeCount,
+				"after_messages":  afterCount,
+				"budget_ratio":    0.4,
+			}, 0)
 		resp, err = r.postChat(ctx, rc.payload, req.Token)
 		if err != nil {
 			r.logProcessStep(ctx, req.BotID, req.ChatID, rc.traceID, req.UserID, req.CurrentChannel,
@@ -998,6 +1059,7 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		slog.String("reply_target", p.replyTarget),
 		slog.String("query", truncate(p.query, 200)),
 	)
+	triggerTotalStart := time.Now()
 	taskType := "schedule"
 	if p.schedule.TriggerType == "heartbeat" {
 		taskType = "heartbeat"
@@ -1016,6 +1078,17 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 	if p.platform != "" {
 		req.Channels = []string{p.platform}
 	}
+
+	// Log trigger started
+	r.logProcessStep(ctx, p.botID, p.botID, "", p.ownerUserID, p.platform,
+		processlog.StepTriggerStarted, processlog.LevelInfo, fmt.Sprintf("Trigger started (%s)", p.usageType),
+		map[string]any{
+			"schedule_id":  p.schedule.ID,
+			"trigger_type": p.schedule.TriggerType,
+			"command":      truncate(p.schedule.Command, 200),
+			"task_type":    taskType,
+		}, 0)
+
 	rc, err := r.resolve(ctx, req)
 	if err != nil {
 		r.logger.Warn("executeTrigger: resolve failed", slog.String("bot_id", p.botID), slog.Any("error", err))
@@ -1134,6 +1207,15 @@ func (r *Resolver) executeTrigger(ctx context.Context, p triggerParams, token st
 		r.logger.Warn("executeTrigger: storeRound failed", slog.String("bot_id", p.botID), slog.Any("error", err))
 		return err
 	}
+
+	triggerTotalDur := int(time.Since(triggerTotalStart).Milliseconds())
+	r.logProcessStep(ctx, p.botID, p.botID, rc.traceID, p.ownerUserID, p.platform,
+		processlog.StepTriggerCompleted, processlog.LevelInfo, fmt.Sprintf("Trigger completed (%s)", p.usageType),
+		map[string]any{
+			"schedule_id": p.schedule.ID,
+			"task_type":   taskType,
+		}, triggerTotalDur)
+
 	return nil
 }
 
