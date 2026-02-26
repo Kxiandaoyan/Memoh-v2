@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/Kxiandaoyan/Memoh-v2/internal/channel/identities"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/conversation"
 	"github.com/Kxiandaoyan/Memoh-v2/internal/conversation/flow"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/fileparse"
 	messagepkg "github.com/Kxiandaoyan/Memoh-v2/internal/message"
 	messageevent "github.com/Kxiandaoyan/Memoh-v2/internal/message/event"
 )
@@ -33,10 +35,11 @@ type MessageHandler struct {
 	accountService      *accounts.Service
 	channelIdentitySvc  *identities.Service
 	logger              *slog.Logger
+	dataRoot            string // root directory for shared file storage
 }
 
 // NewMessageHandler creates a MessageHandler.
-func NewMessageHandler(log *slog.Logger, runner flow.Runner, conversationService conversation.Accessor, messageService messagepkg.Service, botService *bots.Service, accountService *accounts.Service, channelIdentitySvc *identities.Service, eventSubscribers ...messageevent.Subscriber) *MessageHandler {
+func NewMessageHandler(log *slog.Logger, runner flow.Runner, conversationService conversation.Accessor, messageService messagepkg.Service, botService *bots.Service, accountService *accounts.Service, channelIdentitySvc *identities.Service, dataRoot string, eventSubscribers ...messageevent.Subscriber) *MessageHandler {
 	var messageEvents messageevent.Subscriber
 	if len(eventSubscribers) > 0 {
 		messageEvents = eventSubscribers[0]
@@ -50,6 +53,7 @@ func NewMessageHandler(log *slog.Logger, runner flow.Runner, conversationService
 		accountService:      accountService,
 		channelIdentitySvc:  channelIdentitySvc,
 		logger:              log.With(slog.String("handler", "conversation")),
+		dataRoot:            dataRoot,
 	}
 }
 
@@ -111,11 +115,28 @@ func (h *MessageHandler) bindChatRequest(c echo.Context) (conversation.ChatReque
 		var fileContext strings.Builder
 		fileContext.WriteString("\n\n[Attached files]\n")
 		for _, f := range req.FileRefs {
-			req.InputAttachments = append(req.InputAttachments, conversation.InputAttachment{
-				Type: "file",
-				Path: f.Path,
-			})
-			fileContext.WriteString(fmt.Sprintf("- %s (%s, %d bytes) → %s\n", f.Name, f.Mime, f.Size, f.Path))
+			// Images: keep as file attachment (agent gateway handles image parts).
+			if isImageMime(f.Mime) {
+				req.InputAttachments = append(req.InputAttachments, conversation.InputAttachment{
+					Type: "file",
+					Path: f.Path,
+				})
+				fileContext.WriteString(fmt.Sprintf("- %s (%s, %d bytes) → %s [image]\n", f.Name, f.Mime, f.Size, f.Path))
+				continue
+			}
+			// Documents: extract text and inline into query.
+			absPath := h.resolveSharedFilePath(channelIdentityID, f.Path)
+			text, err := fileparse.ExtractText(absPath, f.Mime)
+			if err != nil || text == "" {
+				// Parse failed — fall back to path reference so agent can try read tool.
+				req.InputAttachments = append(req.InputAttachments, conversation.InputAttachment{
+					Type: "file",
+					Path: f.Path,
+				})
+				fileContext.WriteString(fmt.Sprintf("- %s (%s, %d bytes) → %s [parse failed]\n", f.Name, f.Mime, f.Size, f.Path))
+			} else {
+				fileContext.WriteString(fmt.Sprintf("\n### File: %s\n```\n%s\n```\n", f.Name, text))
+			}
 		}
 		req.Query = req.Query + fileContext.String()
 	}
@@ -570,6 +591,26 @@ func (h *MessageHandler) requireParticipant(ctx context.Context, conversationID,
 		return echo.NewHTTPError(http.StatusForbidden, "not a participant")
 	}
 	return nil
+}
+
+// resolveSharedFilePath maps a virtual path like "/shared/uploads/xxx" to the
+// absolute disk path under dataRoot for the given user.
+func (h *MessageHandler) resolveSharedFilePath(userID, virtualPath string) string {
+	rel := strings.TrimPrefix(virtualPath, "/shared/")
+	root := h.dataRoot
+	if root == "" {
+		root = "data"
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		abs = root
+	}
+	return filepath.Join(abs, "shared", userID, rel)
+}
+
+// isImageMime returns true if the MIME type represents an image.
+func isImageMime(mime string) bool {
+	return strings.HasPrefix(strings.ToLower(mime), "image/")
 }
 
 func (h *MessageHandler) requireReadable(ctx context.Context, conversationID, channelIdentityID string) error {

@@ -164,7 +164,7 @@
               type="file"
               multiple
               class="hidden"
-              accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.json,.yaml,.yml,.xml,.html,.htm,.zip,.tar,.gz,.png,.jpg,.jpeg,.gif,.webp,.svg,.mp3,.wav,.mp4"
+              accept=".docx,.pdf,.xlsx,.xls,.csv,.txt,.md,.json,.yaml,.yml,.xml,.html,.htm,.png,.jpg,.jpeg,.gif,.webp"
               @change="handleFileSelect"
             >
             <div class="absolute right-2 bottom-2">

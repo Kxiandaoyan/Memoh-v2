@@ -604,8 +604,12 @@ func provideAuthHandler(log *slog.Logger, accountService *accounts.Service, rc *
 	return handlers.NewAuthHandler(log, accountService, rc.JwtSecret, rc.JwtExpiresIn)
 }
 
-func provideMessageHandler(log *slog.Logger, resolver *flow.Resolver, chatService *conversation.Service, msgService *message.DBService, botService *bots.Service, accountService *accounts.Service, identityService *identities.Service, hub *event.Hub) *handlers.MessageHandler {
-	return handlers.NewMessageHandler(log, resolver, chatService, msgService, botService, accountService, identityService, hub)
+func provideMessageHandler(log *slog.Logger, resolver *flow.Resolver, chatService *conversation.Service, msgService *message.DBService, botService *bots.Service, accountService *accounts.Service, identityService *identities.Service, cfg config.Config, hub *event.Hub) *handlers.MessageHandler {
+	dataRoot := cfg.MCP.DataRoot
+	if dataRoot == "" {
+		dataRoot = config.DefaultDataRoot
+	}
+	return handlers.NewMessageHandler(log, resolver, chatService, msgService, botService, accountService, identityService, dataRoot, hub)
 }
 
 func provideUsersHandler(log *slog.Logger, accountService *accounts.Service, identityService *identities.Service, botService *bots.Service, routeService *route.DBService, channelService *channel.Service, channelManager *channel.Manager, registry *channel.Registry, heartbeatEngine *heartbeat.Engine) *handlers.UsersHandler {
