@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -185,9 +186,9 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
 	}
-	writer := bufio.NewWriter(c.Response().Writer)
+	w := c.Response()
 	processingState := "started"
-	if err := writeSSEJSON(writer, flusher, map[string]string{"type": "processing_started"}); err != nil {
+	if err := writeSSEJSON(w, flusher, map[string]string{"type": "processing_started"}); err != nil {
 		return nil
 	}
 
@@ -199,7 +200,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-heartbeat.C:
-			if err := writeSSEData(writer, flusher, `{"type":"ping"}`); err != nil {
+			if err := writeSSEData(w, flusher, `{"type":"ping"}`); err != nil {
 				return nil
 			}
 		case chunk, ok := <-chunkChan:
@@ -215,17 +216,17 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 						h.logger.Error("conversation stream failed", slog.Any("error", streamErr))
 						if processingState == "started" {
 							processingState = "failed"
-							writeSSEJSON(writer, flusher, map[string]string{
+							writeSSEJSON(w, flusher, map[string]string{
 								"type":  "processing_failed",
 								"error": "conversation processing failed",
 							})
 						}
-						writeSSEJSON(writer, flusher, map[string]string{
+						writeSSEJSON(w, flusher, map[string]string{
 							"type":    "error",
 							"error":   streamErr.Error(),
 							"message": streamErr.Error(),
 						})
-						writeSSEData(writer, flusher, "[DONE]")
+						writeSSEData(w, flusher, "[DONE]")
 						return nil
 					}
 				case <-time.After(500 * time.Millisecond):
@@ -233,22 +234,22 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 				}
 				if processingState == "started" {
 					processingState = "completed"
-					if err := writeSSEJSON(writer, flusher, map[string]string{"type": "processing_completed"}); err != nil {
+					if err := writeSSEJSON(w, flusher, map[string]string{"type": "processing_completed"}); err != nil {
 						return nil
 					}
 				}
-				if err := writeSSEData(writer, flusher, "[DONE]"); err != nil {
+				if err := writeSSEData(w, flusher, "[DONE]"); err != nil {
 					return nil
 				}
 				return nil
 			}
 			if processingState == "started" {
 				processingState = "completed"
-				if err := writeSSEJSON(writer, flusher, map[string]string{"type": "processing_completed"}); err != nil {
+				if err := writeSSEJSON(w, flusher, map[string]string{"type": "processing_completed"}); err != nil {
 					return nil
 				}
 			}
-			if err := writeSSEData(writer, flusher, string(chunk)); err != nil {
+			if err := writeSSEData(w, flusher, string(chunk)); err != nil {
 				return nil
 			}
 		case err, ok := <-errChan:
@@ -260,7 +261,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 				h.logger.Error("conversation stream failed", slog.Any("error", err))
 				if processingState == "started" {
 					processingState = "failed"
-					if writeErr := writeSSEJSON(writer, flusher, map[string]string{
+					if writeErr := writeSSEJSON(w, flusher, map[string]string{
 						"type":  "processing_failed",
 						"error": "conversation processing failed",
 					}); writeErr != nil {
@@ -272,10 +273,10 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 					"error":   "conversation failed",
 					"message": "conversation failed",
 				}
-				if writeErr := writeSSEJSON(writer, flusher, errData); writeErr != nil {
+				if writeErr := writeSSEJSON(w, flusher, errData); writeErr != nil {
 					return nil
 				}
-				writeSSEData(writer, flusher, "[DONE]")
+				writeSSEData(w, flusher, "[DONE]")
 				return nil
 			}
 		}
@@ -283,23 +284,20 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 	return nil
 }
 
-func writeSSEData(writer *bufio.Writer, flusher http.Flusher, payload string) error {
-	if _, err := writer.WriteString(fmt.Sprintf("data: %s\n\n", payload)); err != nil {
-		return err
-	}
-	if err := writer.Flush(); err != nil {
+func writeSSEData(w io.Writer, flusher http.Flusher, payload string) error {
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
 		return err
 	}
 	flusher.Flush()
 	return nil
 }
 
-func writeSSEJSON(writer *bufio.Writer, flusher http.Flusher, payload any) error {
+func writeSSEJSON(w io.Writer, flusher http.Flusher, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	return writeSSEData(writer, flusher, string(data))
+	return writeSSEData(w, flusher, string(data))
 }
 
 func parseSinceParam(raw string) (time.Time, bool, error) {
