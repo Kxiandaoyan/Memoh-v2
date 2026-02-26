@@ -343,3 +343,19 @@ func (h *ContainerdHandler) CleanBotFiles(c echo.Context) error {
 		"freed_bytes":   freedBytes,
 	})
 }
+
+// cleanBotDataDir removes non-system files from a bot's data directory.
+// Called automatically during container setup/rebuild.
+func (h *ContainerdHandler) cleanBotDataDir(dataDir string) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if systemFiles[name] || strings.HasPrefix(name, ".") {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(dataDir, name))
+	}
+}

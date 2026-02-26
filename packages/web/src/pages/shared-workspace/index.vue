@@ -145,6 +145,9 @@
               <DropdownMenuItem @click="startMove(file)">
                 {{ $t('sharedWorkspace.move') }}
               </DropdownMenuItem>
+              <DropdownMenuItem class="text-destructive" @click="handleDeleteItem(file)">
+                {{ $t('common.delete') }}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -644,6 +647,23 @@ async function handleDelete() {
     toast.error(t('sharedWorkspace.deleteFailed'))
   } finally {
     deleting.value = false
+  }
+}
+
+async function handleDeleteItem(file: SharedFileEntry) {
+  const filePath = joinPath(currentPath.value, file.name)
+  try {
+    await client.delete({ url: `/shared/files/${filePath}` })
+    toast.success(t('sharedWorkspace.deleteSuccess'))
+    if (activeFile.value === filePath) {
+      revokePreview()
+      activeFile.value = ''
+      editContent.value = ''
+      originalContent.value = ''
+    }
+    void loadCurrentDir()
+  } catch {
+    toast.error(t('sharedWorkspace.deleteFailed'))
   }
 }
 
