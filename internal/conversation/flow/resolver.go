@@ -1754,6 +1754,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	stored := false
 	receivedChunks := 0
 	toolCallTimers := map[string]time.Time{}
+	var textAccum strings.Builder // accumulate text_delta for partial-save fallback
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -1773,6 +1774,9 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 		receivedChunks++
 		chunkCh <- conversation.StreamChunk([]byte(data))
 
+		// Accumulate text_delta content for partial-save fallback.
+		accumulateTextDelta(&textAccum, data)
+
 		// Parse tool call events for process logging.
 		r.logToolCallEvent(ctx, req, traceID, data, toolCallTimers)
 
@@ -1789,7 +1793,26 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 			stored = true
 		}
 	}
-	if !stored {
+	if !stored && receivedChunks > 0 && textAccum.Len() > 0 {
+		// Stream interrupted before agent_end — save partial content so the
+		// user's conversation history is not lost on page refresh.
+		r.logger.Warn("streamChat: saving partial response (stream ended without agent_end)",
+			slog.String("bot_id", req.BotID),
+			slog.String("chat_id", req.ChatID),
+			slog.Int("chunks", receivedChunks),
+			slog.Int("text_len", textAccum.Len()),
+		)
+		partialContent, _ := json.Marshal(textAccum.String())
+		partialMsg := []conversation.ModelMessage{{
+			Role:    "assistant",
+			Content: partialContent,
+		}}
+		if storeErr := r.storeRoundWithTrace(context.WithoutCancel(ctx), req, traceID, partialMsg); storeErr != nil {
+			r.logger.Error("streamChat: failed to save partial response", slog.Any("error", storeErr))
+		} else {
+			stored = true
+		}
+	} else if !stored {
 		r.logger.Warn("streamChat: stream ended without storing round",
 			slog.String("bot_id", req.BotID),
 			slog.String("chat_id", req.ChatID),
@@ -1968,6 +1991,22 @@ func extractGatewayAttachments(raw []gatewayFileAttachment) []conversation.FileA
 		})
 	}
 	return out
+}
+
+// accumulateTextDelta extracts text from text_delta SSE events and appends
+// it to the builder. Used to reconstruct partial responses when the stream
+// is interrupted before agent_end.
+func accumulateTextDelta(buf *strings.Builder, data string) {
+	var env struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}
+	if json.Unmarshal([]byte(data), &env) != nil {
+		return
+	}
+	if env.Type == "text_delta" && env.Delta != "" {
+		buf.WriteString(env.Delta)
+	}
 }
 
 // collectStreamAttachments parses attachment_delta events from an SSE chunk
