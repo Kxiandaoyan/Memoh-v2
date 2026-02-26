@@ -258,6 +258,8 @@ type ChatRequest struct {
 	TaskType string `json:"-"`
 	// InputAttachments carries user-supplied attachments (images, files) to forward to the LLM.
 	InputAttachments []InputAttachment `json:"-"`
+	// FileRefs carries user-uploaded file references from the web chat UI.
+	FileRefs []FileRef `json:"file_refs,omitempty"`
 
 	// FileAttachments holds files created during streaming, to be persisted in message metadata.
 	FileAttachments []FileAttachment `json:"-"`
@@ -286,6 +288,14 @@ type StreamChunk = json.RawMessage
 type FileAttachment struct {
 	Path string `json:"path"`
 	Name string `json:"name"`
+}
+
+// FileRef represents a user-uploaded file reference attached to a chat message.
+type FileRef struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Mime string `json:"mime"`
+	Path string `json:"path"`
 }
 
 // AssistantOutput holds extracted assistant content for downstream consumers.

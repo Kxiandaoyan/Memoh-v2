@@ -265,3 +265,81 @@ func validateFilename(name string) error {
 	}
 	return nil
 }
+
+// PreviewBotFile serves a file inline for browser rendering.
+// GET /bots/:bot_id/files/preview/*
+func (h *ContainerdHandler) PreviewBotFile(c echo.Context) error {
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot_id required")
+	}
+	reqPath := c.Param("*")
+	if reqPath == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "file path required")
+	}
+	reqPath = strings.TrimPrefix(reqPath, "/")
+	if strings.Contains(reqPath, "..") {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid path")
+	}
+	dataDir, err := h.ensureBotDataRoot(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	filePath := filepath.Clean(filepath.Join(dataDir, reqPath))
+	if !strings.HasPrefix(filePath, dataDir) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid path")
+	}
+	info, statErr := os.Stat(filePath)
+	if statErr != nil || info.IsDir() {
+		return echo.NewHTTPError(http.StatusNotFound, "file not found")
+	}
+	return c.File(filePath)
+}
+
+// systemFiles lists files/dirs that should NOT be cleaned from /data.
+var systemFiles = map[string]bool{
+	".skills":     true,
+	"IDENTITY.md": true,
+	"SOUL.md":     true,
+	"TOOLS.md":    true,
+	"mcp":         true,
+}
+
+// CleanBotFiles removes non-system files from the bot's /data directory.
+// POST /bots/:bot_id/files/clean
+func (h *ContainerdHandler) CleanBotFiles(c echo.Context) error {
+	botID := strings.TrimSpace(c.Param("bot_id"))
+	if botID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "bot_id required")
+	}
+	dataDir, err := h.ensureBotDataRoot(botID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var deletedCount int
+	var freedBytes int64
+	for _, entry := range entries {
+		name := entry.Name()
+		if systemFiles[name] || strings.HasPrefix(name, ".") {
+			continue
+		}
+		full := filepath.Join(dataDir, name)
+		info, _ := entry.Info()
+		var size int64
+		if info != nil {
+			size = info.Size()
+		}
+		if err := os.RemoveAll(full); err == nil {
+			deletedCount++
+			freedBytes += size
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"deleted_count": deletedCount,
+		"freed_bytes":   freedBytes,
+	})
+}

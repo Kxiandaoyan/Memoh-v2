@@ -6,6 +6,8 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # DOCX creation, editing, and analysis
 
+> **⚠️ OUTPUT PATH RULE**: All generated DOCX files MUST be saved to `/shared/` directory (e.g., `/shared/report.docx`, `/shared/output/document.docx`). NEVER save to `/data/`. Only files in `/shared/` are accessible to the user.
+
 ## Overview
 
 A user may ask you to create, edit, or analyze the contents of a .docx file. A .docx file is essentially a ZIP archive containing XML files and other resources that you can read or edit. You have different tools and workflows available for different tasks.

@@ -31,6 +31,9 @@ RUN npm install -g clawhub agent-browser @actionbookdev/cli
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
+# CJK fonts (Chinese/Japanese/Korean PDF support)
+RUN apk add --no-cache font-noto-cjk fontconfig && fc-cache -f
+
 # Python 3 + pip + uv (provides uvx for Python MCP servers)
 RUN apk add --no-cache python3 py3-pip && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \

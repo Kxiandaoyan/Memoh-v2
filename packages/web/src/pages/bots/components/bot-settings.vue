@@ -257,6 +257,34 @@
       <h3 class="text-sm font-semibold text-destructive">
         {{ $t('bots.settings.dangerZone') }}
       </h3>
+
+      <!-- Clean /data files -->
+      <div class="flex items-center justify-between">
+        <div class="space-y-0.5 pr-4">
+          <p class="text-sm font-medium">{{ $t('bots.settings.cleanDataFiles') }}</p>
+          <p class="text-xs text-muted-foreground">{{ $t('bots.settings.cleanDataFilesHint') }}</p>
+        </div>
+        <ConfirmPopover
+          :message="$t('bots.settings.cleanDataConfirm')"
+          :loading="cleanLoading"
+          :confirm-text="$t('bots.settings.cleanDataBtn')"
+          @confirm="handleCleanData"
+        >
+          <template #trigger>
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="cleanLoading"
+            >
+              <Spinner v-if="cleanLoading" class="mr-1.5" />
+              {{ $t('bots.settings.cleanDataBtn') }}
+            </Button>
+          </template>
+        </ConfirmPopover>
+      </div>
+
+      <Separator />
+
       <p class="text-xs text-muted-foreground">
         {{ $t('bots.settings.deleteBotDescription') }}
       </p>
@@ -326,6 +354,7 @@ const isPublicBot = computed(() => props.botType === 'public')
 const { t } = useI18n()
 const router = useRouter()
 const saving = ref(false)
+const cleanLoading = ref(false)
 
 const botIdRef = computed(() => props.botId) as Ref<string>
 
@@ -569,6 +598,22 @@ async function handleSave() {
     toast.error(resolveErrorMessage(error, t('bots.settings.saveFailed')))
   } finally {
     saving.value = false
+  }
+}
+
+async function handleCleanData() {
+  cleanLoading.value = true
+  try {
+    const { data } = await client.post({
+      url: '/bots/{bot_id}/files/clean',
+      path: { bot_id: botIdRef.value },
+    }) as { data: { deleted_count: number; freed_bytes: number } }
+    const mb = (data.freed_bytes / (1024 * 1024)).toFixed(1)
+    toast.success(t('bots.settings.cleanDataSuccess', { count: data.deleted_count, size: mb }))
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, t('bots.settings.cleanDataFailed')))
+  } finally {
+    cleanLoading.value = false
   }
 }
 

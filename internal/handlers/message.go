@@ -157,6 +157,20 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 	}
 	channelIdentityID = h.resolveWebChannelIdentity(c.Request().Context(), channelIdentityID, &req)
 
+	// Convert file refs to input attachments and inject file context into query.
+	if len(req.FileRefs) > 0 {
+		var fileContext strings.Builder
+		fileContext.WriteString("\n\n[Attached files]\n")
+		for _, f := range req.FileRefs {
+			req.InputAttachments = append(req.InputAttachments, conversation.InputAttachment{
+				Type: "file",
+				Path: f.Path,
+			})
+			fileContext.WriteString(fmt.Sprintf("- %s (%s, %d bytes) → %s\n", f.Name, f.Mime, f.Size, f.Path))
+		}
+		req.Query = req.Query + fileContext.String()
+	}
+
 	if h.runner == nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "conversation runner not configured")
 	}

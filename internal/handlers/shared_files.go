@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/Kxiandaoyan/Memoh-v2/internal/config"
@@ -40,9 +43,16 @@ func (h *SharedFilesHandler) Register(e *echo.Echo) {
 	g := e.Group("/shared/files")
 	g.GET("", h.List)
 	g.GET("/download/*", h.Download)
+	g.GET("/preview/*", h.Preview)
 	g.GET("/*", h.Read)
 	g.PUT("/*", h.Write)
 	g.DELETE("/*", h.Delete)
+	g.POST("/upload", h.Upload)
+	g.POST("/rename", h.Rename)
+	g.POST("/mkdir", h.Mkdir)
+	g.POST("/move", h.Move)
+	g.POST("/copy", h.Copy)
+	g.POST("/batch-delete", h.BatchDelete)
 }
 
 func (h *SharedFilesHandler) sharedDir() (string, error) {
@@ -241,4 +251,203 @@ func (h *SharedFilesHandler) Delete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// Upload handles multipart file upload. POST /shared/files/upload
+func (h *SharedFilesHandler) Upload(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "file field required")
+	}
+	if file.Size > 50<<20 {
+		return echo.NewHTTPError(http.StatusBadRequest, "file too large (max 50MB)")
+	}
+	src, err := file.Open()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer src.Close()
+
+	uploadsDir := filepath.Join(root, "uploads")
+	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	safeName := filepath.Base(file.Filename)
+	destName := fmt.Sprintf("%s_%s", uuid.New().String()[:8], safeName)
+	destPath := filepath.Join(uploadsDir, destName)
+
+	dst, err := os.Create(destPath)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, src); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"name": safeName,
+		"size": file.Size,
+		"mime": file.Header.Get("Content-Type"),
+		"path": "/shared/uploads/" + destName,
+	})
+}
+
+// Preview serves a file inline for browser rendering. GET /shared/files/preview/*
+func (h *SharedFilesHandler) Preview(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	relPath := c.Param("*")
+	full, err := validateSharedPath(root, relPath)
+	if err != nil {
+		return err
+	}
+	info, statErr := os.Stat(full)
+	if statErr != nil || info.IsDir() {
+		return echo.NewHTTPError(http.StatusNotFound, "file not found")
+	}
+	return c.File(full)
+}
+
+// Rename renames a file or directory. POST /shared/files/rename
+func (h *SharedFilesHandler) Rename(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	fromFull, err := validateSharedPath(root, req.From)
+	if err != nil {
+		return err
+	}
+	toFull, err := validateSharedPath(root, req.To)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(fromFull, toFull); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// Mkdir creates a directory. POST /shared/files/mkdir
+func (h *SharedFilesHandler) Mkdir(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	full, err := validateSharedPath(root, req.Path)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(full, 0o755); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// Move moves a file or directory. POST /shared/files/move
+func (h *SharedFilesHandler) Move(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	fromFull, err := validateSharedPath(root, req.From)
+	if err != nil {
+		return err
+	}
+	toFull, err := validateSharedPath(root, req.To)
+	if err != nil {
+		return err
+	}
+	if dir := filepath.Dir(toFull); dir != root {
+		os.MkdirAll(dir, 0o755)
+	}
+	if err := os.Rename(fromFull, toFull); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// Copy copies a file. POST /shared/files/copy
+func (h *SharedFilesHandler) Copy(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	fromFull, err := validateSharedPath(root, req.From)
+	if err != nil {
+		return err
+	}
+	toFull, err := validateSharedPath(root, req.To)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(fromFull)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "source not found")
+	}
+	if dir := filepath.Dir(toFull); dir != root {
+		os.MkdirAll(dir, 0o755)
+	}
+	if err := os.WriteFile(toFull, data, 0o644); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// BatchDelete removes multiple files/dirs. POST /shared/files/batch-delete
+func (h *SharedFilesHandler) BatchDelete(c echo.Context) error {
+	root, err := h.sharedDir()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var req struct {
+		Paths []string `json:"paths"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	deleted := 0
+	for _, p := range req.Paths {
+		full, vErr := validateSharedPath(root, p)
+		if vErr != nil || full == root {
+			continue
+		}
+		if err := os.RemoveAll(full); err == nil {
+			deleted++
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]int{"deleted": deleted})
 }

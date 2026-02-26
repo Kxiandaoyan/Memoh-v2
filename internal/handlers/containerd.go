@@ -151,9 +151,11 @@ func (h *ContainerdHandler) Register(e *echo.Echo) {
 	filesGroup := e.Group("/bots/:bot_id/files")
 	filesGroup.GET("", h.ListBotFiles)
 	filesGroup.GET("/download/*", h.DownloadBotFile)
+	filesGroup.GET("/preview/*", h.PreviewBotFile)
 	filesGroup.GET("/:filename", h.ReadBotFile)
 	filesGroup.PUT("/:filename", h.WriteBotFile)
 	filesGroup.DELETE("/:filename", h.DeleteBotFile)
+	filesGroup.POST("/clean", h.CleanBotFiles)
 
 	mediaGroup := e.Group("/bots/:bot_id/media")
 	mediaGroup.GET("", h.ListBotMedia)

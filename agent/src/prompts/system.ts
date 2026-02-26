@@ -116,6 +116,17 @@ export const system = ({
     `- When in doubt, ask`
   )
 
+  // ── File output rule (all modes except micro) ──────────────────────
+  if (!isMicro) {
+    sections.push(
+      '## File Output Rule\n\n' +
+      '**MANDATORY**: ALL generated files (PDF, DOCX, XLSX, PPTX, HTML, images, CSV, etc.) ' +
+      'MUST be saved under `/shared/`. NEVER save generated files to `/data/` — ' +
+      'files in `/data/` are NOT accessible to the user. ' +
+      'Example: `/shared/report.pdf`, `/shared/output/analysis.xlsx`.'
+    )
+  }
+
   // ── Full-mode-only sections (interactive chat) ─────────────────────
   if (isFull) {
     if (channels.length > 1) {

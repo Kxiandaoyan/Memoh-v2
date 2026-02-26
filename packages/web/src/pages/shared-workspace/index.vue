@@ -9,18 +9,33 @@
           {{ $t('sharedWorkspace.subtitle') }}
         </p>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="loading"
-        @click="loadCurrentDir"
-      >
-        <Spinner
-          v-if="loading"
-          class="mr-1.5"
-        />
-        {{ $t('common.refresh') }}
-      </Button>
+      <div class="flex gap-2 shrink-0">
+        <Button
+          v-if="multiSelect && selectedFiles.size > 0"
+          variant="destructive"
+          size="sm"
+          @click="handleBatchDelete"
+        >
+          {{ $t('sharedWorkspace.batchDelete', { count: selectedFiles.size }) }}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          :class="multiSelect ? 'ring-2 ring-primary' : ''"
+          @click="toggleMultiSelect"
+        >
+          {{ multiSelect ? $t('sharedWorkspace.exitSelect') : $t('sharedWorkspace.multiSelect') }}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="loading"
+          @click="loadCurrentDir"
+        >
+          <Spinner v-if="loading" class="mr-1.5" />
+          {{ $t('common.refresh') }}
+        </Button>
+      </div>
     </div>
 
     <!-- Breadcrumb -->
@@ -80,31 +95,59 @@
           <FontAwesomeIcon :icon="['fas', 'arrow-left']" class="text-xs" />
           ..
         </button>
-        <button
+        <div
           v-for="file in files"
           :key="file.name"
-          type="button"
-          class="w-full text-left px-3 py-2 rounded-md text-sm transition-colors"
-          :class="[
-            !file.is_dir && activeFile === joinPath(currentPath, file.name)
-              ? 'bg-accent text-accent-foreground font-medium'
-              : 'hover:bg-muted text-muted-foreground'
-          ]"
-          @click="handleItemClick(file)"
+          class="flex items-center gap-1"
         >
-          <span class="flex items-center gap-2">
-            <FontAwesomeIcon
-              :icon="file.is_dir ? ['fas', 'folder'] : ['fas', 'file-lines']"
-              :class="file.is_dir ? 'text-yellow-500' : 'text-blue-400'"
-              class="text-xs"
-            />
-            <span class="truncate">{{ file.name }}</span>
-          </span>
-          <span
-            v-if="!file.is_dir"
-            class="text-xs opacity-60 ml-5"
-          >{{ formatBytes(file.size) }}</span>
-        </button>
+          <Checkbox
+            v-if="multiSelect"
+            :model-value="selectedFiles.has(file.name)"
+            class="shrink-0"
+            @update:model-value="toggleSelect(file.name)"
+          />
+          <button
+            type="button"
+            class="flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors"
+            :class="[
+              !file.is_dir && activeFile === joinPath(currentPath, file.name)
+                ? 'bg-accent text-accent-foreground font-medium'
+                : 'hover:bg-muted text-muted-foreground'
+            ]"
+            @click="handleItemClick(file)"
+          >
+            <span class="flex items-center gap-2">
+              <FontAwesomeIcon
+                :icon="file.is_dir ? ['fas', 'folder'] : ['fas', 'file-lines']"
+                :class="file.is_dir ? 'text-yellow-500' : 'text-blue-400'"
+                class="text-xs"
+              />
+              <span class="truncate">{{ file.name }}</span>
+            </span>
+            <span
+              v-if="!file.is_dir"
+              class="text-xs opacity-60 ml-5"
+            >{{ formatBytes(file.size) }}</span>
+          </button>
+          <DropdownMenu v-if="!multiSelect">
+            <DropdownMenuTrigger as-child>
+              <button type="button" class="p-1 rounded hover:bg-muted text-muted-foreground shrink-0">
+                <FontAwesomeIcon :icon="['fas', 'ellipsis-vertical']" class="text-xs" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem @click="startRename(file)">
+                {{ $t('sharedWorkspace.rename') }}
+              </DropdownMenuItem>
+              <DropdownMenuItem v-if="!file.is_dir" @click="handleCopy(file)">
+                {{ $t('sharedWorkspace.copy') }}
+              </DropdownMenuItem>
+              <DropdownMenuItem @click="startMove(file)">
+                {{ $t('sharedWorkspace.move') }}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <!-- Right: editor area -->
@@ -130,6 +173,16 @@
               </span>
             </div>
             <div class="flex gap-2 shrink-0">
+              <Button
+                v-if="previewType === 'html' || previewType === 'pdf'"
+                variant="outline"
+                size="sm"
+                as="a"
+                :href="buildPreviewUrl(activeFile)"
+                target="_blank"
+              >
+                {{ $t('sharedWorkspace.openInNewTab') }}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -237,17 +290,18 @@
       </div>
     </div>
 
+    <!-- Action buttons -->
+    <div class="flex gap-2 mt-4">
+      <Button variant="outline" size="sm" @click="showNewFileDialog = true">
+        {{ $t('sharedWorkspace.newFile') }}
+      </Button>
+      <Button variant="outline" size="sm" @click="showNewFolderDialog = true">
+        {{ $t('sharedWorkspace.newFolder') }}
+      </Button>
+    </div>
+
     <!-- New file dialog -->
     <Dialog v-model:open="showNewFileDialog">
-      <DialogTrigger as-child>
-        <Button
-          variant="outline"
-          size="sm"
-          class="mt-4"
-        >
-          {{ $t('sharedWorkspace.newFile') }}
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{{ $t('sharedWorkspace.newFile') }}</DialogTitle>
@@ -277,6 +331,75 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- New folder dialog -->
+    <Dialog v-model:open="showNewFolderDialog">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{{ $t('sharedWorkspace.newFolder') }}</DialogTitle>
+        </DialogHeader>
+        <div class="space-y-3 py-4">
+          <Input
+            v-model="newFolderName"
+            :placeholder="$t('sharedWorkspace.newFolderPlaceholder')"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showNewFolderDialog = false">
+            {{ $t('common.cancel') }}
+          </Button>
+          <Button :disabled="!newFolderName.trim()" @click="createNewFolder">
+            {{ $t('common.create') }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Rename dialog -->
+    <Dialog v-model:open="showRenameDialog">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{{ $t('sharedWorkspace.rename') }}</DialogTitle>
+        </DialogHeader>
+        <div class="space-y-3 py-4">
+          <Input v-model="renameNewName" />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showRenameDialog = false">
+            {{ $t('common.cancel') }}
+          </Button>
+          <Button :disabled="!renameNewName.trim()" @click="confirmRename">
+            {{ $t('common.confirm') }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Move dialog -->
+    <Dialog v-model:open="showMoveDialog">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{{ $t('sharedWorkspace.move') }}</DialogTitle>
+        </DialogHeader>
+        <div class="space-y-3 py-4">
+          <div class="text-sm text-muted-foreground">
+            {{ $t('sharedWorkspace.moveHint', { name: moveTarget?.name }) }}
+          </div>
+          <Input
+            v-model="moveDestination"
+            :placeholder="$t('sharedWorkspace.moveDestPlaceholder')"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showMoveDialog = false">
+            {{ $t('common.cancel') }}
+          </Button>
+          <Button :disabled="!moveDestination.trim()" @click="confirmMove">
+            {{ $t('common.confirm') }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -284,12 +407,16 @@
 import {
   Badge,
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Input,
   Spinner,
   Textarea,
@@ -319,6 +446,18 @@ const editContent = ref('')
 const originalContent = ref('')
 const showNewFileDialog = ref(false)
 const newFileName = ref('')
+
+// Part 4: file management state
+const showNewFolderDialog = ref(false)
+const newFolderName = ref('')
+const showRenameDialog = ref(false)
+const renameTarget = ref<SharedFileEntry | null>(null)
+const renameNewName = ref('')
+const showMoveDialog = ref(false)
+const moveTarget = ref<SharedFileEntry | null>(null)
+const moveDestination = ref('')
+const multiSelect = ref(false)
+const selectedFiles = ref<Set<string>>(new Set())
 
 const pathSegments = computed(() =>
   currentPath.value ? currentPath.value.split('/').filter(Boolean) : [],
@@ -525,6 +664,118 @@ async function createNewFile() {
   } catch {
     toast.error(t('sharedWorkspace.createFailed'))
   }
+}
+
+// ── Part 4: File management operations ──
+
+async function createNewFolder() {
+  const name = newFolderName.value.trim()
+  if (!name) return
+  const folderPath = joinPath(currentPath.value, name)
+  try {
+    await client.post({ url: '/shared/files/mkdir', body: { path: folderPath } })
+    toast.success(t('sharedWorkspace.mkdirSuccess'))
+    showNewFolderDialog.value = false
+    newFolderName.value = ''
+    void loadCurrentDir()
+  } catch {
+    toast.error(t('sharedWorkspace.mkdirFailed'))
+  }
+}
+
+function startRename(file: SharedFileEntry) {
+  renameTarget.value = file
+  renameNewName.value = file.name
+  showRenameDialog.value = true
+}
+
+async function confirmRename() {
+  if (!renameTarget.value || !renameNewName.value.trim()) return
+  const from = joinPath(currentPath.value, renameTarget.value.name)
+  const to = joinPath(currentPath.value, renameNewName.value.trim())
+  if (from === to) { showRenameDialog.value = false; return }
+  try {
+    await client.post({ url: '/shared/files/rename', body: { from, to } })
+    toast.success(t('sharedWorkspace.renameSuccess'))
+    showRenameDialog.value = false
+    renameTarget.value = null
+    if (activeFile.value === from) activeFile.value = to
+    void loadCurrentDir()
+  } catch {
+    toast.error(t('sharedWorkspace.renameFailed'))
+  }
+}
+
+function startMove(file: SharedFileEntry) {
+  moveTarget.value = file
+  moveDestination.value = ''
+  showMoveDialog.value = true
+}
+
+async function confirmMove() {
+  if (!moveTarget.value || !moveDestination.value.trim()) return
+  const from = joinPath(currentPath.value, moveTarget.value.name)
+  const to = joinPath(moveDestination.value.trim(), moveTarget.value.name)
+  try {
+    await client.post({ url: '/shared/files/move', body: { from, to } })
+    toast.success(t('sharedWorkspace.moveSuccess'))
+    showMoveDialog.value = false
+    moveTarget.value = null
+    if (activeFile.value === from) { activeFile.value = ''; revokePreview() }
+    void loadCurrentDir()
+  } catch {
+    toast.error(t('sharedWorkspace.moveFailed'))
+  }
+}
+
+async function handleCopy(file: SharedFileEntry) {
+  const from = joinPath(currentPath.value, file.name)
+  const ext = file.name.lastIndexOf('.')
+  const copyName = ext > 0
+    ? `${file.name.slice(0, ext)}_copy${file.name.slice(ext)}`
+    : `${file.name}_copy`
+  const to = joinPath(currentPath.value, copyName)
+  try {
+    await client.post({ url: '/shared/files/copy', body: { from, to } })
+    toast.success(t('sharedWorkspace.copySuccess'))
+    void loadCurrentDir()
+  } catch {
+    toast.error(t('sharedWorkspace.copyFailed'))
+  }
+}
+
+function toggleSelect(fileName: string) {
+  const s = new Set(selectedFiles.value)
+  if (s.has(fileName)) s.delete(fileName)
+  else s.add(fileName)
+  selectedFiles.value = s
+}
+
+function toggleMultiSelect() {
+  multiSelect.value = !multiSelect.value
+  if (!multiSelect.value) selectedFiles.value = new Set()
+}
+
+async function handleBatchDelete() {
+  if (selectedFiles.value.size === 0) return
+  const paths = [...selectedFiles.value].map(name => joinPath(currentPath.value, name))
+  try {
+    await client.post({ url: '/shared/files/batch-delete', body: { paths } })
+    toast.success(t('sharedWorkspace.batchDeleteSuccess', { count: paths.length }))
+    selectedFiles.value = new Set()
+    multiSelect.value = false
+    revokePreview()
+    activeFile.value = ''
+    void loadCurrentDir()
+  } catch {
+    toast.error(t('sharedWorkspace.batchDeleteFailed'))
+  }
+}
+
+function buildPreviewUrl(filePath: string): string {
+  const baseUrl = client.getConfig().baseUrl || '/api'
+  const token = localStorage.getItem('token') || ''
+  return `${baseUrl}/shared/files/preview/${encodeURIComponent(filePath)}?token=${encodeURIComponent(token)}`
 }
 
 function formatBytes(bytes: number): string {

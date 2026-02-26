@@ -273,6 +273,39 @@ with open("encrypted.pdf", "wb") as output:
     writer.write(output)
 ```
 
+## Chinese / CJK Support
+
+The container has Noto CJK fonts pre-installed. When creating PDFs with Chinese, Japanese, or Korean text using reportlab, you **must** register the CJK font explicitly:
+
+```python
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+
+# Register Noto Sans CJK font (pre-installed in container)
+pdfmetrics.registerFont(TTFont('NotoSansCJK', '/usr/share/fonts/noto/NotoSansCJK-Regular.ttc'))
+
+c = canvas.Canvas("/shared/output.pdf", pagesize=A4)
+c.setFont('NotoSansCJK', 14)
+c.drawString(72, 750, "你好世界 Hello World こんにちは 안녕하세요")
+c.save()
+```
+
+For Platypus (SimpleDocTemplate), register the font and create a custom style:
+
+```python
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph
+
+style_cn = ParagraphStyle('Chinese', fontName='NotoSansCJK', fontSize=12, leading=16)
+story = [Paragraph("中文内容示例", style_cn)]
+doc = SimpleDocTemplate("/shared/report.pdf")
+doc.build(story)
+```
+
+> **Important**: Always use the registered CJK font name (`NotoSansCJK`) for any text containing CJK characters. The default reportlab fonts do NOT support CJK and will produce garbled output.
+
 ## Quick Reference
 
 | Task | Best Tool | Command/Code |

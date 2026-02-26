@@ -703,7 +703,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // ---- Send message (blocks-based streaming) ----
 
-  async function sendMessage(text: string) {
+  async function sendMessage(text: string, fileRefs?: import('@/composables/api/useChat').FileRef[]) {
     const trimmed = text.trim()
     if (!trimmed || streaming.value || !currentBotId.value) return
 
@@ -747,6 +747,7 @@ export const useChatStore = defineStore('chat', () => {
       abortFn = streamMessage(
         bid, cid, trimmed,
         (event: StreamEvent) => {
+          // fileRefs passed below
           const type = (event.type ?? '').toLowerCase()
 
           switch (type) {
@@ -944,6 +945,7 @@ export const useChatStore = defineStore('chat', () => {
             waitingTimeout = null
           }, 180_000)
         },
+        fileRefs,
       )
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Unknown error'

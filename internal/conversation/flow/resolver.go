@@ -1790,6 +1790,13 @@ func buildGatewayAttachments(inputs []conversation.InputAttachment) []any {
 	}
 	out := make([]any, 0, len(inputs))
 	for _, att := range inputs {
+		if att.Type == "file" && att.Path != "" {
+			out = append(out, map[string]string{
+				"type": "file",
+				"path": att.Path,
+			})
+			continue
+		}
 		if att.Base64 == "" {
 			continue
 		}

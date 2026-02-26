@@ -6,6 +6,8 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # Requirements for Outputs
 
+> **⚠️ OUTPUT PATH RULE**: All generated XLSX files MUST be saved to `/shared/` directory (e.g., `/shared/report.xlsx`, `/shared/output/data.xlsx`). NEVER save to `/data/`. Only files in `/shared/` are accessible to the user.
+
 ## All Excel files
 
 ### Zero Formula Errors
