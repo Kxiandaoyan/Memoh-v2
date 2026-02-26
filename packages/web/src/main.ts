@@ -84,6 +84,9 @@ import {
   faUsers,
   faArrowRightArrowLeft,
   faArrowRight,
+  faPaperclip,
+  faClipboard,
+  faBars,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   faRectangleList,
@@ -168,6 +171,9 @@ library.add(
   faUsers,
   faArrowRightArrowLeft,
   faArrowRight,
+  faPaperclip,
+  faClipboard,
+  faBars,
 )
 
 createApp(App)
