@@ -996,8 +996,6 @@ func (h *ContainerdHandler) SetupBotContainer(ctx context.Context, botID string)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
 	}
-	// Auto-clean non-system files from /data on container setup/rebuild.
-	h.cleanBotDataDir(dataDir)
 	if err := os.MkdirAll(filepath.Join(dataDir, ".skills"), 0o755); err != nil {
 		return err
 	}

@@ -463,6 +463,10 @@
       "readFailed": "Failed to read file",
       "saveSuccess": "File saved",
       "saveFailed": "Failed to save file",
+      "cleanBtn": "Clean Temp Files",
+      "cleanConfirm": "This will remove temporary generated files (PDF, Word, images, etc.) from /data. Bot config files are not affected. Proceed?",
+      "cleanSuccess": "Cleaned {count} files, freed {size} MB",
+      "cleanFailed": "Failed to clean files",
       "desc": {
         "soul": "Bot personality & behavior",
         "identity": "Bot identity definition",

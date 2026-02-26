@@ -296,16 +296,31 @@ func (h *ContainerdHandler) PreviewBotFile(c echo.Context) error {
 	return c.File(filePath)
 }
 
-// systemFiles lists files/dirs that should NOT be cleaned from /data.
-var systemFiles = map[string]bool{
-	".skills":     true,
-	"IDENTITY.md": true,
-	"SOUL.md":     true,
-	"TOOLS.md":    true,
-	"mcp":         true,
+// cleanableExtensions are file extensions considered temporary/generated artifacts
+// that can be safely cleaned from /data. Bot config files (*.md, *.conf, *.json, etc.)
+// and directories (subagent-roles/, .skills/, mcp/) are never touched.
+var cleanableExtensions = map[string]bool{
+	// Documents
+	".pdf": true, ".doc": true, ".docx": true,
+	".xls": true, ".xlsx": true, ".csv": true,
+	".ppt": true, ".pptx": true,
+	// Images
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".webp": true, ".svg": true, ".bmp": true, ".ico": true,
+	// Web artifacts
+	".html": true, ".htm": true, ".css": true, ".js": true,
+	// Media
+	".mp3": true, ".wav": true, ".mp4": true, ".webm": true,
+	".ogg": true, ".mov": true, ".flac": true, ".aac": true,
+	// Archives
+	".zip": true, ".tar": true, ".gz": true, ".rar": true, ".7z": true,
+	// Other generated
+	".tmp": true, ".log": true,
 }
 
-// CleanBotFiles removes non-system files from the bot's /data directory.
+// CleanBotFiles removes temporary/generated files from the bot's /data directory.
+// Only files with known temporary extensions (PDF, DOCX, images, etc.) are deleted.
+// Bot configuration files (*.md, *.conf, *.json, directories) are never touched.
 // POST /bots/:bot_id/files/clean
 func (h *ContainerdHandler) CleanBotFiles(c echo.Context) error {
 	botID := strings.TrimSpace(c.Param("bot_id"))
@@ -316,16 +331,22 @@ func (h *ContainerdHandler) CleanBotFiles(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+
 	entries, err := os.ReadDir(dataDir)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+
 	var deletedCount int
 	var freedBytes int64
 	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // never delete directories
+		}
 		name := entry.Name()
-		if systemFiles[name] || strings.HasPrefix(name, ".") {
-			continue
+		ext := strings.ToLower(filepath.Ext(name))
+		if !cleanableExtensions[ext] {
+			continue // only delete known temporary file types
 		}
 		full := filepath.Join(dataDir, name)
 		info, _ := entry.Info()
@@ -333,29 +354,15 @@ func (h *ContainerdHandler) CleanBotFiles(c echo.Context) error {
 		if info != nil {
 			size = info.Size()
 		}
-		if err := os.RemoveAll(full); err == nil {
+		if err := os.Remove(full); err == nil {
 			deletedCount++
 			freedBytes += size
 		}
 	}
+
 	return c.JSON(http.StatusOK, map[string]any{
 		"deleted_count": deletedCount,
 		"freed_bytes":   freedBytes,
 	})
 }
 
-// cleanBotDataDir removes non-system files from a bot's data directory.
-// Called automatically during container setup/rebuild.
-func (h *ContainerdHandler) cleanBotDataDir(dataDir string) {
-	entries, err := os.ReadDir(dataDir)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if systemFiles[name] || strings.HasPrefix(name, ".") {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(dataDir, name))
-	}
-}

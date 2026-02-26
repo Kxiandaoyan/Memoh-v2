@@ -9,18 +9,37 @@
           {{ $t('bots.files.subtitle') }}
         </p>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="listLoading"
-        @click="loadFileList"
-      >
-        <Spinner
-          v-if="listLoading"
-          class="mr-1.5"
-        />
-        {{ $t('common.refresh') }}
-      </Button>
+      <div class="flex gap-2 shrink-0">
+        <ConfirmPopover
+          :message="$t('bots.files.cleanConfirm')"
+          :loading="cleanLoading"
+          :confirm-text="$t('bots.files.cleanBtn')"
+          @confirm="handleCleanData"
+        >
+          <template #trigger>
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="cleanLoading"
+            >
+              <Spinner v-if="cleanLoading" class="mr-1.5" />
+              {{ $t('bots.files.cleanBtn') }}
+            </Button>
+          </template>
+        </ConfirmPopover>
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="listLoading"
+          @click="loadFileList"
+        >
+          <Spinner
+            v-if="listLoading"
+            class="mr-1.5"
+          />
+          {{ $t('common.refresh') }}
+        </Button>
+      </div>
     </div>
 
     <!-- Loading state -->
@@ -142,6 +161,7 @@ import {
   Spinner,
   Textarea,
 } from '@memoh/ui'
+import ConfirmPopover from '@/components/confirm-popover/index.vue'
 import { ref, computed, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { useI18n } from 'vue-i18n'
@@ -164,6 +184,7 @@ const listLoading = ref(false)
 const activeFile = ref('')
 const fileLoading = ref(false)
 const saving = ref(false)
+const cleanLoading = ref(false)
 const editContent = ref('')
 const originalContent = ref('')
 
@@ -248,6 +269,23 @@ async function handleSave() {
     toast.error(t('bots.files.saveFailed'))
   } finally {
     saving.value = false
+  }
+}
+
+async function handleCleanData() {
+  cleanLoading.value = true
+  try {
+    const { data } = await client.post({
+      url: '/bots/{bot_id}/files/clean',
+      path: { bot_id: props.botId },
+    }) as { data: { deleted_count: number; freed_bytes: number } }
+    const mb = (data.freed_bytes / (1024 * 1024)).toFixed(1)
+    toast.success(t('bots.files.cleanSuccess', { count: data.deleted_count, size: mb }))
+    void loadFileList()
+  } catch {
+    toast.error(t('bots.files.cleanFailed'))
+  } finally {
+    cleanLoading.value = false
   }
 }
 

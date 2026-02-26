@@ -459,6 +459,10 @@
       "readFailed": "读取文件失败",
       "saveSuccess": "文件已保存",
       "saveFailed": "保存文件失败",
+      "cleanBtn": "清理临时文件",
+      "cleanConfirm": "将清理 /data 中的临时生成文件（PDF、Word、图片等），不会影响 Bot 配置文件。确定清理？",
+      "cleanSuccess": "已清理 {count} 个文件，释放 {size} MB",
+      "cleanFailed": "清理文件失败",
       "desc": {
         "soul": "Bot 灵魂与行为准则",
         "identity": "Bot 身份定义",
