@@ -177,6 +177,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
 	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
+	c.Response().Header().Set("X-Accel-Buffering", "no")
 	c.Response().WriteHeader(http.StatusOK)
 
 	chunkChan, errChan := h.runner.StreamChat(c.Request().Context(), req)
@@ -431,6 +432,7 @@ func (h *MessageHandler) StreamMessageEvents(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
 	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
+	c.Response().Header().Set("X-Accel-Buffering", "no")
 	c.Response().WriteHeader(http.StatusOK)
 
 	flusher, ok := c.Response().Writer.(http.Flusher)
