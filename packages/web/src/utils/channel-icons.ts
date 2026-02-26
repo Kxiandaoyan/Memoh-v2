@@ -13,7 +13,6 @@ const CHANNEL_ICONS: Record<string, [string, string]> = {
   telegram: ['fab', 'telegram'],
   feishu: ['fas', 'comment-dots'],
   web: ['fas', 'globe'],
-  slack: ['fab', 'slack'],
   discord: ['fab', 'discord'],
 }
 

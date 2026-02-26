@@ -787,13 +787,7 @@
       "save": "保存设置",
       "dangerZone": "危险操作",
       "deleteBotDescription": "删除此 Bot 后无法恢复，请谨慎操作。",
-      "deleteBot": "删除 Bot",
-      "cleanDataFiles": "清理 /data 文件",
-      "cleanDataFilesHint": "删除 Bot 容器 /data 目录下的非系统文件（不影响 Skills、IDENTITY 等配置）。",
-      "cleanDataConfirm": "确定要清理 /data 目录下的非系统文件吗？",
-      "cleanDataBtn": "清理文件",
-      "cleanDataSuccess": "已清理 {count} 个文件，释放 {size} MB",
-      "cleanDataFailed": "清理文件失败"
+      "deleteBot": "删除 Bot"
     },
     "channels": {
       "title": "平台",

@@ -13,8 +13,6 @@ const enabledExtendedTools = new Set<string>()
 
 export const getEnabledExtendedTools = () => [...enabledExtendedTools]
 
-export const clearEnabledExtendedTools = () => enabledExtendedTools.clear()
-
 export const createTierTools = ({ auth, identity, fetch: authFetch }: TierToolsOptions) => {
   const baseUrl = normalizeBaseUrl(auth.baseUrl)
   const botId = identity.botId.trim()

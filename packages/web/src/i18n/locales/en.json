@@ -791,13 +791,7 @@
       "save": "Save Settings",
       "dangerZone": "Danger Zone",
       "deleteBotDescription": "Deleting this bot cannot be undone. Proceed with caution.",
-      "deleteBot": "Delete Bot",
-      "cleanDataFiles": "Clean /data Files",
-      "cleanDataFilesHint": "Remove non-system files from the bot's /data directory (Skills, IDENTITY, etc. are preserved).",
-      "cleanDataConfirm": "Are you sure you want to clean non-system files from /data?",
-      "cleanDataBtn": "Clean Files",
-      "cleanDataSuccess": "Cleaned {count} files, freed {size} MB",
-      "cleanDataFailed": "Failed to clean files"
+      "deleteBot": "Delete Bot"
     },
     "channels": {
       "title": "Platforms",
