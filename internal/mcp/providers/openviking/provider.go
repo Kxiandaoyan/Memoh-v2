@@ -593,6 +593,12 @@ func (e *Executor) runPython(ctx context.Context, botID, script string) (map[str
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("python exited with code %d", result.ExitCode)
 		}
+		// Friendly error for missing Python package
+		if strings.Contains(errMsg, "ModuleNotFoundError") {
+			return mcpgw.BuildToolErrorResult(
+				"OpenViking Python package is not installed in this container. " +
+					"Please run: pip install openviking"), nil
+		}
 		e.logger.Warn("openviking python error",
 			slog.String("bot_id", botID),
 			slog.Int("exit_code", int(result.ExitCode)),

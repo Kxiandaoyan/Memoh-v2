@@ -94,7 +94,6 @@ export interface ChatMessage {
   blocks: ContentBlock[]
   timestamp: Date
   streaming: boolean
-  isWaiting?: boolean
   platform?: string
   senderDisplayName?: string
   senderAvatarUrl?: string
@@ -107,7 +106,6 @@ export interface ChatMessage {
 export const useChatStore = defineStore('chat', () => {
   const messages = reactive<ChatMessage[]>([])
   const streaming = ref(false)
-  const waitingForResponse = ref(false)
   const chats = ref<ChatSummary[]>([])
   const loading = ref(false)
   const loadingChats = ref(false)
@@ -119,7 +117,6 @@ export const useChatStore = defineStore('chat', () => {
   const bots = ref<Bot[]>([])
 
   let abortFn: (() => void) | null = null
-  let waitingTimeout: ReturnType<typeof setTimeout> | null = null
   let messageEventsController: AbortController | null = null
   let messageEventsLoopVersion = 0
   let messageEventsSince = ''
@@ -344,18 +341,10 @@ export const useChatStore = defineStore('chat', () => {
   function abort() {
     abortFn?.()
     abortFn = null
-    if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
     for (const msg of messages) {
       if (msg.streaming) msg.streaming = false
-      if (msg.isWaiting) msg.isWaiting = false
     }
     streaming.value = false
-    waitingForResponse.value = false
-  }
-
-  function clearWaiting() {
-    if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
-    waitingForResponse.value = false
   }
 
   // ---- Message list management ----
@@ -398,23 +387,9 @@ export const useChatStore = defineStore('chat', () => {
   function appendRealtimeMessage(raw: Message) {
     updateSince(raw.created_at)
     const platform = (raw.platform ?? '').trim().toLowerCase()
-    console.debug('[appendRealtimeMessage] id=%s role=%s platform=%s waitingForResponse=%s', raw.id, raw.role, platform, waitingForResponse.value)
+    console.debug('[appendRealtimeMessage] id=%s role=%s platform=%s', raw.id, raw.role, platform)
 
     if (platform === 'web') {
-      // Replace waiting placeholder when backend finally delivers the assistant message
-      if (waitingForResponse.value && raw.role === 'assistant') {
-        const idx = messages.findIndex((m) => m.isWaiting)
-        if (idx >= 0) {
-          const item = messageToChat(raw)
-          if (item) {
-            messages.splice(idx, 1, item)
-            if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
-            waitingForResponse.value = false
-            touchChat(chatId.value ?? '')
-            return
-          }
-        }
-      }
       // During active streaming, skip web-platform messages to avoid duplicates
       if (streaming.value || loading.value) {
         console.debug('[appendRealtimeMessage] skipped web msg during streaming, id=%s', raw.id)
@@ -442,21 +417,6 @@ export const useChatStore = defineStore('chat', () => {
 
   function handleStreamEvent(targetBotId: string, event: Record<string, unknown>) {
     const eventType = String(event.type ?? '').toLowerCase()
-
-    // Subagent completed: reset waiting timer so we don't timeout prematurely
-    if (eventType === 'subagent_completed' && waitingForResponse.value && waitingTimeout) {
-      clearTimeout(waitingTimeout)
-      waitingTimeout = setTimeout(() => {
-        const idx = messages.findIndex((m) => m.isWaiting)
-        if (idx >= 0) {
-          messages[idx]!.isWaiting = false
-          messages[idx]!.blocks = [{ type: 'text', content: i18n.global.t('chat.errors.responseTimeout') as string }]
-          waitingForResponse.value = false
-        }
-        waitingTimeout = null
-      }, 180_000)
-      return
-    }
 
     if (eventType !== 'message_created') return
     const eBotId = String(event.bot_id ?? '').trim()
@@ -588,7 +548,6 @@ export const useChatStore = defineStore('chat', () => {
     if (initializing.value) return
     initializing.value = true
     loadingChats.value = true
-    clearWaiting()
     stopMessageEvents()
     try {
       const bid = await ensureBot()
@@ -613,30 +572,6 @@ export const useChatStore = defineStore('chat', () => {
       chatId.value = activeChatId
       await loadMessages(bid, activeChatId)
 
-      // After refresh: if last message is user with no assistant reply,
-      // backend is likely still processing. Show waiting placeholder.
-      const last = messages[messages.length - 1]
-      if (last?.role === 'user') {
-        messages.push({
-          id: `wait-${Date.now()}`,
-          role: 'assistant',
-          blocks: [],
-          timestamp: new Date(),
-          streaming: false,
-          isWaiting: true,
-        })
-        waitingForResponse.value = true
-        waitingTimeout = setTimeout(() => {
-          const idx = messages.findIndex((m) => m.isWaiting)
-          if (idx >= 0) {
-            messages[idx]!.isWaiting = false
-            messages[idx]!.blocks = [{ type: 'text', content: i18n.global.t('chat.errors.responseTimeout') as string }]
-            waitingForResponse.value = false
-          }
-          waitingTimeout = null
-        }, 180_000)
-      }
-
       startMessageEvents(bid)
     } finally {
       loadingChats.value = false
@@ -655,7 +590,6 @@ export const useChatStore = defineStore('chat', () => {
   async function selectChat(targetChatId: string) {
     const cid = targetChatId.trim()
     if (!cid || cid === chatId.value) return
-    clearWaiting()
     chatId.value = cid
     loadingChats.value = true
     try {
@@ -668,7 +602,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function createNewChat() {
-    clearWaiting()
     loadingChats.value = true
     try {
       const bid = await ensureBot()
@@ -685,7 +618,6 @@ export const useChatStore = defineStore('chat', () => {
   async function removeChat(targetChatId: string) {
     const delId = targetChatId.trim()
     if (!delId) return
-    clearWaiting()
     loadingChats.value = true
     try {
       const bid = currentBotId.value ?? ''
@@ -925,30 +857,19 @@ export const useChatStore = defineStore('chat', () => {
         (err) => {
           assistantMsg.streaming = false
           loading.value = false
+          streaming.value = false
           abortFn = null
 
           if (assistantMsg.blocks.length > 0) {
-            // Partial content already received — keep it and stop streaming normally.
-            streaming.value = false
+            // Partial content already received — keep it.
             return
           }
 
-          // No content received: enter waiting state.
-          assistantMsg.isWaiting = true
-          waitingForResponse.value = true
-          streaming.value = false
-
-          waitingTimeout = setTimeout(() => {
-            if (assistantMsg.isWaiting) {
-              assistantMsg.isWaiting = false
-              assistantMsg.blocks = [{
-                type: 'text',
-                content: i18n.global.t('chat.errors.responseTimeout') as string,
-              }]
-              waitingForResponse.value = false
-            }
-            waitingTimeout = null
-          }, 180_000)
+          // No content received — show friendly error.
+          const reason = resolveStreamError(
+            err instanceof Error ? err.message : 'Unknown error',
+          )
+          assistantMsg.blocks = [{ type: 'text', content: reason }]
         },
         fileRefs,
       )
@@ -980,8 +901,6 @@ export const useChatStore = defineStore('chat', () => {
         messages.splice(i + 1)
         streaming.value = false
         loading.value = false
-        waitingForResponse.value = false
-        if (waitingTimeout) { clearTimeout(waitingTimeout); waitingTimeout = null }
         void sendMessage(text)
         return
       }
@@ -996,7 +915,6 @@ export const useChatStore = defineStore('chat', () => {
   return {
     messages,
     streaming,
-    waitingForResponse,
     chats,
     participantChats,
     observedChats,

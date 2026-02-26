@@ -131,10 +131,17 @@ else:
 		return ""
 	}
 	if result.ExitCode != 0 {
+		stderr := truncate(result.Stderr, 200)
+		// ModuleNotFoundError is an expected environment issue, not a runtime error
+		if strings.Contains(result.Stderr, "ModuleNotFoundError") {
+			c.logger.Debug("openviking.LoadContext: openviking package not installed, skipping",
+				slog.String("bot_id", botID))
+			return ""
+		}
 		c.logger.Warn("openviking.LoadContext: exec failed",
 			slog.String("bot_id", botID),
 			slog.Any("exit_code", result.ExitCode),
-			slog.String("stderr", truncate(result.Stderr, 200)))
+			slog.String("stderr", stderr))
 		return ""
 	}
 

@@ -166,8 +166,6 @@
     "toolResult": "Result",
     "unknownUser": "{platform} User",
     "errors": {
-      "responseTimeout": "Response timed out. Please try again.",
-      "waitingForResponse": "Connection lost, waiting for response...",
       "streamTimeout": "Response timed out. Please try again.",
       "connectionLost": "Connection lost. Please try again.",
       "streamInterrupted": "Stream interrupted. Your message may be partially saved.",

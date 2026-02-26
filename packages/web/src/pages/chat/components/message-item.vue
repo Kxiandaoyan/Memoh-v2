@@ -156,18 +156,6 @@
           {{ $t('chat.thinking') }}
         </div>
 
-        <!-- Waiting indicator: SSE disconnected, waiting for message events -->
-        <div
-          v-if="message.isWaiting && message.blocks.length === 0"
-          class="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 h-8"
-        >
-          <FontAwesomeIcon
-            :icon="['fas', 'spinner']"
-            class="size-3.5 animate-spin"
-          />
-          {{ $t('chat.errors.waitingForResponse') }}
-        </div>
-
         <!-- Token usage badge -->
         <span
           v-if="!message.streaming && message.tokenUsage && message.tokenUsage.totalTokens > 0"

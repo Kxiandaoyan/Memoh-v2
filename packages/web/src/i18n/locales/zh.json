@@ -162,8 +162,6 @@
     "toolResult": "结果",
     "unknownUser": "{platform}用户",
     "errors": {
-      "responseTimeout": "响应超时，请重试。",
-      "waitingForResponse": "连接断开，等待响应中…",
       "streamTimeout": "响应超时，请重试。",
       "connectionLost": "连接断开，请重试。",
       "streamInterrupted": "传输中断，消息可能已部分保存。",
