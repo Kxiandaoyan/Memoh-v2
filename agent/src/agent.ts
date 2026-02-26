@@ -34,7 +34,7 @@ import { getMCPTools } from './tools/mcp'
 import { getTools } from './tools'
 import { wrapToolsWithLoopDetection, clearLoopDetectionState } from './tools/loop-detection'
 import { buildIdentityHeaders } from './utils/headers'
-import { createTierTools, getEnabledExtendedTools } from './tools/tier'
+import { createTierTools } from './tools/tier'
 import { normalizeBaseUrl } from './utils/url'
 import {
   truncateToolResult,
@@ -330,6 +330,10 @@ export const createAgent = (
     expiry: number
   } = { tools: {}, close: async () => {}, extKey: '', expiry: 0 }
 
+  // Create tier tools once per agent instance so enabled-tools state is
+  // scoped to this session and persists across turns (but not across agents).
+  const tier = createTierTools({ auth, identity, fetch })
+
   const getAgentTools = async (sessionId?: string) => {
     const baseUrl = normalizeBaseUrl(auth.baseUrl)
     const botId = identity.botId.trim()
@@ -341,7 +345,7 @@ export const createAgent = (
       }
     }
     const baseHeaders = buildIdentityHeaders(identity, auth)
-    const enabledExt = getEnabledExtendedTools()
+    const enabledExt = tier.getEnabled()
     const extKey = enabledExt.join(',')
     const builtinHeaders = enabledExt.length > 0
       ? { ...baseHeaders, 'X-Memoh-Include-Tools': extKey }
@@ -378,8 +382,8 @@ export const createAgent = (
       closeMCP = async () => {}
     }
     const tools = getTools(allowedActions, { fetch, model: modelConfig, backgroundModel: backgroundModelConfig, identity, auth, enableSkill, mcpConnections, registry, teamMembers, callDepth })
-    const tierTools = createTierTools({ auth, identity, fetch })
-    const merged = { ...tierTools, ...mcpTools, ...tools } as ToolSet
+    const { list_available_tools, enable_tools } = tier
+    const merged = { list_available_tools, enable_tools, ...mcpTools, ...tools } as ToolSet
     const toolNames = Object.keys(merged)
     const wrappedTools = sessionId ? wrapToolsWithLoopDetection(merged, sessionId) : merged
     return {

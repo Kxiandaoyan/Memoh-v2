@@ -9,13 +9,13 @@ interface TierToolsOptions {
   fetch: (url: string, init?: RequestInit) => Promise<Response>
 }
 
-const enabledExtendedTools = new Set<string>()
-
-export const getEnabledExtendedTools = () => [...enabledExtendedTools]
-
 export const createTierTools = ({ auth, identity, fetch: authFetch }: TierToolsOptions) => {
   const baseUrl = normalizeBaseUrl(auth.baseUrl)
   const botId = identity.botId.trim()
+
+  // Per-instance state — scoped to this createTierTools call so that
+  // concurrent agent sessions never leak enabled tools to each other.
+  const enabledExtendedTools = new Set<string>()
 
   const list_available_tools = tool({
     description: 'List extended tools that can be enabled on-demand to expand your capabilities.',
@@ -42,5 +42,7 @@ export const createTierTools = ({ auth, identity, fetch: authFetch }: TierToolsO
     },
   })
 
-  return { list_available_tools, enable_tools }
+  const getEnabled = (): string[] => [...enabledExtendedTools]
+
+  return { list_available_tools, enable_tools, getEnabled }
 }

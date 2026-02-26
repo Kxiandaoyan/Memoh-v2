@@ -2146,9 +2146,9 @@ func (r *Resolver) loadMemoryContextMessage(ctx context.Context, req conversatio
 	// Skip memory vector search for system tasks (heartbeat/schedule triggers).
 	// The trigger prompt is not a real user query — search results would be irrelevant
 	// and waste tokens + latency.
-	// Heartbeat/schedule triggers set TaskType but not a real user query —
+	// Heartbeat/schedule/subagent triggers set TaskType but not a real user query —
 	// vector search results would be irrelevant and waste tokens + latency.
-	if req.TaskType == "heartbeat" || req.TaskType == "schedule" {
+	if req.TaskType == "heartbeat" || req.TaskType == "schedule" || req.TaskType == "subagent" {
 		return nil
 	}
 	if strings.TrimSpace(req.Query) == "" || strings.TrimSpace(req.BotID) == "" || strings.TrimSpace(req.ChatID) == "" {
