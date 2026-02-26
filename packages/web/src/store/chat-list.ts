@@ -20,13 +20,18 @@ import {
 } from '@/composables/api/useChat'
 import i18n from '@/i18n'
 
-const BILLING_ERRORS: Record<string, string> = {
+const STREAM_ERRORS: Record<string, string> = {
   daily_limit_exceeded: 'chat.errors.dailyLimitExceeded',
   insufficient_balance: 'chat.errors.insufficientBalance',
+  stream_timeout: 'chat.errors.streamTimeout',
+  connection_lost: 'chat.errors.connectionLost',
+  stream_interrupted: 'chat.errors.streamInterrupted',
+  gateway_error: 'chat.errors.gatewayError',
+  conversation_failed: 'chat.errors.conversationFailed',
 }
 
-function resolveBillingError(msg: string): string {
-  const key = BILLING_ERRORS[msg]
+function resolveStreamError(msg: string): string {
+  const key = STREAM_ERRORS[msg]
   if (key) return i18n.global.t(key) as string
   return msg
 }
@@ -890,7 +895,7 @@ export const useChatStore = defineStore('chat', () => {
 
             case 'error': {
               const rawErr = typeof event.error === 'string' ? event.error : typeof event.message === 'string' ? event.message : 'Stream error'
-              const errMsg = resolveBillingError(rawErr)
+              const errMsg = resolveStreamError(rawErr)
               if (textBlockIdx < 0 || assistantMsg.blocks[textBlockIdx]?.type !== 'text') {
                 textBlockIdx = pushBlock({ type: 'text', content: '' })
               }
@@ -949,7 +954,7 @@ export const useChatStore = defineStore('chat', () => {
       )
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Unknown error'
-      const reason = resolveBillingError(raw)
+      const reason = resolveStreamError(raw)
       const last = messages[messages.length - 1]
       if (last?.role === 'assistant' && last.streaming) {
         last.blocks = [{ type: 'text', content: reason }]

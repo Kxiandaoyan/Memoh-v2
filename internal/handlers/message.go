@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -67,29 +66,29 @@ func (h *MessageHandler) Register(e *echo.Echo) {
 
 // --- Messages ---
 
-// SendMessage sends a synchronous conversation message.
-func (h *MessageHandler) SendMessage(c echo.Context) error {
+// bindChatRequest validates auth, binds the request body, and fills common fields.
+func (h *MessageHandler) bindChatRequest(c echo.Context) (conversation.ChatRequest, error) {
 	channelIdentityID, err := h.requireChannelIdentityID(c)
 	if err != nil {
-		return err
+		return conversation.ChatRequest{}, err
 	}
 	botID := strings.TrimSpace(c.Param("bot_id"))
 	if botID == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
+		return conversation.ChatRequest{}, echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
 	}
 	if _, err := h.authorizeBotAccess(c.Request().Context(), channelIdentityID, botID); err != nil {
-		return err
+		return conversation.ChatRequest{}, err
 	}
 	if err := h.requireParticipant(c.Request().Context(), botID, channelIdentityID); err != nil {
-		return err
+		return conversation.ChatRequest{}, err
 	}
 
 	var req conversation.ChatRequest
 	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+		return conversation.ChatRequest{}, echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 	if req.Query == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "query is required")
+		return conversation.ChatRequest{}, echo.NewHTTPError(http.StatusBadRequest, "query is required")
 	}
 	req.BotID = botID
 	req.ChatID = botID
@@ -105,7 +104,31 @@ func (h *MessageHandler) SendMessage(c echo.Context) error {
 	if len(req.Channels) == 0 {
 		req.Channels = []string{req.CurrentChannel}
 	}
-	channelIdentityID = h.resolveWebChannelIdentity(c.Request().Context(), channelIdentityID, &req)
+	h.resolveWebChannelIdentity(c.Request().Context(), channelIdentityID, &req)
+
+	// Convert file refs to input attachments and inject file context into query.
+	if len(req.FileRefs) > 0 {
+		var fileContext strings.Builder
+		fileContext.WriteString("\n\n[Attached files]\n")
+		for _, f := range req.FileRefs {
+			req.InputAttachments = append(req.InputAttachments, conversation.InputAttachment{
+				Type: "file",
+				Path: f.Path,
+			})
+			fileContext.WriteString(fmt.Sprintf("- %s (%s, %d bytes) → %s\n", f.Name, f.Mime, f.Size, f.Path))
+		}
+		req.Query = req.Query + fileContext.String()
+	}
+
+	return req, nil
+}
+
+// SendMessage sends a synchronous conversation message.
+func (h *MessageHandler) SendMessage(c echo.Context) error {
+	req, err := h.bindChatRequest(c)
+	if err != nil {
+		return err
+	}
 
 	if h.runner == nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "conversation runner not configured")
@@ -120,56 +143,9 @@ func (h *MessageHandler) SendMessage(c echo.Context) error {
 
 // StreamMessage sends a streaming conversation message.
 func (h *MessageHandler) StreamMessage(c echo.Context) error {
-	channelIdentityID, err := h.requireChannelIdentityID(c)
+	req, err := h.bindChatRequest(c)
 	if err != nil {
 		return err
-	}
-	botID := strings.TrimSpace(c.Param("bot_id"))
-	if botID == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "bot id is required")
-	}
-	if _, err := h.authorizeBotAccess(c.Request().Context(), channelIdentityID, botID); err != nil {
-		return err
-	}
-	if err := h.requireParticipant(c.Request().Context(), botID, channelIdentityID); err != nil {
-		return err
-	}
-
-	var req conversation.ChatRequest
-	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
-	}
-	if req.Query == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "query is required")
-	}
-	req.BotID = botID
-	req.ChatID = botID
-	req.Token = c.Request().Header.Get("Authorization")
-	req.UserID = channelIdentityID
-	req.SourceChannelIdentityID = channelIdentityID
-	if strings.TrimSpace(req.CurrentChannel) == "" {
-		req.CurrentChannel = "web"
-	}
-	if strings.TrimSpace(req.ConversationType) == "" {
-		req.ConversationType = "direct"
-	}
-	if len(req.Channels) == 0 {
-		req.Channels = []string{req.CurrentChannel}
-	}
-	channelIdentityID = h.resolveWebChannelIdentity(c.Request().Context(), channelIdentityID, &req)
-
-	// Convert file refs to input attachments and inject file context into query.
-	if len(req.FileRefs) > 0 {
-		var fileContext strings.Builder
-		fileContext.WriteString("\n\n[Attached files]\n")
-		for _, f := range req.FileRefs {
-			req.InputAttachments = append(req.InputAttachments, conversation.InputAttachment{
-				Type: "file",
-				Path: f.Path,
-			})
-			fileContext.WriteString(fmt.Sprintf("- %s (%s, %d bytes) → %s\n", f.Name, f.Mime, f.Size, f.Path))
-		}
-		req.Query = req.Query + fileContext.String()
 	}
 
 	if h.runner == nil {
@@ -190,6 +166,24 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 	processingState := "started"
 	if err := writeSSEJSON(w, flusher, map[string]string{"type": "processing_started"}); err != nil {
 		return nil
+	}
+
+	// sendStreamError writes a classified error event and [DONE] to the client.
+	sendStreamError := func(streamErr error) {
+		h.logger.Error("conversation stream failed", slog.Any("error", streamErr))
+		if processingState == "started" {
+			processingState = "failed"
+			writeSSEJSON(w, flusher, map[string]string{
+				"type":  "processing_failed",
+				"error": "conversation processing failed",
+			})
+		}
+		errCode := classifyStreamError(streamErr)
+		writeSSEJSON(w, flusher, map[string]string{
+			"type":  "error",
+			"error": errCode,
+		})
+		writeSSEData(w, flusher, "[DONE]")
 	}
 
 	ctx := c.Request().Context()
@@ -213,20 +207,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 				case streamErr, errOk := <-errChan:
 					errChan = nil
 					if errOk && streamErr != nil {
-						h.logger.Error("conversation stream failed", slog.Any("error", streamErr))
-						if processingState == "started" {
-							processingState = "failed"
-							writeSSEJSON(w, flusher, map[string]string{
-								"type":  "processing_failed",
-								"error": "conversation processing failed",
-							})
-						}
-						writeSSEJSON(w, flusher, map[string]string{
-							"type":    "error",
-							"error":   streamErr.Error(),
-							"message": streamErr.Error(),
-						})
-						writeSSEData(w, flusher, "[DONE]")
+						sendStreamError(streamErr)
 						return nil
 					}
 				case <-time.After(500 * time.Millisecond):
@@ -238,9 +219,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 						return nil
 					}
 				}
-				if err := writeSSEData(w, flusher, "[DONE]"); err != nil {
-					return nil
-				}
+				writeSSEData(w, flusher, "[DONE]")
 				return nil
 			}
 			if processingState == "started" {
@@ -258,25 +237,7 @@ func (h *MessageHandler) StreamMessage(c echo.Context) error {
 				continue
 			}
 			if err != nil {
-				h.logger.Error("conversation stream failed", slog.Any("error", err))
-				if processingState == "started" {
-					processingState = "failed"
-					if writeErr := writeSSEJSON(w, flusher, map[string]string{
-						"type":  "processing_failed",
-						"error": "conversation processing failed",
-					}); writeErr != nil {
-						h.logger.Warn("write SSE processing_failed event failed", slog.Any("error", writeErr))
-					}
-				}
-				errData := map[string]string{
-					"type":    "error",
-					"error":   "conversation failed",
-					"message": "conversation failed",
-				}
-				if writeErr := writeSSEJSON(w, flusher, errData); writeErr != nil {
-					return nil
-				}
-				writeSSEData(w, flusher, "[DONE]")
+				sendStreamError(err)
 				return nil
 			}
 		}
@@ -298,6 +259,23 @@ func writeSSEJSON(w io.Writer, flusher http.Flusher, payload any) error {
 		return err
 	}
 	return writeSSEData(w, flusher, string(data))
+}
+
+// classifyStreamError maps internal errors to client-safe error codes.
+func classifyStreamError(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "timed out"):
+		return "stream_timeout"
+	case strings.Contains(msg, "connection lost"):
+		return "connection_lost"
+	case strings.Contains(msg, "interrupted"):
+		return "stream_interrupted"
+	case strings.Contains(msg, "agent gateway error"):
+		return "gateway_error"
+	default:
+		return "conversation_failed"
+	}
 }
 
 func parseSinceParam(raw string) (time.Time, bool, error) {
@@ -437,7 +415,7 @@ func (h *MessageHandler) StreamMessageEvents(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
 	}
-	writer := bufio.NewWriter(c.Response().Writer)
+	w := c.Response()
 
 	sentMessageIDs := map[string]struct{}{}
 	writeCreatedEvent := func(message messagepkg.Message) error {
@@ -448,7 +426,7 @@ func (h *MessageHandler) StreamMessageEvents(c echo.Context) error {
 			}
 			sentMessageIDs[msgID] = struct{}{}
 		}
-		return writeSSEJSON(writer, flusher, map[string]any{
+		return writeSSEJSON(w, flusher, map[string]any{
 			"type":    string(messageevent.EventTypeMessageCreated),
 			"bot_id":  botID,
 			"message": message,
@@ -479,7 +457,7 @@ func (h *MessageHandler) StreamMessageEvents(c echo.Context) error {
 		case <-c.Request().Context().Done():
 			return nil
 		case <-heartbeatTicker.C:
-			if err := writeSSEJSON(writer, flusher, map[string]any{"type": "ping"}); err != nil {
+			if err := writeSSEJSON(w, flusher, map[string]any{"type": "ping"}); err != nil {
 				return nil
 			}
 		case event, ok := <-stream:

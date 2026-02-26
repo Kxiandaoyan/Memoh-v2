@@ -163,7 +163,14 @@
     "unknownUser": "{platform}用户",
     "errors": {
       "responseTimeout": "响应超时，请重试。",
-      "waitingForResponse": "连接断开，等待响应中…"
+      "waitingForResponse": "连接断开，等待响应中…",
+      "streamTimeout": "响应超时，请重试。",
+      "connectionLost": "连接断开，请重试。",
+      "streamInterrupted": "传输中断，消息可能已部分保存。",
+      "gatewayError": "服务暂时不可用，请稍后重试。",
+      "conversationFailed": "出了点问题，请重试。",
+      "dailyLimitExceeded": "已达每日使用上限。",
+      "insufficientBalance": "余额不足。"
     }
   },
   "models": {

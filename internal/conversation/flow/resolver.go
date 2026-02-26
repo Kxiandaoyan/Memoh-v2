@@ -266,7 +266,12 @@ func NewResolver(
 		timeout:           timeout,
 		logger:            log.With(slog.String("service", "conversation_resolver")),
 		httpClient:      &http.Client{Timeout: timeout},
-		streamingClient: &http.Client{},
+		streamingClient: &http.Client{
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: 30 * time.Second, // max wait for first response byte
+				IdleConnTimeout:       90 * time.Second,
+			},
+		},
 	}
 }
 
@@ -1741,6 +1746,7 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	// stuck. This prevents scanner.Scan() from blocking forever.
 	const streamIdleTimeout = 30 * time.Second
 	idleReader := newIdleTimeoutReader(resp.Body, streamIdleTimeout)
+	defer idleReader.Close()
 	scanner := bufio.NewScanner(idleReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 
@@ -1818,48 +1824,91 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	return scanErr
 }
 
-// idleTimeoutReader wraps an io.Reader and returns an error if no data is
-// received within the configured timeout. This prevents scanner.Scan() from
-// blocking forever when the upstream agent stops sending SSE events.
+// idleTimeoutReader wraps an io.Reader with a dedicated goroutine that
+// performs the actual reads. The caller's Read() simply receives results
+// from that goroutine. If no data arrives within the idle timeout the
+// reader returns an error and closes the underlying body (if it implements
+// io.Closer) so the blocked goroutine is unblocked immediately.
 type idleTimeoutReader struct {
-	r       io.Reader
+	results chan readResult
+	reqCh   chan []byte // caller sends buffer to read into
 	timeout time.Duration
-	timer   *time.Timer
+	body    io.Reader
+	done    chan struct{}
+}
+
+type readResult struct {
+	n   int
+	err error
 }
 
 func newIdleTimeoutReader(r io.Reader, timeout time.Duration) *idleTimeoutReader {
-	return &idleTimeoutReader{
-		r:       r,
+	itr := &idleTimeoutReader{
+		results: make(chan readResult, 1),
+		reqCh:   make(chan []byte),
 		timeout: timeout,
-		timer:   time.NewTimer(timeout),
+		body:    r,
+		done:    make(chan struct{}),
+	}
+	go itr.loop()
+	return itr
+}
+
+// loop is the single goroutine that performs all reads on the underlying reader.
+func (itr *idleTimeoutReader) loop() {
+	defer close(itr.results)
+	for {
+		buf, ok := <-itr.reqCh
+		if !ok {
+			return
+		}
+		n, err := itr.body.Read(buf)
+		select {
+		case itr.results <- readResult{n, err}:
+		case <-itr.done:
+			return
+		}
+		if err != nil {
+			return
+		}
 	}
 }
 
 func (itr *idleTimeoutReader) Read(p []byte) (int, error) {
-	type readResult struct {
-		n   int
-		err error
-	}
-	ch := make(chan readResult, 1)
-	go func() {
-		n, err := itr.r.Read(p)
-		ch <- readResult{n, err}
-	}()
-
-	// Reset timer for each read attempt.
-	if !itr.timer.Stop() {
-		select {
-		case <-itr.timer.C:
-		default:
-		}
-	}
-	itr.timer.Reset(itr.timeout)
-
+	// Send the buffer to the reader goroutine.
 	select {
-	case res := <-ch:
+	case itr.reqCh <- p:
+	case <-itr.done:
+		return 0, fmt.Errorf("stream idle timeout: reader closed")
+	}
+	// Wait for the result with an idle timeout.
+	timer := time.NewTimer(itr.timeout)
+	defer timer.Stop()
+	select {
+	case res, ok := <-itr.results:
+		if !ok {
+			return 0, io.EOF
+		}
 		return res.n, res.err
-	case <-itr.timer.C:
+	case <-timer.C:
+		// Timeout — close the underlying body to unblock the reader goroutine.
+		if closer, ok := itr.body.(io.Closer); ok {
+			closer.Close()
+		}
+		close(itr.done)
 		return 0, fmt.Errorf("stream idle timeout: no data received for %s", itr.timeout)
+	}
+}
+
+// Close releases resources. Safe to call multiple times.
+func (itr *idleTimeoutReader) Close() {
+	select {
+	case <-itr.done:
+	default:
+		if closer, ok := itr.body.(io.Closer); ok {
+			closer.Close()
+		}
+		close(itr.done)
 	}
 }
 
