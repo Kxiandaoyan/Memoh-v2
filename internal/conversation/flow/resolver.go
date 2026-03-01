@@ -268,8 +268,8 @@ func NewResolver(
 		httpClient:      &http.Client{Timeout: timeout},
 		streamingClient: &http.Client{
 			Transport: &http.Transport{
-				ResponseHeaderTimeout: 30 * time.Second, // max wait for first response byte
-				IdleConnTimeout:       90 * time.Second,
+				ResponseHeaderTimeout: 120 * time.Second, // max wait for first response byte
+				IdleConnTimeout:       180 * time.Second, // increased for long-running tasks
 			},
 		},
 	}
@@ -1698,9 +1698,17 @@ func sanitizeGatewayError(body string) string {
 	}
 	if err := json.Unmarshal([]byte(body), &obj); err == nil {
 		if obj.Error != "" {
+			// Detect tool pairing errors and add helpful context
+			if strings.Contains(obj.Error, "tool") && strings.Contains(obj.Error, "tool_calls") {
+				return obj.Error + " (hint: this may be a message history inconsistency - try clearing chat history)"
+			}
 			return obj.Error
 		}
 		if obj.Message != "" {
+			// Detect tool pairing errors and add helpful context
+			if strings.Contains(obj.Message, "tool") && strings.Contains(obj.Message, "tool_calls") {
+				return obj.Message + " (hint: this may be a message history inconsistency - try clearing chat history)"
+			}
 			return obj.Message
 		}
 	}
@@ -1742,9 +1750,9 @@ func (r *Resolver) streamChat(ctx context.Context, payload gatewayRequest, req c
 	}
 
 	// Wrap the response body with an idle-timeout reader. The TS agent sends
-	// heartbeat events every 3s, so 30s without any data means the stream is
+	// heartbeat events every 3s, so 120s without any data means the stream is
 	// stuck. This prevents scanner.Scan() from blocking forever.
-	const streamIdleTimeout = 30 * time.Second
+	const streamIdleTimeout = 120 * time.Second
 	idleReader := newIdleTimeoutReader(resp.Body, streamIdleTimeout)
 	defer idleReader.Close()
 	scanner := bufio.NewScanner(idleReader)
@@ -2585,6 +2593,19 @@ func (r *Resolver) storeRound(ctx context.Context, req conversation.ChatRequest,
 func (r *Resolver) storeRoundWithTrace(ctx context.Context, req conversation.ChatRequest, traceID string, messages []conversation.ModelMessage, usage ...*gatewayUsage) error {
 	// Sanitize before storing so non-standard items (e.g. item_reference) are never persisted.
 	messages = sanitizeMessages(messages)
+	// Repair tool pairing to ensure tool_result messages have matching tool_use messages.
+	// This prevents "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'" errors.
+	beforeRepair := len(messages)
+	messages = repairToolPairing(messages)
+	if len(messages) != beforeRepair {
+		r.logger.Warn("storeRoundWithTrace: tool pairing repair removed orphaned messages",
+			slog.String("bot_id", req.BotID),
+			slog.String("chat_id", req.ChatID),
+			slog.Int("before", beforeRepair),
+			slog.Int("after", len(messages)),
+			slog.Int("removed", beforeRepair-len(messages)),
+		)
+	}
 	// Add user query as the first message if not already present in the round.
 	// This ensures the user's prompt is persisted alongside the assistant's response.
 	fullRound := make([]conversation.ModelMessage, 0, len(messages)+1)
