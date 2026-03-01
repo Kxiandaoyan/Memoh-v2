@@ -61,6 +61,8 @@ You evolve through your conversations — not on a schedule, not by force. Evolu
 - **Experiment logs** → EXPERIMENTS.md
 - **New capability needed?** → Search ClawHub: `clawhub search "keyword"`
 - **Frequent web task?** → Check Actionbook: `actionbook search "site action"`
+- **Evolution asset to share?** → Publish to EvoMap (read evomap skill for protocol details)
+- **Looking for proven fixes?** → Fetch from EvoMap: `curl -sf -X POST https://evomap.ai/a2a/fetch ...`
 
 ## Heartbeat Self-Healing
 

@@ -1,3 +1,5 @@
+<!-- version: 2.0.0 - Added 15 browser/webread MCP tools (browser_*, actionbook_*, web_read) -->
+
 Skills define _how_ tools work. This file is for _your_ specifics — the stuff that's unique to your setup.
 
 ## What Goes Here
@@ -326,5 +328,476 @@ A shared directory is mounted at `/shared` in every bot container. All bots can 
 4. **Organize with subdirectories if needed.** e.g. `/shared/intel/`, `/shared/drafts/`.
 
 > **Tip:** The filesystem _is_ the coordination layer. No APIs, no message queues. Just files. Simple and reliable.
+
+---
+
+## Browser Automation — MCP Tools
+
+You have first-class MCP tools for browser automation. These are **native MCP tools**, not CLI wrappers — use them directly without `exec`.
+
+### Core Workflow
+
+```
+navigate → snapshot → interact → extract → persist
+```
+
+1. **Navigate**: Open a URL with `browser_navigate`
+2. **Snapshot**: Get interactive elements with `browser_snapshot` (returns @eN references)
+3. **Interact**: Use `browser_click`, `browser_fill`, etc. with @eN refs
+4. **Extract**: Get data with `browser_get_text`, `browser_screenshot`
+5. **Persist**: Save session state with `browser_state_save` for reuse
+
+### Available Tools
+
+#### browser_navigate
+
+Navigate to a URL.
+
+**Parameters**:
+- `url` (string, required): The URL to navigate to
+
+**Example**:
+```json
+{
+  "url": "https://github.com/login"
+}
+```
+
+**Returns**: Success message with final URL
+
+---
+
+#### browser_snapshot
+
+Get a snapshot of the current page, including interactive elements with @eN references.
+
+**Parameters**: None
+
+**Example**:
+```json
+{}
+```
+
+**Returns**:
+```
+URL: https://github.com/login
+Title: Sign in to GitHub
+
+Interactive elements:
+[@e1] input#login_field (Username or email)
+[@e2] input#password (Password)
+[@e3] input[type=submit] (Sign in)
+[@e4] a[href="/password_reset"] (Forgot password?)
+```
+
+**Usage**: Always call `browser_snapshot` after navigation to get fresh element references.
+
+---
+
+#### browser_click
+
+Click an element by its @eN reference.
+
+**Parameters**:
+- `selector` (string, required): Element reference from snapshot (e.g., `"@e1"`)
+
+**Example**:
+```json
+{
+  "selector": "@e3"
+}
+```
+
+**Returns**: Success message
+
+---
+
+#### browser_fill
+
+Fill an input field (clears existing content first, then types new text).
+
+**Parameters**:
+- `selector` (string, required): Element reference from snapshot (e.g., `"@e1"`)
+- `value` (string, required): Text to fill
+
+**Example**:
+```json
+{
+  "selector": "@e1",
+  "value": "octocat@github.com"
+}
+```
+
+**Returns**: Success message
+
+---
+
+#### browser_get_text
+
+Extract text content from an element or the entire page.
+
+**Parameters**:
+- `selector` (string, optional): Element reference from snapshot (e.g., `"@e5"`). If omitted, returns all page text.
+
+**Example (specific element)**:
+```json
+{
+  "selector": "@e5"
+}
+```
+
+**Example (entire page)**:
+```json
+{}
+```
+
+**Returns**: Text content of the element or page
+
+---
+
+#### browser_screenshot
+
+Take a screenshot of the current page.
+
+**Parameters**:
+- `path` (string, optional): File path to save screenshot (if omitted, returns base64)
+- `full_page` (boolean, optional): Capture full page (default: false)
+
+**Example (full page to file)**:
+```json
+{
+  "path": "/shared/screenshots/login-page.png",
+  "full_page": true
+}
+```
+
+**Example (viewport as base64)**:
+```json
+{}
+```
+
+**Returns**: File path or base64-encoded PNG data
+
+---
+
+#### browser_get_url
+
+Get the current URL of the page.
+
+**Parameters**: None
+
+**Example**:
+```json
+{}
+```
+
+**Returns**: Current URL as string
+
+---
+
+#### browser_state_save
+
+Save the current browser state (cookies, localStorage, sessionStorage) to a file for later reuse.
+
+**Parameters**:
+- `path` (string, required): File path to save state (e.g., `/shared/browser-states/github-auth.json`)
+
+**Example**:
+```json
+{
+  "path": "/shared/browser-states/github-auth.json"
+}
+```
+
+**Returns**: Success message with file path
+
+**Use case**: Save login sessions to avoid re-authenticating on every task.
+
+---
+
+#### browser_state_load
+
+Load previously saved browser state (cookies, localStorage, sessionStorage) from a file.
+
+**Parameters**:
+- `path` (string, required): File path to load state from
+
+**Example**:
+```json
+{
+  "path": "/shared/browser-states/github-auth.json"
+}
+```
+
+**Returns**: Success message
+
+**Workflow**:
+1. Login once manually with `browser_navigate` + `browser_fill` + `browser_click`
+2. Save state with `browser_state_save`
+3. On subsequent tasks, load state with `browser_state_load` before navigating
+
+---
+
+#### browser_close
+
+Close the browser instance.
+
+**Parameters**: None
+
+**Example**:
+```json
+{}
+```
+
+**Returns**: Success message
+
+**Note**: Browser resources are automatically cleaned up, but explicit closing is recommended for long-running tasks.
+
+---
+
+#### browser_scroll
+
+Scroll to a specific element or by x/y coordinates.
+
+**Parameters**:
+- `selector` (string, optional): Element reference to scroll to (e.g., `"@e5"`)
+- `x` (number, optional): Horizontal scroll offset in pixels
+- `y` (number, optional): Vertical scroll offset in pixels
+
+**Example (scroll to element)**:
+```json
+{
+  "selector": "@e5"
+}
+```
+
+**Example (scroll by coordinates)**:
+```json
+{
+  "x": 0,
+  "y": 1000
+}
+```
+
+**Returns**: Success message
+
+---
+
+#### browser_wait
+
+Wait for an element to appear on the page or wait for a fixed duration.
+
+**Parameters**:
+- `selector` (string, optional): Element reference or CSS selector to wait for
+- `timeout` (number, optional): Maximum wait time in milliseconds (default: 30000)
+
+**Example (wait for element)**:
+```json
+{
+  "selector": "@e10",
+  "timeout": 5000
+}
+```
+
+**Example (wait for duration)**:
+```json
+{
+  "timeout": 3000
+}
+```
+
+**Returns**: Success message when element appears, or timeout error
+
+---
+
+#### actionbook_search
+
+Search the Actionbook registry for pre-computed website operation manuals.
+
+**Parameters**:
+- `query` (string, required): Search query (e.g., `"github create repo"`, `"twitter post tweet"`)
+
+**Example**:
+```json
+{
+  "query": "github create repository"
+}
+```
+
+**Returns**: List of matching actionbooks with IDs and descriptions
+
+**Use case**: Before automating a known website, search for existing actionbooks to avoid manual exploration.
+
+---
+
+#### actionbook_get
+
+Retrieve a specific actionbook by its ID.
+
+**Parameters**:
+- `id` (string, required): Actionbook ID from search results
+
+**Example**:
+```json
+{
+  "id": "github-create-repo"
+}
+```
+
+**Returns**: Full actionbook content with step-by-step instructions and element selectors
+
+**Workflow**:
+1. Search with `actionbook_search`
+2. Get the manual with `actionbook_get`
+3. Follow the instructions with `browser_navigate`, `browser_click`, `browser_fill`, etc.
+
+---
+
+### Migration Note
+
+**Before (CLI wrapper)**:
+```json
+{
+  "tool": "exec",
+  "parameters": {
+    "command": "agent-browser open https://example.com"
+  }
+}
+```
+
+**After (native MCP tool)**:
+```json
+{
+  "tool": "browser_navigate",
+  "parameters": {
+    "url": "https://example.com",
+    "wait_for": "networkidle"
+  }
+}
+```
+
+No more `exec` needed — these are first-class MCP tools with proper parameter validation, error handling, and return values.
+
+---
+
+## Smart Web Reading — web_read
+
+The `web_read` tool provides intelligent web content extraction with automatic fallback strategies.
+
+### Overview
+
+Instead of manually choosing between markdown headers, actionbooks, or browser automation, `web_read` tries multiple strategies in priority order:
+
+1. **Markdown Header** — Fast, lightweight (tries `Accept: text/markdown`)
+2. **Web Search** — For search queries instead of direct URLs
+3. **Actionbook** — Pre-computed manuals for known websites
+4. **Browser Automation** — Full browser rendering for complex pages
+
+### Parameters
+
+- `url` (string, required): URL to read or search query
+- `force_strategy` (string, optional): Force a specific strategy
+  - `"markdown"` — Only try markdown header
+  - `"search"` — Treat as search query
+  - `"browser"` — Only use browser automation
+  - Omit for automatic fallback (recommended)
+- `include_metadata` (boolean, optional): Include page metadata (title, description, etc.) in response (default: false)
+
+### Example Request
+
+**Automatic fallback**:
+```json
+{
+  "url": "https://docs.python.org/3/library/asyncio.html"
+}
+```
+
+**Force browser**:
+```json
+{
+  "url": "https://example.com/dynamic-content",
+  "force_strategy": "browser",
+  "include_metadata": true
+}
+```
+
+**Search query**:
+```json
+{
+  "url": "latest React hooks documentation",
+  "force_strategy": "search"
+}
+```
+
+### Example Response
+
+```
+Title: asyncio — Asynchronous I/O
+URL: https://docs.python.org/3/library/asyncio.html
+
+# asyncio — Asynchronous I/O
+
+asyncio is a library to write concurrent code using the async/await syntax.
+
+## Coroutines and Tasks
+
+Coroutines declared with async/await syntax...
+
+[... full markdown content ...]
+
+---
+Strategy used: markdown
+```
+
+### When to Use
+
+- **Reading documentation**: Use `web_read` — it will try markdown first, fall back to browser if needed
+- **Complex interactions** (login, form submission, multi-step flows): Use `browser_navigate` + `browser_click` + `browser_fill` directly
+- **Known websites**: `web_read` will automatically check actionbooks
+- **Search queries**: Pass a search query with `force_strategy: "search"`
+
+### Comparison: web_read vs. browser_* tools
+
+| Use Case | Recommended Tool |
+|----------|------------------|
+| Read an article or documentation | `web_read` (automatic fallback) |
+| Login to a website | `browser_navigate` + `browser_fill` + `browser_click` |
+| Extract data from a dynamic page | `web_read` (will use browser if needed) |
+| Multi-step workflow (create repo, post tweet) | `actionbook_search` + `browser_*` tools |
+| Save login session for reuse | `browser_state_save` after manual login |
+| Quick content preview | `web_read` with `force_strategy: "markdown"` |
+
+---
+
+## Integration Notes
+
+### MCP Tool Architecture
+
+All browser automation and web reading tools are **first-class MCP tools**:
+
+- No `exec` wrapper needed
+- Proper JSON parameter validation
+- Structured error responses
+- Return values are machine-readable
+
+### Tool Categories
+
+| Category | Tools | Use Case |
+|----------|-------|----------|
+| **Browser Navigation** | `browser_navigate`, `browser_get_url`, `browser_close` | Page navigation |
+| **Browser Inspection** | `browser_snapshot`, `browser_screenshot` | Page analysis |
+| **Browser Interaction** | `browser_click`, `browser_fill`, `browser_scroll`, `browser_wait` | User actions |
+| **Browser Extraction** | `browser_get_text` | Data extraction |
+| **Browser Persistence** | `browser_state_save`, `browser_state_load` | Session management |
+| **Actionbook** | `actionbook_search`, `actionbook_get` | Pre-computed manuals |
+| **Smart Reading** | `web_read` | Automatic content extraction |
+
+### Total Tools Added
+
+**15 new MCP tools**:
+- 11 browser automation tools (`browser_*`)
+- 2 actionbook tools (`actionbook_*`)
+- 1 smart reading tool (`web_read`)
+- 1 deprecated CLI (`agent-browser` — still available but prefer MCP tools)
 
 ---

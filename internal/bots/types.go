@@ -114,12 +114,19 @@ type UpdatePromptsRequest struct {
 type ContainerLifecycle interface {
 	SetupBotContainer(ctx context.Context, botID string) error
 	CleanupBotContainer(ctx context.Context, botID string) error
+	InstallDefaultSkills(ctx context.Context, botID string) error
+	RegisterEvoMapNode(ctx context.Context, botID string) error
 }
 
 // HeartbeatSeeder seeds system heartbeat configs for a bot.
 type HeartbeatSeeder interface {
 	SeedEvolutionConfig(ctx context.Context, botID string) error
 	DisableEvolutionConfig(ctx context.Context, botID string) error
+}
+
+// ToolInitializer seeds default tool configurations for a newly created bot.
+type ToolInitializer interface {
+	InitializeDefaults(ctx context.Context, botID string) error
 }
 
 // RuntimeChecker produces runtime check items for a bot.
