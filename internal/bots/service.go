@@ -16,8 +16,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Kxiandaoyan/Memoh-v2-saas/internal/db"
-	"github.com/Kxiandaoyan/Memoh-v2-saas/internal/db/sqlc"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/db"
+	"github.com/Kxiandaoyan/Memoh-v2/internal/db/sqlc"
 )
 
 // Service provides bot CRUD and membership management.
