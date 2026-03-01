@@ -26,7 +26,6 @@ type Service struct {
 	logger             *slog.Logger
 	containerLifecycle ContainerLifecycle
 	heartbeatSeeder    HeartbeatSeeder
-	toolInitializer    ToolInitializer
 	checkers           []RuntimeChecker
 
 	lifecycleCtx    context.Context
@@ -78,11 +77,6 @@ func (s *Service) SetContainerLifecycle(lc ContainerLifecycle) {
 // SetHeartbeatSeeder registers a heartbeat seeder for auto-creating evolution heartbeats.
 func (s *Service) SetHeartbeatSeeder(hs HeartbeatSeeder) {
 	s.heartbeatSeeder = hs
-}
-
-// SetToolInitializer registers a tool initializer for seeding default tools on bot creation.
-func (s *Service) SetToolInitializer(ti ToolInitializer) {
-	s.toolInitializer = ti
 }
 
 // AddRuntimeChecker registers an additional runtime checker.
@@ -549,18 +543,6 @@ func (s *Service) enqueueCreateLifecycle(botID string) {
 				}
 				return
 			}
-			if err := s.containerLifecycle.InstallDefaultSkills(ctx, botID); err != nil {
-				s.logger.Error("default skills installation failed",
-					slog.String("bot_id", botID),
-					slog.Any("error", err),
-				)
-			}
-			if err := s.containerLifecycle.RegisterEvoMapNode(ctx, botID); err != nil {
-				s.logger.Error("evomap node registration failed",
-					slog.String("bot_id", botID),
-					slog.Any("error", err),
-				)
-			}
 		}
 
 		if err := s.updateStatus(ctx, botID, BotStatusReady); err != nil {
@@ -574,16 +556,6 @@ func (s *Service) enqueueCreateLifecycle(botID string) {
 		if s.heartbeatSeeder != nil {
 			if err := s.heartbeatSeeder.SeedEvolutionConfig(ctx, botID); err != nil {
 				s.logger.Error("failed to seed evolution heartbeat",
-					slog.String("bot_id", botID),
-					slog.Any("error", err),
-				)
-			}
-		}
-
-		// Initialize default builtin tool configurations.
-		if s.toolInitializer != nil {
-			if err := s.toolInitializer.InitializeDefaults(ctx, botID); err != nil {
-				s.logger.Error("failed to initialize default tools",
 					slog.String("bot_id", botID),
 					slog.Any("error", err),
 				)
