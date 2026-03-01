@@ -204,26 +204,6 @@ func (s *Service) Get(ctx context.Context, botID string) (Bot, error) {
 	return bot, nil
 }
 
-// ListAll returns all bots in the system (admin use only).
-func (s *Service) ListAll(ctx context.Context) ([]Bot, error) {
-	if s.queries == nil {
-		return nil, fmt.Errorf("bot queries not configured")
-	}
-	rows, err := s.queries.ListAllBots(ctx)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]Bot, 0, len(rows))
-	for _, row := range rows {
-		item, err := toBot(row)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, nil
-}
-
 // ListByOwner returns bots owned by the given user.
 func (s *Service) ListByOwner(ctx context.Context, ownerUserID string) ([]Bot, error) {
 	if s.queries == nil {
