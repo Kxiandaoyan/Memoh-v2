@@ -18,7 +18,7 @@ const (
 
 // ResolveConfSource returns a host path to mount as /etc/resolv.conf.
 // Priority order:
-// 1. systemd-resolved config (if available and contains real DNS servers)
+// 1. systemd-resolved upstream config (real DNS servers, not stub resolver)
 // 2. Host's /etc/resolv.conf filtered to remove Docker internal DNS (127.0.0.11)
 // 3. Fallback DNS servers (1.1.1.1 and 8.8.8.8)
 func ResolveConfSource(dataDir string) (string, error) {
@@ -26,7 +26,27 @@ func ResolveConfSource(dataDir string) (string, error) {
 		return "", ErrInvalidArgument
 	}
 
-	// Priority 1: Use host's /etc/resolv.conf, but filter out Docker internal DNS
+	// Priority 1: Try systemd-resolved upstream config
+	// /run/systemd/resolve/resolv.conf contains the real upstream DNS servers
+	// (e.g., 8.8.8.8, 114.114.114.114), not the stub resolver (127.0.0.53).
+	// This is the best source for bot containers that can't access localhost.
+	if runtime.GOOS == "darwin" {
+		if ok, err := limaFileExists(systemdResolvConf); err != nil {
+			return "", err
+		} else if ok {
+			// Copy to dataDir to make it accessible for bind mount
+			if copied, err := copyResolvConf(systemdResolvConf, dataDir); err == nil {
+				return copied, nil
+			}
+		}
+	} else if _, err := os.Stat(systemdResolvConf); err == nil {
+		// Copy to dataDir to make it accessible for bind mount
+		if copied, err := copyResolvConf(systemdResolvConf, dataDir); err == nil {
+			return copied, nil
+		}
+	}
+
+	// Priority 2: Use host's /etc/resolv.conf, but filter out Docker internal DNS
 	// When running inside a Docker container, /etc/resolv.conf points to 127.0.0.11
 	// which is Docker's embedded DNS. This doesn't work for bot containers using
 	// CNI networking (different network namespace), so we need to extract the real
@@ -37,20 +57,50 @@ func ResolveConfSource(dataDir string) (string, error) {
 		}
 	}
 
-	// Priority 2: Try systemd-resolved config (bare-metal deployments)
-	// This contains the real upstream DNS servers, not Docker's internal DNS
-	if runtime.GOOS == "darwin" {
-		if ok, err := limaFileExists(systemdResolvConf); err != nil {
-			return "", err
-		} else if ok {
-			return systemdResolvConf, nil
-		}
-	} else if _, err := os.Stat(systemdResolvConf); err == nil {
-		return systemdResolvConf, nil
-	}
-
 	// Priority 3: Create fallback resolv.conf
 	return createFallbackResolv(dataDir)
+}
+
+// copyResolvConf copies a resolv.conf file to dataDir, filtering out localhost addresses.
+// This is needed because systemd-resolved's resolv.conf might be on a different filesystem
+// or contain localhost addresses that won't work in bot containers.
+func copyResolvConf(srcPath, dataDir string) (string, error) {
+	content, err := os.ReadFile(srcPath)
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return "", err
+	}
+
+	// Filter out localhost addresses (127.0.0.53, 127.0.0.1, ::1)
+	var filteredLines []string
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip localhost nameservers
+		if strings.HasPrefix(line, "nameserver ") {
+			ns := strings.TrimPrefix(line, "nameserver ")
+			ns = strings.TrimSpace(ns)
+			if strings.HasPrefix(ns, "127.") || ns == "::1" {
+				continue
+			}
+		}
+		filteredLines = append(filteredLines, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	destPath := filepath.Join(dataDir, "resolv.conf")
+	filteredContent := strings.Join(filteredLines, "\n") + "\n"
+	if err := os.WriteFile(destPath, []byte(filteredContent), 0o644); err != nil {
+		return "", err
+	}
+
+	return destPath, nil
 }
 
 // filterDockerDNS reads a resolv.conf file and filters out Docker's internal DNS (127.0.0.11).
