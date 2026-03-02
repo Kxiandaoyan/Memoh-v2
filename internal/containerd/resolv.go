@@ -26,7 +26,18 @@ func ResolveConfSource(dataDir string) (string, error) {
 		return "", ErrInvalidArgument
 	}
 
-	// Priority 1: Try systemd-resolved config
+	// Priority 1: Use host's /etc/resolv.conf, but filter out Docker internal DNS
+	// When running inside a Docker container, /etc/resolv.conf points to 127.0.0.11
+	// which is Docker's embedded DNS. This doesn't work for bot containers using
+	// CNI networking (different network namespace), so we need to extract the real
+	// upstream DNS servers.
+	if _, err := os.Stat(hostResolvConf); err == nil {
+		if filtered, err := filterDockerDNS(hostResolvConf, dataDir); err == nil && filtered != "" {
+			return filtered, nil
+		}
+	}
+
+	// Priority 2: Try systemd-resolved config (bare-metal deployments)
 	// This contains the real upstream DNS servers, not Docker's internal DNS
 	if runtime.GOOS == "darwin" {
 		if ok, err := limaFileExists(systemdResolvConf); err != nil {
@@ -36,17 +47,6 @@ func ResolveConfSource(dataDir string) (string, error) {
 		}
 	} else if _, err := os.Stat(systemdResolvConf); err == nil {
 		return systemdResolvConf, nil
-	}
-
-	// Priority 2: Use host's /etc/resolv.conf, but filter out Docker internal DNS
-	// When running inside a Docker container, /etc/resolv.conf points to 127.0.0.11
-	// which is Docker's embedded DNS. This doesn't work for bot containers using
-	// CNI networking (different network namespace), so we need to extract the real
-	// upstream DNS servers.
-	if _, err := os.Stat(hostResolvConf); err == nil {
-		if filtered, err := filterDockerDNS(hostResolvConf, dataDir); err == nil && filtered != "" {
-			return filtered, nil
-		}
 	}
 
 	// Priority 3: Create fallback resolv.conf
