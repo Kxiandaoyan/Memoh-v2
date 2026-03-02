@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -1185,11 +1186,38 @@ func (h *ContainerdHandler) isTaskRunning(ctx context.Context, containerID strin
 	return err == nil && len(tasks) > 0 && tasks[0].Status == tasktypes.Status_RUNNING
 }
 
+// ensureNATRules ensures iptables MASQUERADE rules are in place for bot containers.
+// CNI's ipMasq setting should handle this automatically, but sometimes the rules
+// are missing after container restarts. This function explicitly adds the rule
+// to ensure bot containers can access external networks.
+func (h *ContainerdHandler) ensureNATRules() error {
+	// Check if MASQUERADE rule already exists
+	checkCmd := exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", "10.88.0.0/16", "-j", "MASQUERADE")
+	if err := checkCmd.Run(); err == nil {
+		// Rule already exists
+		return nil
+	}
+
+	// Add MASQUERADE rule for CNI network (10.88.0.0/16)
+	addCmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", "10.88.0.0/16", "-j", "MASQUERADE")
+	if err := addCmd.Run(); err != nil {
+		return fmt.Errorf("failed to add MASQUERADE rule: %w", err)
+	}
+
+	h.logger.Info("added iptables MASQUERADE rule for bot containers", slog.String("subnet", "10.88.0.0/16"))
+	return nil
+}
+
 // ReconcileContainers compares the DB containers table against actual containerd
 // state on startup. For each auto_start container in DB it verifies the container
 // and task exist; if missing they are rebuilt via SetupBotContainer. Containers that
 // the DB claims are running but are not present in containerd get corrected.
 func (h *ContainerdHandler) ReconcileContainers(ctx context.Context) {
+	// Ensure NAT rules are in place for bot containers to access external network
+	if err := h.ensureNATRules(); err != nil {
+		h.logger.Warn("reconcile: failed to ensure NAT rules", slog.Any("error", err))
+	}
+
 	if h.queries == nil {
 		return
 	}
