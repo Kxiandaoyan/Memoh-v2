@@ -10,17 +10,31 @@ import (
 )
 
 const (
+	hostResolvConf    = "/etc/resolv.conf"
 	systemdResolvConf = "/run/systemd/resolve/resolv.conf"
 	fallbackResolv    = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n"
 )
 
 // ResolveConfSource returns a host path to mount as /etc/resolv.conf.
-// If systemd-resolved config is available, use it. Otherwise write a fallback
-// resolv.conf under dataDir and return that path.
+// Priority order:
+// 1. Host's /etc/resolv.conf (works in both bare-metal and container environments)
+// 2. systemd-resolved config (if available)
+// 3. Fallback DNS servers (1.1.1.1 and 8.8.8.8)
 func ResolveConfSource(dataDir string) (string, error) {
 	if strings.TrimSpace(dataDir) == "" {
 		return "", ErrInvalidArgument
 	}
+
+	// Priority 1: Use host's /etc/resolv.conf
+	// This works reliably in both bare-metal and containerized environments.
+	// When running inside a container (e.g., memoh-server), this gives us the
+	// container's DNS config which is typically configured by Docker/containerd
+	// to use the host's DNS or Docker's embedded DNS (127.0.0.11).
+	if _, err := os.Stat(hostResolvConf); err == nil {
+		return hostResolvConf, nil
+	}
+
+	// Priority 2: Try systemd-resolved config
 	if runtime.GOOS == "darwin" {
 		if ok, err := limaFileExists(systemdResolvConf); err != nil {
 			return "", err
@@ -31,6 +45,7 @@ func ResolveConfSource(dataDir string) (string, error) {
 		return systemdResolvConf, nil
 	}
 
+	// Priority 3: Create fallback resolv.conf
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return "", err
 	}
