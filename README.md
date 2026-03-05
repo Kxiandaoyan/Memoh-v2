@@ -2,6 +2,8 @@
 
 <h1>🧠 Memoh-v2</h1>
 
+## 推荐去用原项目,https://github.com/memohai/Memoh,我这个不维护了   
+
 **真隔离 · 真记忆 · 真进化 · 真协作 —— 不妥协的 AI Agent 平台**
 
 <p>
