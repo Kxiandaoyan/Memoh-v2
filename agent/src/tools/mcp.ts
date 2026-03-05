@@ -98,10 +98,55 @@ export const getMCPTools = async (connections: MCPConnection[], options: MCPTool
     }
   }))
 
+  const sanitizedTools = sanitizeToolsForGemini(Object.assign({}, ...toolSets))
+
   return {
-    tools: Object.assign({}, ...toolSets),
+    tools: sanitizedTools,
     close: async () => {
       await Promise.all(closeCallbacks.map(callback => callback()))
     }
   }
+}
+
+function sanitizeToolsForGemini(tools: Record<string, any>): Record<string, any> {
+  const sanitized: Record<string, any> = {}
+
+  for (const [name, tool] of Object.entries(tools)) {
+    if (!tool || typeof tool !== 'object') {
+      sanitized[name] = tool
+      continue
+    }
+
+    sanitized[name] = {
+      ...tool,
+      parameters: sanitizeSchema(tool.parameters)
+    }
+  }
+
+  return sanitized
+}
+
+function sanitizeSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema
+
+  if (Array.isArray(schema)) {
+    return schema.map(sanitizeSchema)
+  }
+
+  const result: any = {}
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'enum' && Array.isArray(value)) {
+      const filtered = value.filter(v => v !== '' && v != null)
+      if (filtered.length > 0) {
+        result[key] = filtered
+      }
+    } else if (value && typeof value === 'object') {
+      result[key] = sanitizeSchema(value)
+    } else {
+      result[key] = value
+    }
+  }
+
+  return result
 }
