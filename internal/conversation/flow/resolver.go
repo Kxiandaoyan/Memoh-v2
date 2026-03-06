@@ -3819,6 +3819,9 @@ func repairToolPairing(messages []conversation.ModelMessage) []conversation.Mode
 				if allOrphaned && !msg.HasContent() {
 					continue
 				}
+				if !allOrphaned {
+					msg = removeOrphanedToolCalls(msg, toolResultIDs)
+				}
 			}
 		}
 		final = append(final, msg)
@@ -3866,6 +3869,44 @@ func collectAssistantToolIDs(msg conversation.ModelMessage) []string {
 		}
 	}
 	return ids
+}
+
+func removeOrphanedToolCalls(msg conversation.ModelMessage, toolResultIDs map[string]struct{}) conversation.ModelMessage {
+	if len(msg.ToolCalls) > 0 {
+		filtered := make([]conversation.ToolCall, 0, len(msg.ToolCalls))
+		for _, tc := range msg.ToolCalls {
+			if _, ok := toolResultIDs[tc.ID]; ok {
+				filtered = append(filtered, tc)
+			}
+		}
+		msg.ToolCalls = filtered
+	}
+
+	if len(msg.Content) > 0 {
+		var parts []json.RawMessage
+		if err := json.Unmarshal(msg.Content, &parts); err == nil {
+			filtered := make([]json.RawMessage, 0, len(parts))
+			for _, part := range parts {
+				var p struct {
+					Type       string `json:"type"`
+					ToolCallID string `json:"toolCallId"`
+				}
+				if err := json.Unmarshal(part, &p); err == nil && p.Type == "tool-call" {
+					if _, ok := toolResultIDs[p.ToolCallID]; !ok {
+						continue
+					}
+				}
+				filtered = append(filtered, part)
+			}
+			if len(filtered) != len(parts) {
+				if newContent, err := json.Marshal(filtered); err == nil {
+					msg.Content = newContent
+				}
+			}
+		}
+	}
+
+	return msg
 }
 
 // ── Context summarization ─────────────────────────────────────────────
