@@ -1,6 +1,6 @@
 ---
 name: pdf
-description: Comprehensive PDF manipulation toolkit for extracting text and tables, creating new PDFs, merging/splitting documents, and handling forms. When Claude needs to fill in a PDF form or programmatically process, generate, or analyze PDF documents at scale.
+description: "Comprehensive PDF manipulation toolkit for extracting text and tables, creating new .pdf files, merging or splitting PDFs, combining PDFs, converting PDF to text, and handling forms. Use when programmatically processing, generating, or analyzing PDF documents at scale."
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -25,6 +25,16 @@ for page in reader.pages:
     text += page.extract_text()
 ```
 
+## Choosing the Right Library
+
+| Need | Use |
+|------|-----|
+| Merge, split, rotate, encrypt, or read basic text | **pypdf** — lightweight, no external dependencies |
+| Extract text with precise layout or extract tables | **pdfplumber** — layout-aware parsing built on pdfminer |
+| Create new PDFs from scratch | **reportlab** — full PDF generation (Canvas or Platypus) |
+
+When in doubt: use **pypdf** for structural operations and **pdfplumber** for extraction accuracy.
+
 ## Python Libraries
 
 ### pypdf - Basic Operations
@@ -41,6 +51,10 @@ for pdf_file in ["doc1.pdf", "doc2.pdf", "doc3.pdf"]:
 
 with open("merged.pdf", "wb") as output:
     writer.write(output)
+
+# Validate: confirm page count matches expectations
+check = PdfReader("merged.pdf")
+assert len(check.pages) == sum(len(PdfReader(f).pages) for f in ["doc1.pdf", "doc2.pdf", "doc3.pdf"])
 ```
 
 #### Split PDF

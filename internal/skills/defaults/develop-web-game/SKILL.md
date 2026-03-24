@@ -1,6 +1,6 @@
 ---
 name: "develop-web-game"
-description: "Use when Codex is building or iterating on a web game (HTML/JS) and needs a reliable development + testing loop: implement small changes, run a Playwright-based test script with short input bursts and intentional pauses, inspect screenshots/text, and review console errors with render_game_to_text."
+description: "Use when building, iterating, or testing a browser game or JavaScript game (HTML/JS) via a reliable development and game testing loop: implement small changes, run a Playwright-based test script with short input bursts and intentional pauses, inspect screenshots and text state, and review console errors with render_game_to_text."
 ---
 
 
@@ -122,10 +122,7 @@ window.advanceTime = (ms) => {
 
 ## Progress Tracking
 
-Create a `progress.md` file if it doesn't exist, and append TODOs, notes, gotchas, and loose ends as you go so another agent can pick up seamlessly.
-If a `progress.md` file already exists, read it first, including the original user prompt at the top (you may be continuing another agent's work). Do not overwrite the original prompt; preserve it.
-Update `progress.md` after each meaningful chunk of work (feature added, bug found, test run, or decision made).
-At the end of your work, leave TODOs and suggestions for the next agent in `progress.md`.
+See step 5 of the Workflow for the full `progress.md` initialization rules. After setup, update `progress.md` after each meaningful chunk of work (feature added, bug found, test run, or decision made) and leave TODOs and suggestions for the next agent at the end of your work.
 
 ## Playwright Prerequisites
 

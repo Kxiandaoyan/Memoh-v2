@@ -1,6 +1,6 @@
 ---
 name: create-plan
-description: Create a concise plan. Use when a user explicitly asks for a plan related to a coding task.
+description: "Creates step-by-step implementation plans with scope definition, file structure, dependencies, task breakdown, and validation steps for coding tasks. Produces actionable checklists with concrete actions, test strategies, and risk assessment. Use when the user asks for a plan, roadmap, approach, strategy, implementation plan, action items, or step-by-step breakdown for a development task."
 ---
 
 # Create Plan

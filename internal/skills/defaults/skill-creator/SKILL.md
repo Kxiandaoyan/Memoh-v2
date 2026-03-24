@@ -1,22 +1,11 @@
 ---
 name: skill-creator
-description: Guide for creating effective skills. Use when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.
+description: "Guide for creating effective skills. Use when users want to create a new skill, write a SKILL.md, define trigger conditions, write YAML frontmatter, or update an existing skill file that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations."
 ---
 
 # Skill Creator
 
 This skill provides guidance for creating effective skills.
-
-## About Skills
-
-Skills are modular, self-contained packages that extend Claude's capabilities by providing specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific domains or tasks—they transform Claude from a general-purpose agent into a specialized agent equipped with procedural knowledge that no model can fully possess.
-
-### What Skills Provide
-
-1. Specialized workflows — Multi-step procedures for specific domains
-2. Tool integrations — Instructions for working with specific file formats or APIs
-3. Domain expertise — Company-specific knowledge, schemas, business logic
-4. Bundled resources — Scripts, references, and assets for complex and repetitive tasks
 
 ## Core Principles
 
@@ -37,8 +26,6 @@ Match the level of specificity to the task's fragility and variability:
 **Medium freedom (pseudocode or scripts with parameters)**: Use when a preferred pattern exists, some variation is acceptable, or configuration affects behavior.
 
 **Low freedom (specific scripts, few parameters)**: Use when operations are fragile and error-prone, consistency is critical, or a specific sequence must be followed.
-
-Think of Claude as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
 
 ### Anatomy of a Skill
 
@@ -111,24 +98,40 @@ For each example, identify what scripts, references, or assets would avoid repea
 
 ### 3. Create SKILL.md
 
+Here is a complete, minimal working example:
+
 ```markdown
 ---
-name: my-skill
-description: Brief description of what it does and when to use it.
+name: deploy-checker
+description: "Verify deployment readiness by running pre-deploy checks. Use when users ask to check if a service is ready to deploy, run pre-deploy validation, or verify release criteria."
 ---
 
-# My Skill
+# Deploy Checker
 
-[Core instructions here — only what Claude needs and doesn't already know]
+Run these checks before any production deployment:
 
-## Quick Start
-[Most common usage]
+## Pre-deploy Checklist
 
-## Guidelines
-[Key rules and constraints]
+1. Run the test suite: `npm test`
+2. Verify no uncommitted changes: `git status --porcelain`
+3. Confirm the target branch is up to date with main: `git fetch origin && git diff HEAD..origin/main --stat`
+4. Check for known vulnerability advisories: `npm audit --production`
+
+## Output Format
+
+Report results as a table:
+
+| Check | Status | Details |
+|-------|--------|---------|
+| Tests | Pass/Fail | Number of tests run |
+| Clean tree | Pass/Fail | List of uncommitted files |
+| Branch sync | Pass/Fail | Commits behind main |
+| Vulnerabilities | Pass/Fail | Count by severity |
+
+If any check fails, do not proceed with deployment. List the failures and recommend fixes.
 ```
 
-**Writing Guidelines:** Always use imperative/infinitive form.
+**Writing guidelines:** Always use imperative/infinitive form.
 
 #### Frontmatter
 

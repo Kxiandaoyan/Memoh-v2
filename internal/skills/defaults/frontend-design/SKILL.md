@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.
+description: "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics."
 license: Complete terms in LICENSE.txt
 ---
 
@@ -37,6 +37,64 @@ NEVER use generic AI-generated aesthetics like overused font families (Inter, Ro
 
 Interpret creatively and make unexpected choices that feel genuinely designed for the context. No design should be the same. Vary between light and dark themes, different fonts, different aesthetics. NEVER converge on common choices (Space Grotesk, for example) across generations.
 
-**IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details. Elegance comes from executing the vision well.
+**IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details.
 
-Remember: Claude is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
+## Code Examples
+
+### CSS Animation: Staggered Reveal on Scroll
+
+```css
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+.reveal:nth-child(2) { transition-delay: 0.1s; }
+.reveal:nth-child(3) { transition-delay: 0.2s; }
+```
+
+### Typography Pairing with CSS Variables
+
+```css
+:root {
+  --font-display: 'Clash Display', sans-serif;
+  --font-body: 'Satoshi', sans-serif;
+  --title-size: clamp(2rem, 5vw, 4.5rem);
+  --body-size: clamp(0.875rem, 1.2vw, 1.125rem);
+}
+h1, h2, h3 { font-family: var(--font-display); }
+body { font-family: var(--font-body); font-size: var(--body-size); }
+```
+
+### Color System with Theme Variables
+
+```css
+:root {
+  --bg-primary: #0a0f1c;
+  --text-primary: #f4f4f5;
+  --accent: #00ffcc;
+  --accent-glow: rgba(0, 255, 204, 0.25);
+  --surface: #111827;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 40px var(--accent-glow);
+}
+```
+
+## Production Readiness Checklist
+
+Before delivering any frontend implementation, verify:
+
+1. All interactive elements are keyboard-accessible and have visible focus states
+2. Color contrast meets WCAG AA (4.5:1 body text, 3:1 large text)
+3. Animations respect `prefers-reduced-motion: reduce`
+4. Layout does not break between 320px and 1920px viewport widths
+5. No hardcoded pixel font sizes — use `clamp()` or relative units
+6. CSS variables are defined in `:root` for easy theme modification
+7. Images have `alt` attributes; decorative images use `alt=""`
+8. No render-blocking resources; fonts use `font-display: swap`
+9. HTML passes W3C validation with no errors

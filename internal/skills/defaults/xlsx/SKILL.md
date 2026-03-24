@@ -55,12 +55,8 @@ Unless otherwise stated by the user or existing template
 - Verify no unintended circular references
 
 #### Documentation Requirements for Hardcodes
-- Comment or in cells beside (if end of table). Format: "Source: [System/Document], [Date], [Specific Reference], [URL if applicable]"
-- Examples:
-  - "Source: Company 10-K, FY2024, Page 45, Revenue Note, [SEC EDGAR URL]"
-  - "Source: Company 10-Q, Q2 2025, Exhibit 99.1, [SEC EDGAR URL]"
-  - "Source: Bloomberg Terminal, 8/15/2025, AAPL US Equity"
-  - "Source: FactSet, 8/20/2025, Consensus Estimates Screen"
+- Comment or annotate in adjacent cells. Format: "Source: [System/Document], [Date], [Reference], [URL if applicable]"
+- Examples: "Source: Company 10-K, FY2024, Page 45, [SEC EDGAR URL]" or "Source: Bloomberg Terminal, 8/15/2025, AAPL US Equity"
 
 # XLSX creation, editing, and analysis
 
@@ -99,34 +95,18 @@ df.to_excel('output.xlsx', index=False)
 
 **Always use Excel formulas instead of calculating values in Python and hardcoding them.** This ensures the spreadsheet remains dynamic and updateable.
 
-### ❌ WRONG - Hardcoding Calculated Values
 ```python
-# Bad: Calculating in Python and hardcoding result
-total = df['Sales'].sum()
-sheet['B10'] = total  # Hardcodes 5000
+# WRONG — hardcoding Python results:
+sheet['B10'] = df['Sales'].sum()       # Hardcodes 5000
+sheet['C5'] = (rev[-1]-rev[0])/rev[0]  # Hardcodes 0.15
 
-# Bad: Computing growth rate in Python
-growth = (df.iloc[-1]['Revenue'] - df.iloc[0]['Revenue']) / df.iloc[0]['Revenue']
-sheet['C5'] = growth  # Hardcodes 0.15
-
-# Bad: Python calculation for average
-avg = sum(values) / len(values)
-sheet['D20'] = avg  # Hardcodes 42.5
-```
-
-### ✅ CORRECT - Using Excel Formulas
-```python
-# Good: Let Excel calculate the sum
+# CORRECT — use Excel formulas so the sheet stays dynamic:
 sheet['B10'] = '=SUM(B2:B9)'
-
-# Good: Growth rate as Excel formula
 sheet['C5'] = '=(C4-C2)/C2'
-
-# Good: Average using Excel function
 sheet['D20'] = '=AVERAGE(D2:D19)'
 ```
 
-This applies to ALL calculations - totals, percentages, ratios, differences, etc. The spreadsheet should be able to recalculate when source data changes.
+This applies to ALL calculations — totals, percentages, ratios, differences, etc. The spreadsheet must recalculate when source data changes.
 
 ## Common Workflow
 1. **Choose tool**: pandas for data, openpyxl for formulas/formatting

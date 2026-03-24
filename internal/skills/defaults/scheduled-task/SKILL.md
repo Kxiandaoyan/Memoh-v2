@@ -1,6 +1,6 @@
 ---
 name: scheduled-task
-description: Create scheduled tasks for recurring or one-time automated execution. Use when users want to set up tasks that run automatically at specified times (daily, weekly, monthly, cron, or one-time).
+description: "Create scheduled tasks for recurring or one-time automated execution. Use when users want to set up cron jobs, configure recurring backups, set up reminders, or schedule report generation at specified times (daily, weekly, monthly, custom cron, or one-time)."
 ---
 
 # Scheduled Task Skill
@@ -51,7 +51,7 @@ Common cron examples:
 
 #### Create Task via API
 
-Use the backend API to create scheduled tasks. The API endpoint should support the following payload structure:
+Create the task by calling the `createSchedule` built-in tool with the following payload structure:
 
 ```json
 {
@@ -85,15 +85,15 @@ Use the backend API to create scheduled tasks. The API endpoint should support t
 
 ### Step 3: Confirm Results
 
-API returns JSON response:
+The `createSchedule` tool returns a JSON response:
 - Success: `{ "success": true, "task": { "id": "...", "name": "...", ... } }`
 - Failure: `{ "success": false, "error": "error message" }`
 
 Confirm the following with the user:
-- ✅ Task name and ID
-- ⏰ Execution frequency (human-readable format, e.g., "Every day at 9:00 AM")
-- 📋 Execution content summary
-- 💡 Remind user they can manage tasks in Settings → Scheduled Tasks
+- Task name and ID
+- Execution frequency in human-readable format (e.g., "Every day at 9:00 AM")
+- Execution content summary
+- Remind user they can manage tasks in Settings → Scheduled Tasks
 
 ## Important Notes
 

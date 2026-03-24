@@ -1,6 +1,6 @@
 ---
 name: local-tools
-description: Access local system resources including Calendar on macOS and Windows. Use this skill when you need to manage user's schedule directly on their device.
+description: "Create, update, delete, and search calendar events and appointments on macOS (Calendar.app) and Windows (Outlook). Use when the user wants to check their schedule, find free time, create meetings or reminders, reschedule appointments, or manage events directly on their device."
 ---
 
 # Local Tools Skill
@@ -11,28 +11,29 @@ No environment variables required. This skill directly accesses system resources
 
 ## Prerequisites
 
-### macOS
-- macOS 10.10 Yosemite or later (for JXA support)
-- Calendar.app must be installed (included by default)
-- Calendar access permission (user will be prompted on first use)
-
-### Windows
-- Windows 7 or later
-- Microsoft Outlook must be installed and configured
-- PowerShell must be available (included by default)
-- May require COM access permissions in corporate environments
+| Platform | Requirements |
+|----------|-------------|
+| **macOS 10.10+** | Calendar.app (included by default); calendar access permission (prompted on first use); manage in System Settings > Privacy & Security > Calendar |
+| **Windows 7+** | Microsoft Outlook installed and configured; PowerShell available (included by default); may require COM access permissions in corporate environments |
+| **Linux** | Not supported |
 
 ## When to Use This Skill
 
-Use the local-tools skill when you need to:
+Use local-tools when the user wants to:
+- **View schedule** — list today's meetings, check tomorrow's agenda, see the week ahead
+- **Create events** — schedule a meeting, add an appointment, set a reminder
+- **Update events** — reschedule, change title/location/notes
+- **Delete events** — cancel a meeting, remove an appointment
+- **Search events** — find events by keyword, look up birthdays or anniversaries
+- **Check availability** — see if a time slot is free, find open windows
 
-- **Calendar Management** - View, create, update, or delete calendar events
-
-**Examples of when to use:**
-- User: "Show me my schedule for tomorrow"
-- User: "Create a meeting at 3 PM"
-- User: "Search for calendar events containing 'project'"
-- User: "Delete tomorrow's meeting"
+**Trigger phrases:**
+- "Show me my schedule for tomorrow"
+- "Create a meeting at 3 PM"
+- "Am I free Thursday afternoon?"
+- "Search for calendar events containing 'project'"
+- "Delete tomorrow's meeting"
+- "Reschedule my 2 PM to 4 PM"
 
 ## How It Works
 
@@ -44,35 +45,9 @@ Use the local-tools skill when you need to:
 └──────────┘                       └─────────────────────────────────────────────────────────────┘
 ```
 
-**Architecture:**
-1. **CLI Scripts** - Platform-specific scripts, no HTTP server needed
-   - `calendar.sh` - Bash script for macOS
-   - `calendar.ps1` - PowerShell script for Windows
-
-2. **Local Calendar Access** - Direct access to system calendar
-   - macOS: Uses JXA (JavaScript for Automation) to control Calendar.app
-   - Windows: Uses PowerShell COM API to control Microsoft Outlook
-
-3. **JSON Output** - Structured data format for easy parsing
-
-## Platform Support
-
-| Platform | Implementation | Calendar App | Status |
-|----------|---------------|--------------|--------|
-| **macOS 10.10+** | JXA + Calendar.app | Calendar.app | ✅ Fully Supported |
-| **Windows 7+** | PowerShell + COM | Microsoft Outlook | ✅ Fully Supported |
-| **Linux** | - | - | ❌ Not Supported |
-
-## Permissions
-
-### macOS
-- Requires "Calendar" access permission
-- User will be prompted on first use
-- Can be managed in: System Settings > Privacy & Security > Calendar
-
-### Windows
-- Requires Microsoft Outlook to be installed
-- May require administrative privileges for COM access
+- **macOS**: `calendar.sh` uses JXA (`osascript -l JavaScript`) to control Calendar.app
+- **Windows**: `calendar.ps1` uses PowerShell COM API to control Microsoft Outlook
+- Both return structured JSON output
 
 ## Calendar Operations
 
@@ -93,29 +68,6 @@ bash "/Users/username/path/to/SKILLs/local-tools/scripts/calendar.sh" <operation
 ```
 
 In all examples below, `<skill-dir>/scripts/calendar.sh` is a placeholder. Replace it with the actual absolute path.
-
-### Best Practices for AI Assistant
-
-**DO:**
-- ✅ Execute commands directly without showing trial-and-error process
-- ✅ If command fails, inform user about permission issues without showing technical errors
-- ✅ Use `search` command for searching birthdays/anniversaries
-- ✅ If no calendar name specified, script will automatically use first available calendar
-
-**DON'T:**
-- ❌ Don't repeatedly try different command combinations
-- ❌ Don't show error stacks or technical details to users
-- ❌ Don't read script source code to analyze issues
-- ❌ Don't ask users for calendar name, use default behavior
-
-**Example - Searching for birthdays:**
-```bash
-# Correct approach: Search directly, don't trial-and-error
-bash "<skill-dir>/scripts/calendar.sh" search --query "birthday"
-
-# If permission error returned, directly tell user:
-# "Calendar access permission is required. Please open System Settings > Privacy & Security > Calendar, and authorize Terminal or LobsterAI"
-```
 
 ### List Events
 
@@ -241,8 +193,6 @@ All commands return JSON with the following structure:
 
 ## Date Format Guidelines
 
-### Important: Date Format Guidelines
-
 When using the `list` command with time ranges:
 
 1. **Always use ISO 8601 format**: `YYYY-MM-DDTHH:mm:ss`
@@ -345,76 +295,20 @@ The `list` command uses **interval overlap detection**:
 
 ## Best Practices
 
-### 1. Always Check Before Creating
-
-Before creating an event, list existing events to avoid conflicts:
-
-```bash
-# First check existing events
-bash "<skill-dir>/scripts/calendar.sh" list
-
-# Then create if no conflict
-bash "<skill-dir>/scripts/calendar.sh" create ...
-```
-
-### 2. Use Specific Calendars (macOS)
-
-Specify the calendar to keep events organized:
-
-```bash
-bash "<skill-dir>/scripts/calendar.sh" create \
-  --title "Team Meeting" \
-  --calendar "Work" \
-  ...
-```
-
-### 3. Search Before Updating/Deleting
-
-Always search first to get the correct event ID:
-
-```bash
-# Search to find event ID
-bash "<skill-dir>/scripts/calendar.sh" search --query "meeting"
-
-# Then update or delete
-bash "<skill-dir>/scripts/calendar.sh" update --id "FOUND-ID" ...
-```
-
-### 4. Handle Errors Gracefully
-
-Parse the response and handle errors:
-
-```bash
-result=$(bash "<skill-dir>/scripts/calendar.sh" list)
-if echo "$result" | grep -q '"success":true'; then
-  # Process events
-  events=$(echo "$result" | jq '.data.events')
-else
-  # Handle error
-  error=$(echo "$result" | jq '.error.message')
-  echo "Failed: $error"
-fi
-```
+- **Check before creating**: List existing events to avoid conflicts before creating new ones
+- **Search before updating/deleting**: Always search first to get the correct event ID
+- **Use specific calendars** (macOS): Specify `--calendar "Work"` to keep events organized
+- **Execute directly**: Do not trial-and-error; run the command once and report results
+- **Handle errors gracefully**: Parse JSON response; if permission error, tell user to open System Settings > Privacy & Security > Calendar
+- **Use default calendar**: If no calendar name specified, the script automatically uses the first available calendar
+- **Do not expose internals**: Do not show error stacks, technical details, or script source code to users
 
 ## Limitations
 
-### macOS
-- Requires macOS 10.10 Yosemite or later (for JXA support)
-- Requires Calendar access permission
-- Does not support advanced recurring event queries
-- Cannot modify recurring event rules
-
-### Windows
-- Requires Microsoft Outlook to be installed
-- Does not support other calendar applications (Windows Calendar, Google Calendar, etc.)
-- May require COM access permissions in corporate environments
-- Folder enumeration may skip restricted calendars
-
-### General
-- All dates must be in ISO 8601 format (`YYYY-MM-DDTHH:mm:ss`)
-- Uses local timezone for all operations
-- Return values are converted to UTC (ISO 8601 with Z suffix)
+- Does not support advanced recurring event queries or modifying recurring event rules
 - No support for attendees or meeting invitations
+- Windows: Only works with Microsoft Outlook (not Windows Calendar, Google Calendar, etc.)
+- All dates must be in ISO 8601 format; return values are converted to UTC
 
 ## Troubleshooting
 
@@ -448,40 +342,6 @@ Error: Execution of scripts is disabled on this system
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
-
-## Technical Details
-
-### macOS Implementation
-
-**JXA (JavaScript for Automation):**
-- Uses `osascript -l JavaScript` to execute JXA code
-- Controls Calendar.app via Apple Events
-- Works on both Intel and Apple Silicon Macs
-- Requires user permission for Calendar access
-
-**Date Handling:**
-- Uses BSD date command (macOS native)
-- Format: `date +%Y-%m-%dT%H:%M:%S` (local timezone)
-- Relative dates: `date -v+7d` (7 days from now)
-
-### Windows Implementation
-
-**PowerShell + COM:**
-- Uses Outlook COM API via PowerShell
-- Requires Outlook to be installed and configured
-- Works with all Outlook-compatible calendars
-
-**Date Handling:**
-- Uses PowerShell `[DateTime]::Parse()` for date parsing
-- Automatically handles local timezone
-
-### Cross-Platform Consistency
-
-Both implementations:
-- Use identical JSON output format
-- Support the same operations (list, create, update, delete, search)
-- Handle dates in local timezone
-- Return UTC timestamps in ISO 8601 format
 
 ## Related Skills
 
