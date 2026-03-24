@@ -66,11 +66,36 @@ if __name__ == "__main__":
 ### API wrapper
 Wrap REST APIs as MCP tools. Handle auth, rate limits, and error responses gracefully.
 
+```python
+import httpx
+
+async def call_api(endpoint: str, params: dict) -> str:
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            resp = await client.get(f"https://api.example.com/{endpoint}", params=params)
+            resp.raise_for_status()
+            return resp.text
+        except httpx.HTTPStatusError as e:
+            return f"API error {e.response.status_code}: {e.response.text}"
+        except httpx.RequestError as e:
+            return f"Request failed: {e}"
+```
+
 ### File operations
 Expose read/write/list operations scoped to a safe directory.
 
 ### Database queries
 Wrap SQL queries with parameterized inputs to prevent injection.
+
+## Pre-Flight Validation Checklist
+
+Before deploying an MCP server, verify:
+
+- [ ] Every tool has a clear `description` explaining what it does and when to call it
+- [ ] All required parameters are marked in `inputSchema.required`
+- [ ] Error cases return informative `TextContent` messages (not raw exceptions)
+- [ ] The server starts cleanly: `python server.py` exits without errors
+- [ ] Tools respond correctly when tested via `npx @modelcontextprotocol/inspector`
 
 ## Testing
 

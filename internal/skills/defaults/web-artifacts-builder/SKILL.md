@@ -1,6 +1,6 @@
 ---
 name: web-artifacts-builder
-description: Build interactive web artifacts — single-file HTML/CSS/JS apps, data visualizations, dashboards, games, and interactive demos. Use when asked to create something visual and interactive that runs in a browser.
+description: "Build interactive web artifacts — single-file HTML/CSS/JS web apps, charts, graphs, dashboards, prototypes, widgets, and interactive demos. Use when asked to create something visual and interactive that runs in a browser."
 ---
 
 # Web Artifacts Builder
@@ -66,5 +66,6 @@ HTML form elements + JS event listeners. Validate client-side.
 1. Understand the desired output with an example or mockup description
 2. Choose the minimal set of libraries needed
 3. Build the full HTML in one file
-4. Write to `/data/` using the `write` tool
-5. Confirm the file path so the user can open it
+4. **Validate**: Open the file in a browser or review the markup to confirm layout renders correctly, interactive elements respond, and no console errors appear
+5. Write to `/data/` using the `write` tool
+6. Confirm the file path so the user can open it

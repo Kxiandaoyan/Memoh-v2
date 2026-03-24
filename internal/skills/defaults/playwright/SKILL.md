@@ -1,48 +1,15 @@
 ---
 name: "playwright"
-description: "Use when the task requires automating a real browser from the terminal (navigation, form filling, snapshots, screenshots, data extraction, UI-flow debugging) via `playwright-cli` or the bundled wrapper script."
+description: "Use when the task requires web scraping, automating a website, or testing a webpage from the terminal — including navigation, form filling, snapshots, screenshots, data extraction, and UI-flow debugging — via playwright-cli or the bundled wrapper script."
 ---
 
 
 # Playwright CLI Skill
 
-## Environment Variables
-
-This skill requires the following environment variables:
-
-- `SKILLS_ROOT` - Path to the skills directory (automatically set by the system)
-- `LOBSTERAI_SKILLS_ROOT` - Alternative skills root path (optional, defaults to SKILLS_ROOT)
-
-## Prerequisites
-
-- Node.js and npm must be installed
-- `npx` command must be available
-- Optional: `@playwright/mcp` package can be installed globally for direct CLI access
-
 Drive a real browser from the terminal using `playwright-cli`. Prefer the bundled wrapper script so the CLI works even when it is not globally installed.
 Treat this skill as CLI-first automation. Do not pivot to `@playwright/test` unless the user explicitly asks for test files.
 
-## Prerequisite check (required)
-
-Before proposing commands, check whether `npx` is available (the wrapper depends on it):
-
-```bash
-command -v npx >/dev/null 2>&1
-```
-
-If it is not available, pause and ask the user to install Node.js/npm (which provides `npx`). Provide these steps verbatim:
-
-```bash
-# Verify Node/npm are installed
-node --version
-npm --version
-
-# If missing, install Node.js/npm, then:
-npm install -g @playwright/mcp@latest
-playwright-cli --help
-```
-
-Once `npx` is present, proceed with the wrapper script. A global install of `playwright-cli` is optional.
+**Prerequisites**: Node.js, npm, and `npx` must be available. If `npx` is missing, install Node.js/npm first, then optionally `npm install -g @playwright/mcp@latest`.
 
 ## Skill path (set once)
 

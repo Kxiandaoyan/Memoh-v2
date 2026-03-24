@@ -1,8 +1,9 @@
 ---
 name: weather
-description: Get current weather and forecasts (no API key required).
-homepage: https://wttr.in/:help
-metadata: {"clawdbot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
+description: "Retrieves current weather conditions, temperature, humidity, wind speed, and multi-day forecasts for any location worldwide using free public APIs (no API key required). Supports hourly and daily forecasts, rain and precipitation data, moon phases, and metric or imperial units. Use when the user asks about weather, temperature, forecast, rain, humidity, wind, tomorrow's weather, hourly conditions, or climate for a city or location."
+version: 1.0.0
+metadata:
+  homepage: "https://wttr.in/:help"
 ---
 
 # Weather

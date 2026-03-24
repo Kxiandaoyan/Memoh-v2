@@ -1,38 +1,9 @@
 ---
 name: imap-smtp-email
-description: Read and send email via IMAP/SMTP. Check for new/unread messages, fetch content, search mailboxes, mark as read/unread, and send emails with attachments. Works with any IMAP/SMTP server including Gmail, Outlook, 163.com, vip.163.com, 126.com, vip.126.com, 188.com, and vip.188.com.
+description: "Read, send, search, and manage email via IMAP/SMTP. Check for new or unread messages, fetch email content, search mailboxes by sender or subject, mark messages as read/unread, download attachments, and send emails with attachments. Works with Gmail, Outlook, 163.com, QQ Mail, and any standard IMAP/SMTP server. Use when the user wants to check email, read a message, send a reply, find an email, or manage their inbox."
 ---
 
 # IMAP/SMTP Email Tool
-
-Read, search, and manage email via IMAP protocol. Send email via SMTP. Supports Gmail, Outlook, 163.com, vip.163.com, 126.com, vip.126.com, 188.com, vip.188.com, and any standard IMAP/SMTP server.
-
-## Environment Variables
-
-This skill requires the following environment variables to be configured:
-
-### IMAP Configuration (Receiving Email)
-- `IMAP_HOST` - IMAP server hostname (e.g., imap.gmail.com)
-- `IMAP_PORT` - IMAP server port (default: 993)
-- `IMAP_USER` - Your email address
-- `IMAP_PASS` - Your password or app password
-- `IMAP_TLS` - Use TLS/SSL connection (default: true)
-- `IMAP_REJECT_UNAUTHORIZED` - Verify SSL certificates (default: true, set to false for self-signed certs)
-- `IMAP_MAILBOX` - Default mailbox (default: INBOX)
-
-### SMTP Configuration (Sending Email)
-- `SMTP_HOST` - SMTP server hostname (e.g., smtp.gmail.com)
-- `SMTP_PORT` - SMTP server port (587 for STARTTLS, 465 for SSL)
-- `SMTP_SECURE` - Use SSL (true for port 465, false for port 587)
-- `SMTP_USER` - Your email address
-- `SMTP_PASS` - Your password or app password
-- `SMTP_FROM` - Default sender email (optional)
-- `SMTP_REJECT_UNAUTHORIZED` - Verify SSL certificates (default: true, set to false for self-signed certs)
-
-### Security Notes
-- Store credentials in `.env` file (add to `.gitignore`)
-- For Gmail: use App Password if 2FA is enabled
-- For 163.com: use authorization code (授权码), not account password
 
 ## Prerequisites
 
@@ -41,7 +12,7 @@ This skill requires the following environment variables to be configured:
 
 ## Configuration
 
-Create `.env` in the skill folder or set environment variables:
+Create `.env` in the skill folder or set environment variables. Store credentials in `.env` (add to `.gitignore`). For Gmail, use App Password if 2FA is enabled. For 163.com, use authorization code (授权码), not account password.
 
 ```bash
 # IMAP Configuration (receiving email)
@@ -193,17 +164,43 @@ Test SMTP connection by sending a test email to yourself.
 node scripts/smtp.js test
 ```
 
-## Dependencies
+## Common Workflows
+
+### Check and read new email
 
 ```bash
-npm install
+# 1. Check for unread messages
+node scripts/imap.js check --recent 2h
+
+# 2. Fetch full content of a specific email by UID
+node scripts/imap.js fetch <uid>
 ```
 
-## Security Notes
+### Search, read, and reply
 
-- Store credentials in `.env` (add to `.gitignore`)
-- For Gmail: use App Password if 2FA is enabled
-- For 163.com: use authorization code (授权码), not account password
+```bash
+# 1. Search for emails from a specific sender
+node scripts/imap.js search --from "boss@company.com" --recent 7d
+
+# 2. Fetch the email content
+node scripts/imap.js fetch <uid>
+
+# 3. Send a reply
+node scripts/smtp.js send --to "boss@company.com" --subject "Re: Project Update" --body "Thanks, I'll review this."
+
+# 4. Mark the original as read
+node scripts/imap.js mark-read <uid>
+```
+
+### Download and forward an attachment
+
+```bash
+# 1. Download attachments from an email
+node scripts/imap.js download <uid> --dir /tmp/attachments
+
+# 2. Forward with the attachment
+node scripts/smtp.js send --to "colleague@company.com" --subject "FYI: Report" --body "See attached." --attach /tmp/attachments/report.pdf
+```
 
 ## Troubleshooting
 

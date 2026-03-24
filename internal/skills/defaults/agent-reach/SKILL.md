@@ -1,7 +1,6 @@
 ---
 name: agent-reach
-description: "Give your AI Agent eyes to see the entire internet. Search + read 10+ platforms with one install."
-install: pip install git+https://github.com/Panniantong/agent-reach.git
+description: "Searches and reads content from GitHub, YouTube, Bilibili, Reddit, Twitter, WeChat, Xiaohongshu, RSS feeds, and arbitrary web URLs. Use when the agent needs to fetch, search, or scrape web content across multiple platforms via CLI, Python API, or MCP server."
 ---
 
 # Agent Reach — 给 Agent 装上眼睛 👁️
@@ -13,6 +12,14 @@ install: pip install git+https://github.com/Panniantong/agent-reach.git
 ```bash
 pip install git+https://github.com/Panniantong/agent-reach.git
 ```
+
+安装完成后，运行以下命令验证安装是否成功：
+
+```bash
+agent-reach doctor
+```
+
+如果输出显示各平台状态，则安装成功。如果遇到 `ModuleNotFoundError` 或 `command not found`，请确认 Python 版本 >= 3.8 且 pip 安装路径已加入 `PATH` 环境变量。
 
 ## 装完直接能用的（零配置）
 

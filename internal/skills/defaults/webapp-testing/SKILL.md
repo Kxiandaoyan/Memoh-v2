@@ -51,6 +51,26 @@ fill fields → click submit → assert success message or error handling
 click nav link → assert URL changed → assert page content
 ```
 
+## Validation & Error Handling
+
+- After every form submission, assert that either a success message or a specific error message appears — never assume the action succeeded silently
+- Validate that error states render correctly (e.g., inline field errors, toast notifications, disabled buttons)
+- When an element is not found, capture a screenshot before reporting failure to aid debugging
+
+### Retry Pattern for Flaky Elements
+
+Elements that load asynchronously (e.g., after an API call or animation) may not be immediately available. Use a wait-and-retry approach:
+
+```
+# Wait for element before interacting
+exec: agent-browser wait --selector "#dynamic-content" --timeout 5000
+exec: agent-browser click --selector "#dynamic-content"
+
+# If assert fails, wait briefly and retry once
+exec: agent-browser wait --selector ".result-panel" --timeout 3000
+exec: agent-browser assert-text --text "Results loaded"
+```
+
 ## Guidelines
 
 - Always take a screenshot after key interactions as evidence

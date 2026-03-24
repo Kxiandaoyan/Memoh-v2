@@ -1,6 +1,6 @@
 ---
 name: docx
-description: "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. When Claude needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks"
+description: "Comprehensive Word document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when working with Word files, Microsoft Word documents, .docx or .doc files for: creating new documents, modifying or editing content, working with tracked changes, adding comments, or any other document tasks."
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -10,7 +10,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 ## Overview
 
-A user may ask you to create, edit, or analyze the contents of a .docx file. A .docx file is essentially a ZIP archive containing XML files and other resources that you can read or edit. You have different tools and workflows available for different tasks.
+A user may ask you to create, edit, or analyze the contents of a .docx file. You have different tools and workflows available for different tasks.
 
 ## Workflow Decision Tree
 
